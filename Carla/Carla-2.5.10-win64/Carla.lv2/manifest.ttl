@@ -1,0 +1,184 @@
+@prefix atom: <http://lv2plug.in/ns/ext/atom#> .
+@prefix doap: <http://usefulinc.com/ns/doap#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix idpy: <http://harrisonconsoles.com/lv2/inlinedisplay#> .
+@prefix lv2:  <http://lv2plug.in/ns/lv2core#> .
+@prefix mod:  <http://moddevices.com/ns/mod#> .
+@prefix opts: <http://lv2plug.in/ns/ext/options#> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix ui:   <http://lv2plug.in/ns/extensions/ui#> .
+
+<https://kx.studio/carla>
+    a owl:Ontology, doap:Project ;
+    doap:homepage <https://kx.studio/carla> ;
+    doap:maintainer [
+        foaf:homepage <https://falktx.com/> ;
+        foaf:mbox <mailto:falktx@falktx.com> ;
+        foaf:name "Filipe Coelho" ;
+    ] ;
+    doap:name "Carla" ;
+    doap:shortdesc "fully-featured audio plugin host." ;
+    lv2:microVersion 25 ;
+    lv2:minorVersion 10 ;
+    lv2:symbol "carla" .
+
+idpy:interface
+    a lv2:ExtensionData .
+
+idpy:queue_draw
+    a lv2:Feature .
+
+<http://kxstudio.sf.net/carla/plugins/audiogain>
+    a lv2:Plugin ;
+    lv2:binary <carla.dll> ;
+    lv2:project <https://kx.studio/carla> ;
+    rdfs:seeAlso <audiogain.ttl> .
+
+<http://kxstudio.sf.net/carla/plugins/audiogain_s>
+    a lv2:Plugin ;
+    lv2:binary <carla.dll> ;
+    lv2:project <https://kx.studio/carla> ;
+    rdfs:seeAlso <audiogain_s.ttl> .
+
+<http://kxstudio.sf.net/carla/plugins/lfo>
+    a lv2:Plugin ;
+    lv2:binary <carla.dll> ;
+    lv2:project <https://kx.studio/carla> ;
+    rdfs:seeAlso <lfo.ttl> .
+
+<http://kxstudio.sf.net/carla/plugins/midichanab>
+    a lv2:Plugin ;
+    lv2:binary <carla.dll> ;
+    lv2:project <https://kx.studio/carla> ;
+    rdfs:seeAlso <midichanab.ttl> .
+
+<http://kxstudio.sf.net/carla/plugins/midichannelize>
+    a lv2:Plugin ;
+    lv2:binary <carla.dll> ;
+    lv2:project <https://kx.studio/carla> ;
+    rdfs:seeAlso <midichannelize.ttl> .
+
+<http://kxstudio.sf.net/carla/plugins/midichanfilter>
+    a lv2:Plugin ;
+    lv2:binary <carla.dll> ;
+    lv2:project <https://kx.studio/carla> ;
+    rdfs:seeAlso <midichanfilter.ttl> .
+
+<http://kxstudio.sf.net/carla/plugins/midigain>
+    a lv2:Plugin ;
+    lv2:binary <carla.dll> ;
+    lv2:project <https://kx.studio/carla> ;
+    rdfs:seeAlso <midigain.ttl> .
+
+<http://kxstudio.sf.net/carla/plugins/midijoin>
+    a lv2:Plugin ;
+    lv2:binary <carla.dll> ;
+    lv2:project <https://kx.studio/carla> ;
+    rdfs:seeAlso <midijoin.ttl> .
+
+<http://kxstudio.sf.net/carla/plugins/midisplit>
+    a lv2:Plugin ;
+    lv2:binary <carla.dll> ;
+    lv2:project <https://kx.studio/carla> ;
+    rdfs:seeAlso <midisplit.ttl> .
+
+<http://kxstudio.sf.net/carla/plugins/miditranspose>
+    a lv2:Plugin ;
+    lv2:binary <carla.dll> ;
+    lv2:project <https://kx.studio/carla> ;
+    rdfs:seeAlso <miditranspose.ttl> .
+
+<http://kxstudio.sf.net/carla/plugins/audiofile>
+    a lv2:Plugin ;
+    lv2:binary <carla.dll> ;
+    lv2:project <https://kx.studio/carla> ;
+    rdfs:seeAlso <audiofile.ttl> .
+
+<http://kxstudio.sf.net/carla/plugins/midifile>
+    a lv2:Plugin ;
+    lv2:binary <carla.dll> ;
+    lv2:project <https://kx.studio/carla> ;
+    rdfs:seeAlso <midifile.ttl> .
+
+<http://kxstudio.sf.net/carla/plugins/carlarack>
+    a lv2:Plugin ;
+    lv2:binary <carla.dll> ;
+    lv2:project <https://kx.studio/carla> ;
+    rdfs:seeAlso <carlarack.ttl> .
+
+<http://kxstudio.sf.net/carla/plugins/carlapatchbay>
+    a lv2:Plugin ;
+    lv2:binary <carla.dll> ;
+    lv2:project <https://kx.studio/carla> ;
+    rdfs:seeAlso <carlapatchbay.ttl> .
+
+<http://kxstudio.sf.net/carla/plugins/carlapatchbay3s>
+    a lv2:Plugin ;
+    lv2:binary <carla.dll> ;
+    lv2:project <https://kx.studio/carla> ;
+    rdfs:seeAlso <carlapatchbay3s.ttl> .
+
+<http://kxstudio.sf.net/carla/plugins/carlapatchbay16>
+    a lv2:Plugin ;
+    lv2:binary <carla.dll> ;
+    lv2:project <https://kx.studio/carla> ;
+    rdfs:seeAlso <carlapatchbay16.ttl> .
+
+<http://kxstudio.sf.net/carla/plugins/carlapatchbay32>
+    a lv2:Plugin ;
+    lv2:binary <carla.dll> ;
+    lv2:project <https://kx.studio/carla> ;
+    rdfs:seeAlso <carlapatchbay32.ttl> .
+
+<http://kxstudio.sf.net/carla/plugins/carlapatchbay64>
+    a lv2:Plugin ;
+    lv2:binary <carla.dll> ;
+    lv2:project <https://kx.studio/carla> ;
+    rdfs:seeAlso <carlapatchbay64.ttl> .
+
+<http://kxstudio.sf.net/carla/plugins/carlapatchbaycv>
+    a lv2:Plugin ;
+    lv2:binary <carla.dll> ;
+    lv2:project <https://kx.studio/carla> ;
+    rdfs:seeAlso <carlapatchbaycv.ttl> .
+
+<http://kxstudio.sf.net/carla/plugins/bigmeter>
+    a lv2:Plugin ;
+    lv2:binary <carla.dll> ;
+    lv2:project <https://kx.studio/carla> ;
+    rdfs:seeAlso <bigmeter.ttl> .
+
+<http://kxstudio.sf.net/carla/plugins/midipattern>
+    a lv2:Plugin ;
+    lv2:binary <carla.dll> ;
+    lv2:project <https://kx.studio/carla> ;
+    rdfs:seeAlso <midipattern.ttl> .
+
+<http://kxstudio.sf.net/carla/ui-ext>
+    a <http://kxstudio.sf.net/ns/lv2ext/external-ui#Widget> ;
+    ui:binary <carla.dll> ;
+    lv2:extensionData <http://lv2plug.in/ns/extensions/ui#idleInterface> ,
+                      <http://lv2plug.in/ns/extensions/ui#showInterface> ,
+                      <http://kxstudio.sf.net/ns/lv2ext/programs#UIInterface> ;
+    lv2:optionalFeature <http://lv2plug.in/ns/extensions/ui#idleInterface> ;
+    lv2:requiredFeature <http://lv2plug.in/ns/ext/instance-access> ;
+    opts:supportedOption <http://lv2plug.in/ns/ext/parameters#sampleRate> .
+
+<http://kxstudio.sf.net/carla/file>
+    a lv2:Parameter ;
+    rdfs:label "file" ;
+    rdfs:range atom:Path .
+
+<http://kxstudio.sf.net/carla/file/audio>
+    a lv2:Parameter ;
+    mod:fileTypes "audioloop,audiorecording,audiotrack" ;
+    rdfs:label "audio file" ;
+    rdfs:range atom:Path .
+
+<http://kxstudio.sf.net/carla/file/midi>
+    a lv2:Parameter ;
+    mod:fileTypes "midisong" ;
+    rdfs:label "midi file" ;
+    rdfs:range atom:Path .
+

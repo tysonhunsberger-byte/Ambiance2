@@ -1,0 +1,6 @@
+# Core dependencies
+PyQt5>=5.15.0
+
+# Optional but recommended for better compatibility
+PyQt5-Qt5>=5.15.0
+PyQt5-sip>=12.8.0

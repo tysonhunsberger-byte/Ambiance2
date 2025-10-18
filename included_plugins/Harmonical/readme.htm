@@ -1,0 +1,99 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+<HTML>
+<HEAD>
+	<META HTTP-EQUIV="CONTENT-TYPE" CONTENT="text/html; charset=windows-1252">
+	<TITLE></TITLE>
+	<META NAME="GENERATOR" CONTENT="OpenOffice.org 1.1.3  (Win32)">
+	<META NAME="AUTHOR" CONTENT="Niall Moody">
+	<META NAME="CREATED" CONTENT="20031012;9160756">
+	<META NAME="CHANGEDBY" CONTENT="Niall Moody">
+	<META NAME="CHANGED" CONTENT="20050510;21241309">
+	<STYLE>
+	<!--
+		@page { size: 21cm 29.7cm }
+	-->
+	</STYLE>
+</HEAD>
+<BODY LANG="en-US" DIR="LTR">
+<P><FONT FACE="Arial, sans-serif"><B>Harmonical</B></FONT></P>
+<P><FONT FACE="Arial, sans-serif">by ndc Plugs
+(<A HREF="http://www.niallmoody.com/ndcplugs"><I>http://www.niallmoody.com/ndcplugs</I></A>)</FONT></P>
+<HR>
+<P><FONT FACE="Arial, sans-serif"><B>Version</B> : 1.00</FONT></P>
+<P><FONT FACE="Arial, sans-serif"><B>Author</B> : Niall Moody
+(niallmoody@yahoo.co.uk)</FONT></P>
+<P><FONT FACE="Arial, sans-serif"><B>Format(s)</B> : Windows VST</FONT></P>
+<P><FONT FACE="Arial, sans-serif"><B>Created with</B> : C++</FONT></P>
+<P><FONT FACE="Arial, sans-serif"><B>CPU Usage</B> : 10% upwards
+(depends on how many voices - tested on a P4 2.8GHz)</FONT></P>
+<HR>
+<P><FONT FACE="Arial, sans-serif"><B>Description</B> : </FONT>
+</P>
+<P><FONT FACE="arial">This plugin is more of an experiment than
+anything else, part of my quest to create an instrument where the
+visuals are intimately connected to the audio. Basically it's a
+16-voice synth, where the sound source is a set of waveforms derived
+from the vertices of a sphere, and added together. The vertices of
+the sphere are then modulated used spherical harmonics (see
+<A HREF="http://astronomy.swin.edu.au/~pbourke/surfaces/sphericalh/">http://astronomy.swin.edu.au/~pbourke/surfaces/sphericalh/</A>),
+with the result that very complex sounds are generated. It's very
+heavy on the processor, and I'm sure it aliases all over the place.</FONT></P>
+<P><FONT FACE="arial">The best way to get a hang of it is just to
+play with it awhile. One thing to watch out for is the values of the
+odd-numbered M controls &ndash; if you set these too high (4's a
+reasonable limit), the thing goes a bit crazy.</FONT></P>
+<P><FONT FACE="arial"><B>Note for OS X Users:</B> Unfortunately the
+plugin does not work correctly in Tracktion on OS X (the plugin
+window cannot be closed or moved out of the way). This is because
+Tracktion handles plugin windows on OS X differently to every other
+host &ndash; there doesn't seem to be any way around this on my part,
+I'm afraid. Also, sorry about the high cpu usage &ndash; it doesn't
+seem to be nearly as high on my Windows machine, but I honestly don't
+know why there's such a disparity.</FONT></P>
+<HR>
+<P><FONT FACE="Arial, sans-serif"><B>Credits</B> :</FONT></P>
+<P><FONT FACE="Arial, sans-serif">VST is a trademark of Steinberg
+Media Technologies AG.</FONT></P>
+<HR>
+<P><FONT FACE="Arial, sans-serif">I<B>nstallation</B> : </FONT>
+</P>
+<P><FONT FACE="Arial, sans-serif">Copy the Harmonical.dll file into
+your vst plugins directory. </FONT>
+</P>
+<HR>
+<P><FONT FACE="Arial, sans-serif"><B>Hosts tested on</B> :</FONT></P>
+<P><FONT FACE="Arial, sans-serif">Tracktion v1.6.0.1</FONT></P>
+<P><FONT FACE="Arial, sans-serif">Plogue Bidule (demo)</FONT></P>
+<P><FONT FACE="Arial, sans-serif">Ableton Live (demo)</FONT></P>
+<P><FONT FACE="Arial, sans-serif">Cubase SX v1 (demo)</FONT></P>
+<P><FONT FACE="Arial, sans-serif">Others?</FONT></P>
+<HR>
+<P><FONT FACE="Arial, sans-serif"><B>Version History</B> :</FONT></P>
+<P><FONT FACE="Arial, sans-serif"><B>v1.00</B> - First release.</FONT></P>
+<HR>
+<P><FONT FACE="Arial, sans-serif"><B>License</B> :</FONT></P>
+<P><TT><FONT FACE="Arial, sans-serif">This plugin is released under
+the MIT/expat license (below). The source code is at
+<A HREF="http://www.niallmoody.com/ndcplugs/harmonical.htm">http://www.niallmoody.com/ndcplugs/harmonical.htm</A>.</FONT></TT></P>
+<P><TT><FONT FACE="Arial, sans-serif">Copyright (c) 2005 Niall Moody</FONT></TT></P>
+<P><TT>Permission is hereby granted, free of charge, to any person
+obtaining a copy of this software and associated documentation files
+(the &quot;Software&quot;), to deal in the Software without
+restriction, including without limitation the rights to use, copy,
+modify, merge, publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software is furnished
+to do so, subject to the following conditions:</TT></P>
+<P><TT>The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.</TT></P>
+<P><TT>THE SOFTWARE IS PROVIDED &quot;AS IS&quot;, WITHOUT WARRANTY
+OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
+BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.</TT></P>
+<P><BR><BR>
+</P>
+</BODY>
+</HTML>

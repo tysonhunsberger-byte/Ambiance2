@@ -1,0 +1,4 @@
+cd C:\dev\ambiance\cpp\juce_host
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DJUCE_ROOT=C:\dev\JUCE-master
+cmake --build build --config Release
+

@@ -1,0 +1,119 @@
+{
+  "pluginName": "Aspen Trumpet 1",
+  "vendor": "Aspen Sound Labs",
+  "version": "1.2.0",
+  "category": "Instrument|Brass",
+  "bundleIdentifier": "com.aspen.trumpet1",
+  "parameters": [
+    {
+      "id": 0,
+      "name": "attack",
+      "displayName": "Attack",
+      "description": "Envelope attack time controlling the softness of the note onset.",
+      "minValue": 0.01,
+      "maxValue": 1.5,
+      "defaultValue": 0.18,
+      "units": "s",
+      "step": 0.01
+    },
+    {
+      "id": 1,
+      "name": "decay",
+      "displayName": "Decay",
+      "description": "Envelope decay shaping how quickly the note settles.",
+      "minValue": 0.05,
+      "maxValue": 1.2,
+      "defaultValue": 0.45,
+      "units": "s",
+      "step": 0.01
+    },
+    {
+      "id": 2,
+      "name": "sustain",
+      "displayName": "Sustain",
+      "description": "Sustain level as a ratio of the peak amplitude.",
+      "minValue": 0.2,
+      "maxValue": 1.0,
+      "defaultValue": 0.72,
+      "units": "ratio",
+      "step": 0.01
+    },
+    {
+      "id": 3,
+      "name": "release",
+      "displayName": "Release",
+      "description": "Envelope release length after a key is released.",
+      "minValue": 0.05,
+      "maxValue": 2.0,
+      "defaultValue": 0.9,
+      "units": "s",
+      "step": 0.01
+    },
+    {
+      "id": 4,
+      "name": "vibratoRate",
+      "displayName": "Vibrato Rate",
+      "description": "Speed of the natural brass vibrato.",
+      "minValue": 0.5,
+      "maxValue": 8.0,
+      "defaultValue": 3.4,
+      "units": "Hz",
+      "step": 0.01
+    },
+    {
+      "id": 5,
+      "name": "vibratoDepth",
+      "displayName": "Vibrato Depth",
+      "description": "Depth of the vibrato pitch modulation.",
+      "minValue": 0.0,
+      "maxValue": 0.8,
+      "defaultValue": 0.22,
+      "units": "st",
+      "step": 0.005
+    },
+    {
+      "id": 6,
+      "name": "brightness",
+      "displayName": "Brightness",
+      "description": "Tone brightness blending in additional harmonics.",
+      "minValue": 0.0,
+      "maxValue": 1.0,
+      "defaultValue": 0.58,
+      "units": "ratio",
+      "step": 0.01
+    },
+    {
+      "id": 7,
+      "name": "breath",
+      "displayName": "Breath Noise",
+      "description": "Amount of breath noise mixed into the tone.",
+      "minValue": 0.0,
+      "maxValue": 0.6,
+      "defaultValue": 0.18,
+      "units": "ratio",
+      "step": 0.01
+    },
+    {
+      "id": 8,
+      "name": "expression",
+      "displayName": "Expression",
+      "description": "Overall dynamic expression multiplier.",
+      "minValue": 0.2,
+      "maxValue": 1.5,
+      "defaultValue": 1.0,
+      "units": "x",
+      "step": 0.01
+    },
+    {
+      "id": 9,
+      "name": "hallMix",
+      "displayName": "Hall Mix",
+      "description": "Mix amount of the concert hall reverb.",
+      "minValue": 0.0,
+      "maxValue": 0.9,
+      "defaultValue": 0.35,
+      "units": "ratio",
+      "step": 0.01
+    }
+  ]
+}

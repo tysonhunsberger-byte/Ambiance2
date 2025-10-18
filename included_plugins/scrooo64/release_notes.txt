@@ -1,0 +1,86 @@
+########################################
+####   the scrooo   Release Notes   ####
+########################################
+
+Polyphonic Synthesizer Plug-in
+
+Copyright 2011-2023 Björn Arlt @ Full Bucket Music
+
+
+Version 2.0.2 (29-Jul-2023)
+---------------------------
+* new parameter for Unison LFO Phases
+* fixed a bug in "Fixed" mode
+
+
+Version 2.0.1 (17-Mar-2023)
+---------------------------
+* fixed CLAP & VST3 program handling
+* minor fixes and improvements
+
+
+Version 2.0.0 (17-Jun-2022)
+---------------------------
+* new resizable UI
+* Unison mode
+* single/multiple trigger for envelopes
+* supports MTS-ESP dynamic Micro Tuning
+  https://oddsound.com
+* added VST3 version
+* Universal Binary 2 build for both Intel and ARM Macs
+* refactoring and minor bug fixes
+
+
+Version 1.3.0 (02-Dec-2019)
+---------------------------
+* reworked synth engine
+* fixed envelope delay
+
+
+Version 1.2.4 (18-Sep-2019)
+---------------------------
+* NKS compatibility
+* fixed MIDI CC 120 action
+
+
+Version 1.2.3 (11-Jul-2018)
+---------------------------
+* rework: fixed potential clicking at note start
+
+
+Version 1.2.2 (06-Jul-2018)
+---------------------------
+* fixed potential clicking at note start
+* adjusted sensitivity of clipping indicator
+
+
+Version 1.2.1 (02-Jul-2018)
+---------------------------
+* fixed some UI control issues
+
+
+Version 1.2.0 (18-Apr-2018)
+---------------------------
+* rebased to WDL-OL/IPlug
+* now also available as macOS AU and VST
+
+
+Version 1.1.0 (28-Nov-2014)
+---------------------------
+* added 64 bit version
+* improved internal processing architecture
+* double precision audio processing
+* polyphony increased from 32 to 64 voices
+* added File Management dialog
+* refactored UI
+
+
+Version 1.0.1 (02-Apr-2011)
+---------------------------
+* fixed problem with hanging notes
+* fixed problem with pitch bend wheel
+
+
+Version 1.0.0 (11-Feb-2011)
+---------------------------
+* initial version

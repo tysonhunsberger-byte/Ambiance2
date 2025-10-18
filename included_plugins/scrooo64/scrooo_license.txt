@@ -1,0 +1,16 @@
+the scrooo Software License
+  
+Copyright © 2011-2023 by Björn Arlt.
+
+VST is a trademark of Steinberg Media Technologies GmbH
+
+You may NOT distribute, sell, rent, or modify this software 
+or any accompanying files without permission from the author.
+
+DISCLAIMER
+ 
+The Software and any accompanying files are provided "as is".
+You are using this software entirely at your own risk.
+The author provides no warranty and cannot in any way be held 
+responsible for anything this software does.
+

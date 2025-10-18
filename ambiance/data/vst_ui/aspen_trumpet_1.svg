@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 360">
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#0f172a"/>
+      <stop offset="1" stop-color="#1e293b"/>
+    </linearGradient>
+    <linearGradient id="header" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0" stop-color="#f6ad55"/>
+      <stop offset="1" stop-color="#f97316"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="760" height="360" fill="url(#bg)" rx="22" ry="22"/>
+  <rect x="24" y="24" width="712" height="70" fill="url(#header)" rx="14" ry="14" opacity="0.92"/>
+  <text x="64" y="70" fill="#0f172a" font-size="34" font-family="'Poppins', sans-serif" font-weight="600">Aspen Trumpet 1</text>
+  <text x="68" y="100" fill="#1f2937" font-size="16" font-family="'Poppins', sans-serif">Expressive orchestral brass</text>
+  <g opacity="0.72">
+    <path d="M120 192c68-48 148-72 240-72 92 0 172 24 240 72" fill="none" stroke="#f8fafc" stroke-width="4" stroke-linecap="round"/>
+    <path d="M120 232c68-24 148-36 240-36s172 12 240 36" fill="none" stroke="#e2e8f0" stroke-width="2" stroke-dasharray="8 8"/>
+  </g>
+  <g transform="translate(570 96)" opacity="0.85">
+    <rect x="0" y="0" width="140" height="140" rx="16" ry="16" fill="#0f172a" stroke="#f8fafc" stroke-width="2"/>
+    <circle cx="70" cy="70" r="52" fill="#f8fafc" opacity="0.12"/>
+    <circle cx="70" cy="70" r="36" fill="#f97316" opacity="0.85"/>
+    <path d="M70 34 L86 70 L70 106 L54 70 Z" fill="#111827"/>
+  </g>
+  <g transform="translate(40 140)" opacity="0.6">
+    <rect x="0" y="0" width="504" height="168" rx="18" ry="18" fill="#0f172a" stroke="#1f2937" stroke-width="2"/>
+    <text x="32" y="48" fill="#f8fafc" font-size="20" font-family="'Poppins', sans-serif">Performance Controls</text>
+    <text x="32" y="92" fill="#cbd5f5" font-size="14" font-family="'Poppins', sans-serif">Shape every phrase with envelopes, vibrato, and resonant coloration.</text>
+  </g>
+</svg>
