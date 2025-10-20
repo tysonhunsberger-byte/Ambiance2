@@ -337,7 +337,11 @@ class BlocksPanel(QFrame):
 class BlockWidget(QGroupBox):
     """UI wrapper for a BlockController."""
 
-    def __init__(self, controller: BlockController, panel: BlocksPanel):
+    def __init__(
+        self,
+        controller: BlockController,
+        panel: BlocksPanel | None = None,
+    ):
         super().__init__(f"Block {controller.index}")
         self.controller = controller
         self.panel = panel
@@ -459,6 +463,19 @@ class BlockWidget(QGroupBox):
                 self.setEnabled(True)
                 self.add_stream_btn.setEnabled(True)
                 self.remove_btn.setEnabled(True)
+
+    # ------------------------------------------------------------------
+    def _wire_mod_controls(self) -> None:
+        """Legacy no-op retained for backwards compatibility.
+
+        Older versions of the desktop shell used to poke the block widgets
+        directly to wire the per-stream effect controls. The modern widgets
+        handle that work internally (see :class:`StreamWidget`), but we keep
+        the attribute so that stale imports don't crash during startup.
+        """
+
+        # Nothing to do here – the method simply needs to exist.
+        return None
 
     # ------------------------------------------------------------------
     def _wire_mod_controls(self) -> None:
