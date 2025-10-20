@@ -411,12 +411,28 @@ class PluginChainWidget(QWidget):
         self.selected_slot_index = -1
         self._ui_threads: Dict[PluginChainSlot, threading.Thread] = {}
         self.host_window_id: Optional[int] = None
+        self.host_dock_check: Optional[QCheckBox] = None
+        self.host_editor_container: Optional["PluginEditorContainer"] = None
 
         self.init_ui()
         self._install_event_filter()
 
         # Create one default slot (multi-slot disabled for now)
         self.add_slot()
+
+    def set_host_controls(
+        self,
+        dock_check: Optional[QCheckBox],
+        editor_container: Optional["PluginEditorContainer"],
+    ) -> None:
+        """Share the host dock toggle and container owned by the main window."""
+
+        self.host_dock_check = dock_check
+        self.host_editor_container = editor_container
+
+    def _clear_host_container(self) -> None:
+        if self.host_editor_container:
+            self.host_editor_container.clear_container()
 
     def init_ui(self):
         layout = QVBoxLayout(self)
@@ -532,17 +548,20 @@ class PluginChainWidget(QWidget):
         if not slot.host:
             return
 
-        if self.host_dock_check.isChecked():
-            parent_id = int(self.host_editor_container.winId())
+        dock_check = self.host_dock_check
+        container = self.host_editor_container
+
+        if dock_check and container and dock_check.isChecked():
+            parent_id = int(container.winId())
             if handle and slot.host.embed_plugin_window(parent_id):
-                self.host_editor_container.embed_handle(handle)
+                container.embed_handle(handle)
                 return
 
             # Docking failed - fall back to floating window and inform the user.
-            self.host_editor_container.clear_container()
-            self.host_dock_check.blockSignals(True)
-            self.host_dock_check.setChecked(False)
-            self.host_dock_check.blockSignals(False)
+            container.clear_container()
+            dock_check.blockSignals(True)
+            dock_check.setChecked(False)
+            dock_check.blockSignals(False)
             QMessageBox.warning(
                 self,
                 "Plugin Dock",
@@ -551,7 +570,8 @@ class PluginChainWidget(QWidget):
 
         # Ensure the plugin UI floats and can be focused from the taskbar.
         slot.host.embed_plugin_window(None)
-        self.host_editor_container.clear_container()
+        if container:
+            container.clear_container()
         slot.host.ensure_plugin_window_taskbar()
         slot.host.focus_plugin_window()
 
@@ -559,7 +579,7 @@ class PluginChainWidget(QWidget):
         slot = self._current_slot()
         if not slot or not slot.host or not slot.ui_visible:
             if not checked:
-                self.host_editor_container.clear_container()
+                self._clear_host_container()
             return
 
         handle = slot.host.get_plugin_window_handle(attempts=20)
@@ -567,14 +587,15 @@ class PluginChainWidget(QWidget):
             self._activate_plugin_ui(slot, handle)
         else:
             slot.host.embed_plugin_window(None)
-            self.host_editor_container.clear_container()
+            self._clear_host_container()
             slot.host.ensure_plugin_window_taskbar()
             slot.host.focus_plugin_window()
 
     def _after_ui_shown(self, slot: PluginChainSlot) -> None:
         if slot not in self.slots or not slot.host:
             return
-        attempts = 30 if self.host_dock_check.isChecked() else 15
+        dock_check = self.host_dock_check
+        attempts = 30 if dock_check and dock_check.isChecked() else 15
         handle = slot.host.get_plugin_window_handle(attempts=attempts)
         self._activate_plugin_ui(slot, handle)
 
@@ -602,7 +623,7 @@ class PluginChainWidget(QWidget):
                 slot.host.unload()
                 slot.host.shutdown()
         slot.supports_midi = False
-        self.host_editor_container.clear_container()
+        self._clear_host_container()
 
         self.slots.pop(removed_index)
         self.chain_list.takeItem(removed_index)
@@ -698,7 +719,7 @@ class PluginChainWidget(QWidget):
         slot.plugin_path = None
         slot.supports_midi = False
         slot.ui_visible = False
-        self.host_editor_container.clear_container()
+        self._clear_host_container()
         self.update_slot_display(self.selected_slot_index)
         self.update_controls()
     
@@ -734,7 +755,7 @@ class PluginChainWidget(QWidget):
                         pass
                     slot.host.hide_ui()
                 slot.ui_visible = False
-                self.host_editor_container.clear_container()
+                self._clear_host_container()
                 self.update_controls()
             else:
                 # Call show_ui() without holding lock - it handles threading internally
@@ -1330,13 +1351,18 @@ class AmbianceQtImproved(QMainWindow):
         self.host_dock_check = QCheckBox("Dock plugin UI inside host panel")
         self.host_dock_check.setObjectName("HostDockToggle")
         self.host_dock_check.setChecked(False)
-        self.host_dock_check.toggled.connect(self.on_host_dock_toggled)
         dock_row.addWidget(self.host_dock_check)
         dock_row.addStretch()
         layout.addLayout(dock_row)
 
         self.host_editor_container = PluginEditorContainer()
         layout.addWidget(self.host_editor_container)
+
+        if hasattr(self, "chain_widget"):
+            self.chain_widget.set_host_controls(self.host_dock_check, self.host_editor_container)
+            self.host_dock_check.toggled.connect(self.chain_widget.on_host_dock_toggled)
+        else:
+            self.host_dock_check.toggled.connect(lambda _checked: None)
 
         return frame
 
