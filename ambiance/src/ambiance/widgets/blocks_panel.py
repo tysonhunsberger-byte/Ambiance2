@@ -140,86 +140,95 @@ class BlocksPanel(QFrame):
         self._block_widgets: Dict[BlockController, BlockWidget] = {}
         self.setObjectName("BlocksPanel")
 
+        self.setAutoFillBackground(True)
         self.setStyleSheet(
             """
-            #BlocksPanel {
-                background-color: #101010;
+            QFrame#BlocksPanel,
+            QFrame#BlocksPanel QWidget {
+                background-color: #0f0f11;
                 color: #f1f1f1;
             }
-            #BlocksPanel QLabel {
+            QFrame#BlocksPanel QLabel {
                 color: #f1f1f1;
             }
-            #BlocksPanel QPushButton {
+            QFrame#BlocksPanel QPushButton {
                 background-color: #232323;
                 color: #f1f1f1;
                 border: 1px solid #3a3a3a;
                 border-radius: 6px;
                 padding: 6px 12px;
             }
-            #BlocksPanel QPushButton:hover {
+            QFrame#BlocksPanel QPushButton:hover {
                 background-color: #2f2f2f;
             }
-            #BlocksPanel QPushButton:pressed {
+            QFrame#BlocksPanel QPushButton:pressed {
                 background-color: #3b3b3b;
             }
-            #BlocksPanel QGroupBox {
+            QGroupBox#BlockWidget {
                 border: 1px solid rgba(255, 255, 255, 0.12);
                 border-radius: 12px;
                 margin-top: 18px;
+                background-color: rgba(26, 26, 28, 0.96);
             }
-            #BlocksPanel QGroupBox::title {
+            QGroupBox#BlockWidget::title {
                 subcontrol-origin: margin;
                 subcontrol-position: top left;
                 padding: 0 8px;
                 color: #f1f1f1;
             }
-            #BlockWidget {
-                background-color: rgba(34, 34, 34, 0.92);
-            }
-            #BlockWidget QLabel {
+            QGroupBox#BlockWidget QLabel {
                 color: #f1f1f1;
             }
-            #StreamWidget {
-                background-color: rgba(28, 28, 28, 0.95);
+            QGroupBox#StreamWidget {
+                background-color: rgba(20, 20, 22, 0.96);
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                border-radius: 10px;
+                margin-top: 16px;
             }
-            #StreamWidget QLabel {
+            QGroupBox#StreamWidget::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                padding: 0 8px;
                 color: #f1f1f1;
             }
-            #StreamWidget QCheckBox,
-            #StreamWidget QComboBox,
-            #StreamWidget QDoubleSpinBox {
+            QGroupBox#StreamWidget QLabel {
                 color: #f1f1f1;
             }
-            #StreamWidget QComboBox,
-            #StreamWidget QDoubleSpinBox {
+            QGroupBox#StreamWidget QCheckBox,
+            QGroupBox#StreamWidget QComboBox,
+            QGroupBox#StreamWidget QDoubleSpinBox {
+                color: #f1f1f1;
+            }
+            QGroupBox#StreamWidget QComboBox,
+            QGroupBox#StreamWidget QDoubleSpinBox {
                 background-color: #1c1c1c;
                 border: 1px solid #3a3a3a;
                 border-radius: 4px;
                 padding: 2px 6px;
             }
-            #StreamWidget QToolButton {
+            QGroupBox#StreamWidget QToolButton {
                 background-color: #232323;
                 color: #f1f1f1;
                 border: 1px solid #3a3a3a;
                 border-radius: 6px;
                 padding: 4px 10px;
             }
-            #StreamWidget QToolButton:checked {
+            QGroupBox#StreamWidget QToolButton:checked {
                 background-color: #2d2d2d;
             }
-            #StreamWidget QSlider::groove:horizontal {
+            QGroupBox#StreamWidget QSlider::groove:horizontal {
                 height: 6px;
                 background: #2e2e2e;
                 border-radius: 3px;
             }
-            #StreamWidget QSlider::handle:horizontal {
+            QGroupBox#StreamWidget QSlider::handle:horizontal {
                 background: #4f6fe8;
                 border: 1px solid #6d8cff;
                 width: 14px;
                 margin: -4px 0;
                 border-radius: 7px;
             }
-            #StreamWidget QSlider::sub-page:horizontal {
+            QGroupBox#StreamWidget QSlider::sub-page:horizontal {
                 background: #4f6fe8;
                 border-radius: 3px;
             }
@@ -252,6 +261,7 @@ class BlocksPanel(QFrame):
         root_layout.addLayout(header)
 
         self.list_widget = QWidget()
+        self.list_widget.setObjectName("BlocksPanelList")
         self.list_layout = QVBoxLayout(self.list_widget)
         self.list_layout.setContentsMargins(0, 0, 0, 0)
         self.list_layout.setSpacing(16)
@@ -415,8 +425,7 @@ class BlockWidget(QGroupBox):
         self.volume_label.setText(f"{int(value * 100)}%")
 
     def _on_add_stream(self) -> None:
-        stream = self.controller.add_stream()
-        self._add_stream_widget(stream)
+        self.controller.add_stream()
 
     def _on_stream_added(self, stream: StreamController) -> None:
         if stream not in self.stream_widgets:
@@ -560,10 +569,6 @@ class StreamWidget(QGroupBox):
         self.mods_toggle.setChecked(True)
         self.mods_toggle.toggled.connect(self._on_mods_toggled)
         layout.addWidget(self.mods_toggle, 0, Qt.AlignLeft)
-
-        self.mods = StreamModsContainer()
-        layout.addWidget(self.mods)
-        self._wire_mod_controls()
 
         self.mods = StreamModsContainer()
         layout.addWidget(self.mods)

@@ -17,7 +17,7 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QListWidget, QListWidgetItem, QScrollArea,
     QSlider, QFrame, QMessageBox, QComboBox, QTabWidget, QCheckBox,
-    QPlainTextEdit, QToolButton
+    QPlainTextEdit, QToolButton, QSizePolicy
 )
 from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal, QObject, QEvent
 from PyQt5.QtGui import (
@@ -296,25 +296,19 @@ class CollapsibleSection(QFrame):
         self.setObjectName("CollapsibleSection")
 
         self.toggle_button = QToolButton()
+        self.toggle_button.setObjectName("SectionToggle")
         self.toggle_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.toggle_button.setArrowType(Qt.DownArrow)
         self.toggle_button.setText(title)
         self.toggle_button.setCheckable(True)
         self.toggle_button.setChecked(True)
         self.toggle_button.toggled.connect(self._on_toggled)
-        self.toggle_button.setStyleSheet("""
-            QToolButton {
-                border: none;
-                font-weight: 600;
-                padding: 6px 4px;
-                text-align: left;
-            }
-        """)
+        self.toggle_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
         self.content_area = QFrame()
         self.content_area.setObjectName("CollapsibleSectionContent")
         self.content_layout = QVBoxLayout(self.content_area)
-        self.content_layout.setContentsMargins(0, 0, 0, 0)
+        self.content_layout.setContentsMargins(12, 12, 12, 12)
         self.content_layout.setSpacing(0)
 
         wrapper_layout = QVBoxLayout(self)
@@ -334,6 +328,11 @@ class CollapsibleSection(QFrame):
             if item.widget():
                 item.widget().setParent(None)
         self.content_layout.addWidget(widget)
+
+    def set_expanded(self, expanded: bool) -> None:
+        """Programmatically expand or collapse the section."""
+
+        self.toggle_button.setChecked(bool(expanded))
 
 
 class PluginChainWidget(QWidget):
@@ -796,7 +795,10 @@ class AmbianceQtImproved(QMainWindow):
         self.body_layout.setSpacing(20)
         
         self.plugin_block = self.build_plugin_block()
-        self.body_layout.addWidget(self.plugin_block)
+        self.plugin_section = CollapsibleSection("Plugin Rack")
+        self.plugin_section.setContentWidget(self.plugin_block)
+        self.plugin_section.set_expanded(False)
+        self.body_layout.addWidget(self.plugin_section)
 
         if self.audio_engine is not None:
             self.blocks_panel = BlocksPanel(self.audio_engine)
@@ -1372,6 +1374,25 @@ class AmbianceQtImproved(QMainWindow):
                 border-radius: 16px;
                 border: 1px solid {panel_border};
                 box-shadow: 0px 26px 48px rgba(0, 0, 0, 0.30);
+            }}
+            QFrame#CollapsibleSection {{
+                background-color: transparent;
+                border: none;
+            }}
+            QToolButton#SectionToggle {{
+                border: none;
+                font-weight: 600;
+                padding: 6px 4px;
+                text-align: left;
+                color: {c['text']};
+            }}
+            QToolButton#SectionToggle:hover {{
+                color: {c['accent']};
+            }}
+            QFrame#CollapsibleSectionContent {{
+                background-color: {self.rgba(c['panel'], 0.9)};
+                border: 1px solid {panel_border};
+                border-radius: 14px;
             }}
             QLabel#RackTitle {{
                 font-size: 22px;
