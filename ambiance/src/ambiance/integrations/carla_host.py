@@ -870,6 +870,17 @@ class CarlaBackend:
             if parent_dir.exists():
                 self._binary_hints.add(parent_dir)
 
+            # Windows archives often contain an extra nested "Carla" folder that
+            # actually hosts the bridge executables (e.g.
+            # ``Carla/Carla-2.5.10-win32/Carla``).  If we only register the
+            # outer directory we miss those binaries, so automatically descend
+            # one level when the folder follows the release naming pattern.
+            name_lower = resolved.name.lower()
+            if name_lower.startswith("carla-") and name_lower != "carla":
+                nested = resolved / "Carla"
+                if nested.exists() and nested not in self._release_binary_dirs:
+                    register_release(nested)
+
         patterns = ("Carla*/Carla", "Carla-*/Carla")
         for root in list(search_roots):
             if not root:
