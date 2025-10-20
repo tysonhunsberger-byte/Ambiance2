@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from pathlib import Path
 from typing import Dict
 
@@ -23,6 +24,41 @@ from PyQt5.QtWidgets import (
 
 from ambiance.audio_engine import AudioEngine, BlockController, StreamController
 from .stream_mods import StreamModsContainer
+
+
+DEFAULT_THEME = {
+    "bg": "#10141d",
+    "panel": "#19202b",
+    "card": "#202835",
+    "text": "#f4f6fb",
+    "muted": "#aeb7c9",
+    "accent": "#4da3ff",
+    "border": "#2f3b4c",
+}
+
+
+def _hex_to_rgb(color: str) -> tuple[int, int, int]:
+    value = color.lstrip("#")
+    if len(value) == 3:
+        value = "".join(ch * 2 for ch in value)
+    r = int(value[0:2], 16)
+    g = int(value[2:4], 16)
+    b = int(value[4:6], 16)
+    return r, g, b
+
+
+def _blend(color_a: str, color_b: str, ratio: float) -> str:
+    ratio = max(0.0, min(1.0, ratio))
+    ar, ag, ab = _hex_to_rgb(color_a)
+    br, bg, bb = _hex_to_rgb(color_b)
+    r = int(ar * ratio + br * (1.0 - ratio))
+    g = int(ag * ratio + bg * (1.0 - ratio))
+    b = int(ab * ratio + bb * (1.0 - ratio))
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
+def _mix_with_white(color: str, amount: float) -> str:
+    return _blend("#ffffff", color, 1.0 - max(0.0, min(1.0, amount)))
 
 
 class _LegacySignalProxy:
@@ -141,102 +177,9 @@ class BlocksPanel(QFrame):
         self.setObjectName("BlocksPanel")
 
         self.setAutoFillBackground(True)
-        self.setStyleSheet(
-            """
-            QFrame#BlocksPanel,
-            QFrame#BlocksPanel QWidget {
-                background-color: #0f0f11;
-                color: #f1f1f1;
-            }
-            QFrame#BlocksPanel QLabel {
-                color: #f1f1f1;
-            }
-            QFrame#BlocksPanel QPushButton {
-                background-color: #232323;
-                color: #f1f1f1;
-                border: 1px solid #3a3a3a;
-                border-radius: 6px;
-                padding: 6px 12px;
-            }
-            QFrame#BlocksPanel QPushButton:hover {
-                background-color: #2f2f2f;
-            }
-            QFrame#BlocksPanel QPushButton:pressed {
-                background-color: #3b3b3b;
-            }
-            QGroupBox#BlockWidget {
-                border: 1px solid rgba(255, 255, 255, 0.12);
-                border-radius: 12px;
-                margin-top: 18px;
-                background-color: rgba(26, 26, 28, 0.96);
-            }
-            QGroupBox#BlockWidget::title {
-                subcontrol-origin: margin;
-                subcontrol-position: top left;
-                padding: 0 8px;
-                color: #f1f1f1;
-            }
-            QGroupBox#BlockWidget QLabel {
-                color: #f1f1f1;
-            }
-            QGroupBox#StreamWidget {
-                background-color: rgba(20, 20, 22, 0.96);
-                border: 1px solid rgba(255, 255, 255, 0.08);
-                border-radius: 10px;
-                margin-top: 16px;
-            }
-            QGroupBox#StreamWidget::title {
-                subcontrol-origin: margin;
-                subcontrol-position: top left;
-                padding: 0 8px;
-                color: #f1f1f1;
-            }
-            QGroupBox#StreamWidget QLabel {
-                color: #f1f1f1;
-            }
-            QGroupBox#StreamWidget QCheckBox {
-                color: #f1f1f1;
-            }
-            QGroupBox#StreamWidget QComboBox,
-            QGroupBox#StreamWidget QDoubleSpinBox {
-                color: #000000;
-                background-color: #f3f3f3;
-                border: 1px solid #4a4a4a;
-                border-radius: 4px;
-                padding: 2px 6px;
-            }
-            QGroupBox#StreamWidget QComboBox QAbstractItemView {
-                background-color: #ffffff;
-                color: #000000;
-            }
-            QGroupBox#StreamWidget QToolButton {
-                background-color: #f0f0f0;
-                color: #000000;
-                border: 1px solid #4a4a4a;
-                border-radius: 6px;
-                padding: 4px 10px;
-            }
-            QGroupBox#StreamWidget QToolButton:checked {
-                background-color: #d0d7e8;
-            }
-            QGroupBox#StreamWidget QSlider::groove:horizontal {
-                height: 6px;
-                background: #2e2e2e;
-                border-radius: 3px;
-            }
-            QGroupBox#StreamWidget QSlider::handle:horizontal {
-                background: #4f6fe8;
-                border: 1px solid #6d8cff;
-                width: 14px;
-                margin: -4px 0;
-                border-radius: 7px;
-            }
-            QGroupBox#StreamWidget QSlider::sub-page:horizontal {
-                background: #4f6fe8;
-                border-radius: 3px;
-            }
-        """
-        )
+        self._theme_colors = deepcopy(DEFAULT_THEME)
+        self._dark_mode = True
+        self.apply_theme(self._theme_colors, dark=self._dark_mode)
 
         # Legacy compatibility handles for the desktop shell which still
         # references panel-level seeker and label attributes.
@@ -273,6 +216,160 @@ class BlocksPanel(QFrame):
 
         engine.block_created.connect(self._on_block_created)
         engine.block_removed.connect(self._on_block_removed)
+
+    # ------------------------------------------------------------------
+    @property
+    def theme_colors(self) -> Dict[str, str]:
+        return self._theme_colors
+
+    @property
+    def dark_mode(self) -> bool:
+        return self._dark_mode
+
+    def apply_theme(self, colors: Dict[str, str], *, dark: bool = True) -> None:
+        self._theme_colors = deepcopy(colors)
+        self._dark_mode = dark
+
+        bg = colors.get("panel", DEFAULT_THEME["panel"])
+        card = colors.get("card", DEFAULT_THEME["card"])
+        text = colors.get("text", DEFAULT_THEME["text"])
+        accent = colors.get("accent", DEFAULT_THEME["accent"])
+        border = colors.get("border", DEFAULT_THEME["border"])
+        muted = colors.get("muted", DEFAULT_THEME["muted"])
+
+        panel_bg = _blend(card, bg, 0.55)
+        block_bg = _blend(card, bg, 0.7)
+        stream_bg = _blend(card, bg, 0.6)
+        button_bg = _blend(panel_bg, accent, 0.12)
+        button_hover = _blend(panel_bg, accent, 0.22)
+        button_pressed = _blend(panel_bg, accent, 0.35)
+        button_text = text
+        combo_bg = _mix_with_white(stream_bg, 0.82 if dark else 0.35)
+        combo_border = _blend(border, accent, 0.35)
+        slider_track = _blend(bg, card, 0.45)
+        slider_handle = _blend(accent, "#ffffff", 0.45)
+        slider_fill = accent
+        secondary_text = _blend(text, muted, 0.6)
+
+        stylesheet = f"""
+            QFrame#BlocksPanel {{
+                background-color: {panel_bg};
+                color: {text};
+                border-radius: 12px;
+            }}
+            QFrame#BlocksPanel QLabel {{
+                color: {text};
+            }}
+            QFrame#BlocksPanel QLabel#BlocksTitle {{
+                color: {text};
+            }}
+            QFrame#BlocksPanel QPushButton {{
+                background-color: {button_bg};
+                color: {button_text};
+                border: 1px solid {border};
+                border-radius: 8px;
+                padding: 6px 14px;
+            }}
+            QFrame#BlocksPanel QPushButton:hover {{
+                background-color: {button_hover};
+            }}
+            QFrame#BlocksPanel QPushButton:pressed {{
+                background-color: {button_pressed};
+            }}
+            QFrame#BlocksPanel QPushButton:disabled {{
+                color: {secondary_text};
+                border-color: {_blend(border, panel_bg, 0.65)};
+                background-color: {_blend(panel_bg, card, 0.75)};
+            }}
+            QGroupBox#BlockWidget {{
+                border: 1px solid {_blend(border, card, 0.65)};
+                border-radius: 14px;
+                margin-top: 18px;
+                background-color: {block_bg};
+            }}
+            QGroupBox#BlockWidget::title {{
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                padding: 0 10px;
+                color: {text};
+                font-weight: 600;
+            }}
+            QGroupBox#BlockWidget QLabel {{
+                color: {text};
+            }}
+            QGroupBox#StreamWidget {{
+                background-color: {stream_bg};
+                border: 1px solid {_blend(border, card, 0.55)};
+                border-radius: 12px;
+                margin-top: 18px;
+            }}
+            QGroupBox#StreamWidget::title {{
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                padding: 0 10px;
+                color: {text};
+                font-weight: 600;
+            }}
+            QGroupBox#StreamWidget QLabel {{
+                color: {text};
+            }}
+            QGroupBox#StreamWidget QLabel#StreamSecondary {{
+                color: {secondary_text};
+            }}
+            QGroupBox#StreamWidget QCheckBox {{
+                color: {text};
+            }}
+            QGroupBox#StreamWidget QComboBox,
+            QGroupBox#StreamWidget QDoubleSpinBox {{
+                color: #000000;
+                background-color: {combo_bg};
+                border: 1px solid {combo_border};
+                border-radius: 6px;
+                padding: 2px 8px;
+            }}
+            QGroupBox#StreamWidget QComboBox::drop-down {{
+                width: 22px;
+            }}
+            QGroupBox#StreamWidget QComboBox QAbstractItemView {{
+                background-color: {_mix_with_white(combo_bg, 0.35)};
+                color: #000000;
+            }}
+            QGroupBox#StreamWidget QToolButton#ModsToggle {{
+                background-color: {button_bg};
+                color: {button_text};
+                border: 1px solid {border};
+                border-radius: 8px;
+                padding: 6px 12px;
+                font-weight: 600;
+            }}
+            QGroupBox#StreamWidget QToolButton#ModsToggle:hover {{
+                background-color: {button_hover};
+            }}
+            QGroupBox#StreamWidget QToolButton#ModsToggle:checked {{
+                background-color: {_blend(button_hover, accent, 0.35)};
+            }}
+            QGroupBox#StreamWidget QSlider::groove:horizontal {{
+                height: 6px;
+                background: {slider_track};
+                border-radius: 3px;
+            }}
+            QGroupBox#StreamWidget QSlider::handle:horizontal {{
+                background: {slider_handle};
+                border: 1px solid {_blend(accent, '#000000', 0.55)};
+                width: 16px;
+                margin: -5px 0;
+                border-radius: 8px;
+            }}
+            QGroupBox#StreamWidget QSlider::sub-page:horizontal {{
+                background: {slider_fill};
+                border-radius: 3px;
+            }}
+        """
+
+        self.setStyleSheet(stylesheet)
+
+        for widget in self._block_widgets.values():
+            widget.apply_theme(self._theme_colors, dark=self._dark_mode)
 
     # ------------------------------------------------------------------
     def _ordered_block_widgets(self) -> list["BlockWidget"]:
@@ -320,6 +417,7 @@ class BlocksPanel(QFrame):
     def _on_block_created(self, block: BlockController) -> None:
         widget = BlockWidget(block, panel=self)
         self._block_widgets[block] = widget
+        widget.apply_theme(self._theme_colors, dark=self._dark_mode)
         insert_index = max(0, self.list_layout.count() - 1)
         self.list_layout.insertWidget(insert_index, widget)
         self._refresh_legacy_seekers()
@@ -346,6 +444,8 @@ class BlockWidget(QGroupBox):
         self.controller = controller
         self.panel = panel
         self.stream_widgets: Dict[StreamController, StreamWidget] = {}
+        self._theme_colors = deepcopy(panel.theme_colors)
+        self._dark_mode = panel.dark_mode
 
         self.setObjectName("BlockWidget")
         layout = QVBoxLayout(self)
@@ -394,6 +494,13 @@ class BlockWidget(QGroupBox):
             self._add_stream_widget(stream)
 
     # ------------------------------------------------------------------
+    def apply_theme(self, colors: Dict[str, str], *, dark: bool = True) -> None:
+        self._theme_colors = deepcopy(colors)
+        self._dark_mode = dark
+        for widget in self.stream_widgets.values():
+            widget.apply_theme(self._theme_colors, dark=dark)
+
+    # ------------------------------------------------------------------
     @property
     def ordered_stream_widgets(self) -> list["StreamWidget"]:
         return [
@@ -405,6 +512,7 @@ class BlockWidget(QGroupBox):
         widget = StreamWidget(stream)
         self.stream_widgets[stream] = widget
         self.stream_container.addWidget(widget)
+        widget.apply_theme(self._theme_colors, dark=self._dark_mode)
         self.panel._on_stream_widget_added(widget)
 
     # ------------------------------------------------------------------
@@ -487,6 +595,8 @@ class StreamWidget(QGroupBox):
         self.setObjectName("StreamWidget")
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.setMinimumHeight(260)
+        self._theme_colors = deepcopy(DEFAULT_THEME)
+        self._dark_mode = True
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(18, 18, 18, 18)
@@ -497,11 +607,13 @@ class StreamWidget(QGroupBox):
         self.file_a_btn = QPushButton("Load A")
         self.file_a_btn.clicked.connect(lambda: self._pick_file("A"))
         self.file_a_label = QLabel("None")
+        self.file_a_label.setObjectName("StreamSecondary")
         self.file_a_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
 
         self.file_b_btn = QPushButton("Load B")
         self.file_b_btn.clicked.connect(lambda: self._pick_file("B"))
         self.file_b_label = QLabel("None")
+        self.file_b_label.setObjectName("StreamSecondary")
         self.file_b_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
 
         file_row.addWidget(self.file_a_btn)
@@ -519,6 +631,7 @@ class StreamWidget(QGroupBox):
         self.progress_a_slider.sliderReleased.connect(lambda: self._commit_seek("A"))
         self.progress_a_slider.sliderMoved.connect(lambda value: self._preview_seek("A", value))
         self.progress_a_time = QLabel("0:00 / 0:00")
+        self.progress_a_time.setObjectName("StreamSecondary")
 
         self.progress_b_slider = self._make_slider(0, 1, 0)
         self.progress_b_slider.setEnabled(False)
@@ -526,6 +639,7 @@ class StreamWidget(QGroupBox):
         self.progress_b_slider.sliderReleased.connect(lambda: self._commit_seek("B"))
         self.progress_b_slider.sliderMoved.connect(lambda value: self._preview_seek("B", value))
         self.progress_b_time = QLabel("0:00 / 0:00")
+        self.progress_b_time.setObjectName("StreamSecondary")
 
         # Legacy attribute names expected by parts of the desktop shell.
         self.seekerA = self.progress_a_slider
@@ -580,6 +694,7 @@ class StreamWidget(QGroupBox):
         self._mods_user_collapse = False
 
         self.mods_toggle = QToolButton()
+        self.mods_toggle.setObjectName("ModsToggle")
         self.mods_toggle.setText("Effects Rack")
         self.mods_toggle.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.mods_toggle.setArrowType(Qt.DownArrow)
@@ -589,6 +704,7 @@ class StreamWidget(QGroupBox):
         layout.addWidget(self.mods_toggle, 0, Qt.AlignLeft)
 
         self.mods = StreamModsContainer()
+        self.mods.apply_theme(self._theme_colors, dark=self._dark_mode)
         layout.addWidget(self.mods)
 
         self.mods_toggle.blockSignals(True)
@@ -606,6 +722,11 @@ class StreamWidget(QGroupBox):
         self.position_timer.setInterval(200)
         self.position_timer.timeout.connect(self._refresh_positions)
         self.position_timer.start()
+
+    def apply_theme(self, colors: Dict[str, str], *, dark: bool = True) -> None:
+        self._theme_colors = deepcopy(colors)
+        self._dark_mode = dark
+        self.mods.apply_theme(colors, dark=dark)
 
     def _wire_mod_controls(self) -> None:
         mods = self.mods

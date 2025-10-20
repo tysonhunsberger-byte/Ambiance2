@@ -807,6 +807,7 @@ class AmbianceQtImproved(QMainWindow):
 
         if self.audio_engine is not None:
             self.blocks_panel = BlocksPanel(self.audio_engine)
+            self.blocks_panel.apply_theme(self.colors, dark=self.dark_mode)
             created_block = self.blocks_panel.create_block()
             if created_block is not None:
                 self.append_log("Blocks engine ready - Block 1 created.")
@@ -1230,6 +1231,9 @@ class AmbianceQtImproved(QMainWindow):
 
         self.update_theme_palette()
         self.apply_global_styles()
+
+        if getattr(self, "blocks_panel", None):
+            self.blocks_panel.apply_theme(self.colors, dark=self.dark_mode)
 
         if log_change and hasattr(self, "rack_output"):
             label = self.theme_combo.currentText() if hasattr(self, "theme_combo") else theme_key

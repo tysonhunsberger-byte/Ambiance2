@@ -14,144 +14,94 @@ from PyQt5.QtWidgets import (
     QLabel,
     QPushButton,
     QSlider,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
+DEFAULT_THEME = {
+    "bg": "#10141d",
+    "panel": "#19202b",
+    "card": "#202835",
+    "text": "#f4f6fb",
+    "muted": "#aeb7c9",
+    "accent": "#4da3ff",
+    "border": "#2f3b4c",
+}
+
+
+def _hex_to_rgb(color: str) -> tuple[int, int, int]:
+    value = color.lstrip("#")
+    if len(value) == 3:
+        value = "".join(ch * 2 for ch in value)
+    r = int(value[0:2], 16)
+    g = int(value[2:4], 16)
+    b = int(value[4:6], 16)
+    return r, g, b
+
+
+def _blend(color_a: str, color_b: str, ratio: float) -> str:
+    ratio = max(0.0, min(1.0, ratio))
+    ar, ag, ab = _hex_to_rgb(color_a)
+    br, bg, bb = _hex_to_rgb(color_b)
+    r = int(ar * ratio + br * (1.0 - ratio))
+    g = int(ag * ratio + bg * (1.0 - ratio))
+    b = int(ab * ratio + bb * (1.0 - ratio))
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
+def _mix_with_white(color: str, amount: float) -> str:
+    return _blend("#ffffff", color, 1.0 - max(0.0, min(1.0, amount)))
+
 
 class CollapsibleMod(QWidget):
-    """Collapsible module with header and body."""
+    """Collapsible module with a themed toggle header."""
 
     toggled = pyqtSignal(bool)
 
     def __init__(self, title: str, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
-        self.title = title
-        self.is_open = False
+        self.setObjectName("CollapsibleMod")
 
         self.layout = QVBoxLayout(self)
         self.layout.setContentsMargins(0, 0, 0, 0)
-        self.layout.setSpacing(0)
+        self.layout.setSpacing(6)
 
-        # Header (clickable)
-        self.header = QFrame()
-        self.header.setObjectName("ModHeader")
-        header_layout = QHBoxLayout(self.header)
-        header_layout.setContentsMargins(10, 6, 10, 6)
+        self.toggle_button = QToolButton()
+        self.toggle_button.setObjectName("ModToggle")
+        self.toggle_button.setText(title)
+        self.toggle_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.toggle_button.setArrowType(Qt.RightArrow)
+        self.toggle_button.setCheckable(True)
+        self.toggle_button.setChecked(False)
+        self.toggle_button.toggled.connect(self._on_toggled)
+        self.layout.addWidget(self.toggle_button)
 
-        self.title_label = QLabel(title)
-        self.title_label.setObjectName("ModTitle")
-        header_layout.addWidget(self.title_label)
-        header_layout.addStretch()
-
-        self.caret = QLabel("▼")
-        self.caret.setObjectName("ModCaret")
-        header_layout.addWidget(self.caret)
-
-        self.header.mousePressEvent = lambda event: self.toggle()
-        self.header.setCursor(Qt.PointingHandCursor)
-        self.layout.addWidget(self.header)
-
-        # Body (collapsible)
         self.body = QFrame()
         self.body.setObjectName("ModBody")
         self.body_layout = QVBoxLayout(self.body)
-        self.body_layout.setContentsMargins(12, 10, 12, 12)
+        self.body_layout.setContentsMargins(14, 12, 14, 14)
         self.body_layout.setSpacing(8)
-        self.body.hide()
+        self.body.setVisible(False)
         self.layout.addWidget(self.body)
 
-        self.apply_styles()
+    # ------------------------------------------------------------------
+    def _on_toggled(self, checked: bool) -> None:
+        self.body.setVisible(checked)
+        self.toggle_button.setArrowType(Qt.DownArrow if checked else Qt.RightArrow)
+        self.toggled.emit(checked)
 
-    def toggle(self) -> None:
-        """Toggle open/closed state."""
-
-        self.is_open = not self.is_open
-        self.body.setVisible(self.is_open)
-        self.caret.setText("▲" if self.is_open else "▼")
-        self.toggled.emit(self.is_open)
+    def set_expanded(self, expanded: bool) -> None:
+        self.toggle_button.blockSignals(True)
+        self.toggle_button.setChecked(expanded)
+        self.toggle_button.blockSignals(False)
+        self._on_toggled(expanded)
 
     def add_widget(self, widget: QWidget) -> None:
-        """Add widget to the body."""
-
         self.body_layout.addWidget(widget)
 
     def add_layout(self, layout: QHBoxLayout | QVBoxLayout) -> None:
-        """Add layout to the body."""
-
         self.body_layout.addLayout(layout)
-
-    def apply_styles(self) -> None:
-        """Apply dark theme styles."""
-
-        self.setStyleSheet(
-            """
-            QFrame#ModHeader {
-                background-color: #2d2d2d;
-                border: 1px solid #4a4a4a;
-                border-radius: 6px 6px 0 0;
-            }
-            QFrame#ModHeader:hover {
-                background-color: #383838;
-            }
-            QLabel#ModTitle, QLabel#ModCaret {
-                font-weight: 700;
-                color: #f5f5f5;
-            }
-            QFrame#ModBody {
-                background-color: #1b1b1b;
-                border: 1px solid #4a4a4a;
-                border-top: none;
-                border-radius: 0 0 6px 6px;
-            }
-            QFrame#ModBody QLabel,
-            QFrame#ModBody QCheckBox,
-            QFrame#ModBody QRadioButton {
-                color: #e8e8e8;
-            }
-            QFrame#ModBody QPushButton {
-                background-color: #2d2d2d;
-                color: #f5f5f5;
-                border: 1px solid #4c4c4c;
-                border-radius: 4px;
-                padding: 4px 8px;
-            }
-            QFrame#ModBody QPushButton:checked {
-                background-color: #3f63b8;
-                border-color: #5b7fe2;
-            }
-            QFrame#ModBody QComboBox,
-            QFrame#ModBody QDoubleSpinBox,
-            QFrame#ModBody QSpinBox {
-                background-color: #f3f3f3;
-                border: 1px solid #4c4c4c;
-                border-radius: 4px;
-                color: #000000;
-                padding: 2px 6px;
-            }
-            QFrame#ModBody QComboBox QAbstractItemView {
-                background-color: #ffffff;
-                color: #000000;
-                selection-background-color: #3f63b8;
-            }
-            QFrame#ModBody QSlider::groove:horizontal {
-                height: 6px;
-                background: #303030;
-                border-radius: 3px;
-            }
-            QFrame#ModBody QSlider::handle:horizontal {
-                background: #5b7fe2;
-                border: 1px solid #7c95f0;
-                width: 14px;
-                margin: -4px 0;
-                border-radius: 7px;
-            }
-            QFrame#ModBody QSlider::sub-page:horizontal {
-                background: #3f63b8;
-                border-radius: 3px;
-            }
-        """
-        )
 
 
 class TimePitchMod(CollapsibleMod):
@@ -173,6 +123,7 @@ class TimePitchMod(CollapsibleMod):
         self.loop = False
 
         self._build_ui()
+        self.set_expanded(True)
 
     def _build_ui(self) -> None:
         tempo_row = QHBoxLayout()
@@ -308,6 +259,8 @@ class MuffleMod(CollapsibleMod):
 
     def _on_toggled(self, checked: bool) -> None:
         self.toggle_btn.setText(f"Muffle: {'ON' if checked else 'OFF'}")
+        if checked:
+            self.set_expanded(True)
         self.enabled_changed.emit(checked)
 
     def _on_amount_changed(self, value: int) -> None:
@@ -408,6 +361,8 @@ class ToneMod(CollapsibleMod):
 
     def _on_toggle(self, checked: bool) -> None:
         self._update_toggle_text(checked)
+        if checked:
+            self.set_expanded(True)
         self.enabled_changed.emit(checked)
 
     def _on_preset_changed(self, preset: str) -> None:
@@ -520,6 +475,8 @@ class NoiseMod(CollapsibleMod):
 
     def _on_toggle(self, checked: bool) -> None:
         self._update_toggle_text(checked)
+        if checked:
+            self.set_expanded(True)
         self.enabled_changed.emit(checked)
 
     def _update_toggle_text(self, checked: bool) -> None:
@@ -801,6 +758,7 @@ class StreamModsContainer(QWidget):
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
+        self.setObjectName("StreamModsContainer")
         self.layout = QVBoxLayout(self)
         self.layout.setContentsMargins(0, 0, 0, 0)
         self.layout.setSpacing(10)
@@ -813,7 +771,7 @@ class StreamModsContainer(QWidget):
         self.fx = FXMod()
         self.space = SpaceMod()
 
-        for mod in (
+        self._mods = [
             self.time_pitch,
             self.muffle,
             self.tone,
@@ -821,11 +779,116 @@ class StreamModsContainer(QWidget):
             self.eq,
             self.fx,
             self.space,
-        ):
+        ]
+
+        for mod in self._mods:
             self.layout.addWidget(mod)
 
         self.layout.addStretch()
-        self.setStyleSheet("QWidget { background-color: transparent; }")
+
+        self._theme_colors = dict(DEFAULT_THEME)
+        self._dark_mode = True
+        self.apply_theme(self._theme_colors, dark=self._dark_mode)
+
+    def apply_theme(self, colors: Dict[str, str], *, dark: bool = True) -> None:
+        self._theme_colors = dict(colors)
+        self._dark_mode = dark
+
+        panel = colors.get("panel", DEFAULT_THEME["panel"])
+        card = colors.get("card", DEFAULT_THEME["card"])
+        text = colors.get("text", DEFAULT_THEME["text"])
+        accent = colors.get("accent", DEFAULT_THEME["accent"])
+        border = colors.get("border", DEFAULT_THEME["border"])
+        header_bg = _blend(card, panel, 0.65)
+        header_hover = _blend(accent, header_bg, 0.25)
+        header_checked = _blend(header_hover, accent, 0.35)
+        header_text = text if dark else "#101010"
+        body_bg = _blend(card, panel, 0.55)
+        body_border = _blend(border, body_bg, 0.7)
+        button_bg = _blend(body_bg, accent, 0.12)
+        button_hover = _blend(body_bg, accent, 0.28)
+        button_checked = _blend(accent, body_bg, 0.6)
+        button_checked_text = text if dark else "#000000"
+        combo_bg = _mix_with_white(body_bg, 0.78 if dark else 0.35)
+        combo_border = _blend(border, accent, 0.35)
+        slider_track = _blend(panel, card, 0.45)
+        slider_handle = _blend(accent, "#ffffff", 0.4)
+        slider_fill = accent
+        style = f"""
+            QWidget#StreamModsContainer {{
+                background-color: transparent;
+            }}
+            QWidget#StreamModsContainer QToolButton#ModToggle {{
+                background-color: {header_bg};
+                border: 1px solid {_blend(border, header_bg, 0.65)};
+                border-radius: 10px;
+                padding: 6px 12px;
+                font-weight: 600;
+                color: {header_text};
+                text-align: left;
+            }}
+            QWidget#StreamModsContainer QToolButton#ModToggle:hover {{
+                background-color: {header_hover};
+            }}
+            QWidget#StreamModsContainer QToolButton#ModToggle:checked {{
+                background-color: {header_checked};
+                color: {header_text};
+            }}
+            QWidget#StreamModsContainer QFrame#ModBody {{
+                background-color: {body_bg};
+                border: 1px solid {body_border};
+                border-radius: 12px;
+            }}
+            QWidget#StreamModsContainer QFrame#ModBody QLabel,
+            QWidget#StreamModsContainer QFrame#ModBody QCheckBox {{
+                color: {text};
+            }}
+            QWidget#StreamModsContainer QFrame#ModBody QPushButton {{
+                background-color: {button_bg};
+                color: {text};
+                border: 1px solid {_blend(border, button_bg, 0.6)};
+                border-radius: 8px;
+                padding: 4px 10px;
+            }}
+            QWidget#StreamModsContainer QFrame#ModBody QPushButton:hover {{
+                background-color: {button_hover};
+            }}
+            QWidget#StreamModsContainer QFrame#ModBody QPushButton:checked {{
+                background-color: {button_checked};
+                color: {button_checked_text};
+                border-color: {_blend(accent, button_bg, 0.4)};
+            }}
+            QWidget#StreamModsContainer QFrame#ModBody QComboBox,
+            QWidget#StreamModsContainer QFrame#ModBody QDoubleSpinBox {{
+                background-color: {combo_bg};
+                color: #000000;
+                border: 1px solid {combo_border};
+                border-radius: 6px;
+                padding: 2px 8px;
+            }}
+            QWidget#StreamModsContainer QFrame#ModBody QComboBox QAbstractItemView {{
+                background-color: {_mix_with_white(combo_bg, 0.35)};
+                color: #000000;
+            }}
+            QWidget#StreamModsContainer QFrame#ModBody QSlider::groove:horizontal {{
+                height: 6px;
+                background: {slider_track};
+                border-radius: 3px;
+            }}
+            QWidget#StreamModsContainer QFrame#ModBody QSlider::handle:horizontal {{
+                background: {slider_handle};
+                border: 1px solid {_blend(accent, '#000000', 0.55)};
+                width: 16px;
+                margin: -5px 0;
+                border-radius: 8px;
+            }}
+            QWidget#StreamModsContainer QFrame#ModBody QSlider::sub-page:horizontal {{
+                background: {slider_fill};
+                border-radius: 3px;
+            }}
+        """
+
+        self.setStyleSheet(style)
 
     def get_state(self) -> StreamModState:
         return StreamModState(
@@ -873,13 +936,28 @@ class StreamModsContainer(QWidget):
             self.time_pitch.set_state(dict(state["time_pitch"]))
         if "muffle" in state:
             self.muffle.set_state(dict(state["muffle"]))
+            if bool(state["muffle"].get("enabled")):
+                self.muffle.set_expanded(True)
         if "tone" in state:
             self.tone.set_state(dict(state["tone"]))
+            if bool(state["tone"].get("enabled")) and float(state["tone"].get("level", 0.0)) > 0.0:
+                self.tone.set_expanded(True)
         if "noise" in state:
             self.noise.set_state(dict(state["noise"]))
+            if bool(state["noise"].get("enabled")) and float(state["noise"].get("level", 0.0)) > 0.0:
+                self.noise.set_expanded(True)
         if "eq" in state:
-            self.eq.set_state(dict(state["eq"]))
+            eq_state = dict(state["eq"])
+            self.eq.set_state(eq_state)
+            if any(abs(float(eq_state.get(key, 0.0))) > 1e-3 for key in ("low", "mid", "high")):
+                self.eq.set_expanded(True)
         if "fx" in state:
             self.fx.set_state(dict(state["fx"]))
+            fx_state = dict(state["fx"])
+            if any(float(fx_state.get(key, 0.0)) > 0.0 for key in ("mix", "delay", "feedback", "dist")):
+                self.fx.set_expanded(True)
         if "space" in state:
             self.space.set_state(dict(state["space"]))
+            space_state = dict(state["space"])
+            if (space_state.get("preset") not in (None, "none")) or float(space_state.get("mix", 0.0)) > 0.0:
+                self.space.set_expanded(True)
