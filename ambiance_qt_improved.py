@@ -303,6 +303,9 @@ class PluginEditorContainer(QFrame):
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.setObjectName("PluginEditorContainer")
+        self.setAttribute(Qt.WA_NoSystemBackground, True)
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setAutoFillBackground(False)
         self._window_container: Optional[QWidget] = None
         self._window: Optional[QWindow] = None
         self._base_minimum_height = 320
@@ -395,6 +398,12 @@ class PluginEditorContainer(QFrame):
         if self._window is None:
             return
         self._apply_window_size(self._window.size())
+
+    def paintEvent(self, event: QPaintEvent) -> None:  # type: ignore[override]
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing, False)
+        painter.fillRect(event.rect(), self.palette().color(QPalette.Window))
+        super().paintEvent(event)
 
 
 class CollapsibleSection(QFrame):
@@ -955,6 +964,7 @@ class AmbianceQtImproved(QMainWindow):
 
         self.strudel_available = QWebEngineView is not None
         self.strudel_loaded = False
+        self._strudel_signals_connected = False
         self.body_stack: Optional[QStackedWidget] = None
         self.strudel_container: Optional[QWidget] = None
         self.strudel_view: Optional["QWebEngineView"] = None
@@ -1157,6 +1167,15 @@ class AmbianceQtImproved(QMainWindow):
             return
         if not self.strudel_view:
             return
+        if not self._strudel_signals_connected:
+            try:
+                self.strudel_view.loadStarted.connect(self.on_strudel_load_started)  # type: ignore[attr-defined]
+                self.strudel_view.loadProgress.connect(self.on_strudel_load_progress)  # type: ignore[attr-defined]
+                self.strudel_view.loadFinished.connect(self.on_strudel_load_finished)  # type: ignore[attr-defined]
+            except Exception:
+                pass
+            else:
+                self._strudel_signals_connected = True
         try:
             self.strudel_view.setUrl(QUrl(STRUDEL_WEB_URL))
             self.statusBar().showMessage("Strudel Mode active – loading web playground…")
@@ -1164,6 +1183,50 @@ class AmbianceQtImproved(QMainWindow):
             self.append_log(f"Failed to load Strudel playground: {exc}")
             return
         self.strudel_loaded = True
+
+    def on_strudel_load_started(self) -> None:
+        try:
+            self.statusBar().showMessage("Strudel Mode – contacting playground…")
+        except Exception:
+            pass
+
+    def on_strudel_load_progress(self, progress: int) -> None:
+        try:
+            self.statusBar().showMessage(f"Strudel Mode loading… {progress}%")
+        except Exception:
+            pass
+
+    def on_strudel_load_finished(self, ok: bool) -> None:
+        if ok:
+            try:
+                self.statusBar().showMessage("Strudel Mode active – ready to jam.")
+            except Exception:
+                pass
+            return
+
+        self.strudel_loaded = False
+        self.append_log("Strudel playground failed to load. Check your internet connection or firewall settings.")
+        try:
+            self.statusBar().showMessage("Strudel Mode unavailable – check your internet connection.")
+        except Exception:
+            pass
+        if self.strudel_view:
+            bg = self.colors.get('bg', '#111')
+            text = self.colors.get('text', '#f0f0f0')
+            accent = self.colors.get('accent', '#59a7ff')
+            html = f"""
+            <html><body style='background:{bg};color:{text};font-family:"Segoe UI",sans-serif;display:flex;align-items:center;justify-content:center;height:100%;text-align:center;padding:32px;'>
+                <div>
+                    <h2 style='margin-bottom:12px;'>Unable to reach the Strudel playground</h2>
+                    <p>Check your internet connection or firewall, then toggle Strudel Mode again.</p>
+                    <p style='margin-top:16px;color:{accent};'>https://strudel.tidalcycles.org/</p>
+                </div>
+            </body></html>
+            """
+            try:
+                self.strudel_view.setHtml(html)  # type: ignore[attr-defined]
+            except Exception:
+                pass
 
     def on_strudel_mode_toggled(self, checked: bool) -> None:
         if not self.strudel_mode_btn:
@@ -1715,13 +1778,14 @@ class AmbianceQtImproved(QMainWindow):
                     border: none;
                 }
                 QWidget#StrudelContainer {
-                    background-color: $panel_opaque;
+                    background-color: $card;
                     border: 1px solid $panel_border;
                     border-radius: 16px;
                 }
                 QWebEngineView#StrudelView {
-                    background-color: $bg;
+                    background: transparent;
                     border: none;
+                    border-radius: 14px;
                 }
                 QLabel#StrudelFallback {
                     color: $text;

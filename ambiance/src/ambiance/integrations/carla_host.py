@@ -346,6 +346,7 @@ class CarlaBackend:
         default_base = Path(__file__).resolve().parents[3]
         self.base_dir = Path(base_dir) if base_dir else default_base
         self._binary_hints: set[Path] = set()
+        self._release_binary_dirs: set[Path] = set()
         self._client_name = client_name or "AmbianceCarlaHost"
         self.root = self._discover_root()
         self.library_path: Path | None = None
@@ -398,11 +399,21 @@ class CarlaBackend:
             )
             return
 
+        self._harvest_release_directories()
+
         try:
             self.library_path = self._locate_library(self.root)
-            self._prepare_environment(self.library_path)
         except FileNotFoundError as exc:
-            self.warnings.append(str(exc))
+            fallback_library = self._locate_release_library()
+            if fallback_library is None:
+                self.warnings.append(str(exc))
+                return
+            self.library_path = fallback_library
+
+        try:
+            self._prepare_environment(self.library_path)
+        except Exception as exc:
+            self.warnings.append(f"Failed to prepare Carla environment: {exc}")
             return
 
         try:
@@ -624,7 +635,13 @@ class CarlaBackend:
         if self.library_path:
             for parent in self.library_path.parents[:3]:  # Up to 3 levels
                 candidates.add(parent)
-        
+
+        for release_dir in self._release_binary_dirs:
+            candidates.add(release_dir)
+            candidates.add(release_dir.parent)
+            candidates.add(release_dir / "resources")
+            candidates.add(release_dir / "resources" / "windows")
+
         return {path for path in candidates if path.exists()}
 
     def _load_backend_module(self, root: Path) -> ModuleType:
@@ -788,7 +805,18 @@ class CarlaBackend:
                     sub_path = ancestor / subdir
                     if sub_path.exists() and sub_path not in candidates:
                         candidates.append(sub_path)
-        
+
+        for release_dir in sorted(self._release_binary_dirs):
+            try:
+                resolved = release_dir.resolve(strict=False)
+            except OSError:
+                resolved = release_dir
+            if resolved.exists() and resolved not in candidates:
+                candidates.append(resolved)
+            parent = resolved.parent
+            if parent.exists() and parent not in candidates:
+                candidates.append(parent)
+
         return candidates
 
     def _candidate_resource_dirs(self) -> list[Path]:
@@ -805,7 +833,74 @@ class CarlaBackend:
                     continue
                 if path.exists() and path not in candidates:
                     candidates.append(path)
+        for release_dir in sorted(self._release_binary_dirs):
+            for relative in ("resources", "resources/windows"):
+                try:
+                    path = (release_dir / relative).resolve(strict=False)
+                except OSError:
+                    continue
+                if path.exists() and path not in candidates:
+                    candidates.append(path)
         return candidates
+
+    def _harvest_release_directories(self) -> None:
+        """Record bundled Carla binary releases for bridge discovery."""
+
+        search_roots: set[Path] = {self.base_dir}
+        parent = self.base_dir.parent
+        if parent != self.base_dir:
+            search_roots.add(parent)
+        if self.root:
+            search_roots.add(self.root)
+            root_parent = self.root.parent
+            if root_parent != self.root:
+                search_roots.add(root_parent)
+
+        patterns = ("Carla*/Carla", "Carla-*/Carla")
+        for root in list(search_roots):
+            if not root:
+                continue
+            try:
+                glob = root.glob
+            except AttributeError:
+                continue
+            try:
+                for pattern in patterns:
+                    for directory in glob(pattern):
+                        try:
+                            resolved = directory.resolve(strict=False)
+                        except OSError:
+                            resolved = directory
+                        if not resolved.exists():
+                            continue
+                        self._release_binary_dirs.add(resolved)
+                        self._binary_hints.add(resolved)
+                        parent_dir = resolved.parent
+                        if parent_dir.exists():
+                            self._binary_hints.add(parent_dir)
+            except OSError:
+                continue
+
+        # Some packaged builds place bridge executables in a nested bin directory.
+        for release_dir in list(self._release_binary_dirs):
+            for bridge_name in ("carla-bridge-win32.exe", "carla-bridge-win64.exe", "carla-bridge-native.exe"):
+                if (release_dir / bridge_name).exists():
+                    continue
+                candidate = release_dir / "bin" / bridge_name
+                if candidate.exists():
+                    container = candidate.parent
+                    self._binary_hints.add(container)
+                    self._release_binary_dirs.add(container)
+
+    def _locate_release_library(self) -> Path | None:
+        """Search bundled Carla binary releases for the standalone library."""
+
+        for release_dir in sorted(self._release_binary_dirs):
+            try:
+                return self._locate_library(release_dir)
+            except FileNotFoundError:
+                continue
+        return None
 
     def _find_pe_image(self, path: Path) -> Path | None:
         """Locate a Windows PE binary for the given plugin path."""
@@ -993,25 +1088,34 @@ class CarlaBackend:
             if option is not None:
                 self._set_engine_option(option_name, 1)
 
-        binary_dirs = [str(path) for path in self._candidate_binary_dirs()]
+        binary_paths = [path for path in self._candidate_binary_dirs() if path.exists()]
+        binary_dirs = [str(path) for path in binary_paths]
         if binary_dirs:
             payload = os.pathsep.join(dict.fromkeys(binary_dirs))
             self._set_engine_option("ENGINE_OPTION_PATH_BINARIES", 0, payload)
-            
+
             # Log bridge executable search for debugging
             bridge_found = False
-            for path_str in binary_dirs:
-                path = Path(path_str)
-                for bridge_name in ("carla-bridge-win32.exe", "carla-bridge-win64.exe", 
+            has_win32_bridge = False
+            for path in binary_paths:
+                for bridge_name in ("carla-bridge-win32.exe", "carla-bridge-win64.exe",
                                    "carla-bridge-native.exe", "carla-bridge-native"):
                     if (path / bridge_name).exists():
                         bridge_found = True
+                        if bridge_name == "carla-bridge-win32.exe":
+                            has_win32_bridge = True
                         break
-            
+
             if not bridge_found and sys.platform.startswith("win"):
                 self.warnings.append(
                     f"Bridge executables not found in {len(binary_dirs)} directories. "
                     "32-bit plugin loading may fail. Download Carla binary release or build from source."
+                )
+            elif sys.platform.startswith("win") and not has_win32_bridge:
+                self.warnings.append(
+                    "carla-bridge-win32.exe not found alongside the Carla installation. "
+                    "Install the 32-bit Carla runtime or copy the Win32 bridge into the Carla folder to enable "
+                    "32-bit VST2 plugins."
                 )
 
         resource_dirs = [str(path) for path in self._candidate_resource_dirs()]
