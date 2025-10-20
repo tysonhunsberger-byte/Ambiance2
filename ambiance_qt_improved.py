@@ -21,7 +21,7 @@ from PyQt5.QtWidgets import (
     QSlider, QFrame, QMessageBox, QComboBox, QTabWidget, QCheckBox,
     QPlainTextEdit, QToolButton, QSizePolicy, QStackedWidget
 )
-from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal, QObject, QEvent, QUrl
+from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal, QObject, QEvent, QUrl, QSize
 from PyQt5.QtGui import (
     QPainter,
     QColor,
@@ -30,6 +30,7 @@ from PyQt5.QtGui import (
     QPalette,
     QFont,
     QPaintEvent,
+    QResizeEvent,
     QMouseEvent,
     QKeyEvent,
     QCloseEvent,
@@ -304,7 +305,9 @@ class PluginEditorContainer(QFrame):
         self.setObjectName("PluginEditorContainer")
         self._window_container: Optional[QWidget] = None
         self._window: Optional[QWindow] = None
+        self._base_minimum_height = 320
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.setMinimumHeight(self._base_minimum_height)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
@@ -327,11 +330,16 @@ class PluginEditorContainer(QFrame):
         window.setFlags(Qt.FramelessWindowHint)
         container = QWidget.createWindowContainer(window, self)
         container.setFocusPolicy(Qt.StrongFocus)
-        container.setMinimumHeight(360)
         container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.layout().addWidget(container)
         self._window_container = container
         self._window = window
+        try:
+            window.widthChanged.connect(self._on_window_dimension_changed)  # type: ignore[attr-defined]
+            window.heightChanged.connect(self._on_window_dimension_changed)  # type: ignore[attr-defined]
+        except Exception:
+            pass
+        self._apply_window_size(window.size())
         self.placeholder.hide()
 
     def clear_container(self) -> None:
@@ -342,9 +350,51 @@ class PluginEditorContainer(QFrame):
             self._window_container.deleteLater()
             self._window_container = None
         if self._window is not None:
+            try:
+                self._window.widthChanged.disconnect(self._on_window_dimension_changed)  # type: ignore[attr-defined]
+            except Exception:
+                pass
+            try:
+                self._window.heightChanged.disconnect(self._on_window_dimension_changed)  # type: ignore[attr-defined]
+            except Exception:
+                pass
             self._window.setParent(None)
             self._window = None
         self.placeholder.show()
+        self.setMinimumHeight(self._base_minimum_height)
+        self.setMinimumWidth(0)
+        self.updateGeometry()
+
+    def resizeEvent(self, event: QResizeEvent) -> None:  # type: ignore[override]
+        super().resizeEvent(event)
+        if self._window is None:
+            return
+        size = event.size()
+        if size.isValid():
+            try:
+                self._window.resize(size)
+            except Exception:
+                pass
+
+    def _apply_window_size(self, size: QSize) -> None:
+        if not size.isValid():
+            return
+        margins = self.layout().contentsMargins()
+        width = max(size.width(), 320)
+        height = max(size.height(), self._base_minimum_height)
+        if self._window_container is not None:
+            self._window_container.setMinimumSize(size)
+            self._window_container.resize(size)
+        self.setMinimumSize(
+            width + margins.left() + margins.right(),
+            height + margins.top() + margins.bottom(),
+        )
+        self.updateGeometry()
+
+    def _on_window_dimension_changed(self, _value: int) -> None:
+        if self._window is None:
+            return
+        self._apply_window_size(self._window.size())
 
 
 class CollapsibleSection(QFrame):
@@ -1297,6 +1347,7 @@ class AmbianceQtImproved(QMainWindow):
     def build_host_panel(self) -> QFrame:
         frame = QFrame()
         frame.setObjectName("HostPanel")
+        frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         layout = QVBoxLayout(frame)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(12)
@@ -1356,7 +1407,7 @@ class AmbianceQtImproved(QMainWindow):
         layout.addLayout(dock_row)
 
         self.host_editor_container = PluginEditorContainer()
-        layout.addWidget(self.host_editor_container)
+        layout.addWidget(self.host_editor_container, 1)
 
         if hasattr(self, "chain_widget"):
             self.chain_widget.set_host_controls(self.host_dock_check, self.host_editor_container)
