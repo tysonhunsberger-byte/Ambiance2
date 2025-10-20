@@ -20,6 +20,7 @@ from PyQt5.QtWidgets import (
     QSizePolicy,
     QToolButton,
     QSpacerItem,
+    QScrollArea,
 )
 
 from ambiance.audio_engine import AudioEngine, BlockController, StreamController
@@ -244,8 +245,9 @@ class BlocksPanel(QFrame):
         button_hover = _blend(panel_bg, accent, 0.22)
         button_pressed = _blend(panel_bg, accent, 0.35)
         button_text = text
-        combo_bg = _mix_with_white(stream_bg, 0.82 if dark else 0.35)
-        combo_border = _blend(border, accent, 0.35)
+        combo_bg = _mix_with_white(stream_bg, 0.28 if dark else 0.2)
+        combo_border = _blend(border, accent, 0.3)
+        combo_text = "#101010" if dark else "#000000"
         slider_track = _blend(bg, card, 0.45)
         slider_handle = _blend(accent, "#ffffff", 0.45)
         slider_fill = accent
@@ -321,7 +323,7 @@ class BlocksPanel(QFrame):
             }}
             QGroupBox#StreamWidget QComboBox,
             QGroupBox#StreamWidget QDoubleSpinBox {{
-                color: #000000;
+                color: {combo_text};
                 background-color: {combo_bg};
                 border: 1px solid {combo_border};
                 border-radius: 6px;
@@ -331,8 +333,8 @@ class BlocksPanel(QFrame):
                 width: 22px;
             }}
             QGroupBox#StreamWidget QComboBox QAbstractItemView {{
-                background-color: {_mix_with_white(combo_bg, 0.35)};
-                color: #000000;
+                background-color: {_mix_with_white(combo_bg, 0.15 if dark else 0.25)};
+                color: {combo_text};
             }}
             QGroupBox#StreamWidget QToolButton#ModsToggle {{
                 background-color: {button_bg};
@@ -705,7 +707,17 @@ class StreamWidget(QGroupBox):
 
         self.mods = StreamModsContainer()
         self.mods.apply_theme(self._theme_colors, dark=self._dark_mode)
-        layout.addWidget(self.mods)
+
+        self.mods_scroll = QScrollArea()
+        self.mods_scroll.setObjectName("ModsScrollArea")
+        self.mods_scroll.setWidgetResizable(True)
+        self.mods_scroll.setFrameShape(QFrame.NoFrame)
+        self.mods_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.mods_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.mods_scroll.setMinimumHeight(340)
+        self.mods_scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.mods_scroll.setWidget(self.mods)
+        layout.addWidget(self.mods_scroll)
 
         self.mods_toggle.blockSignals(True)
         self.mods_toggle.setChecked(False)
@@ -727,6 +739,42 @@ class StreamWidget(QGroupBox):
         self._theme_colors = deepcopy(colors)
         self._dark_mode = dark
         self.mods.apply_theme(colors, dark=dark)
+        if hasattr(self, "mods_scroll"):
+            track = _blend(colors.get("panel", DEFAULT_THEME["panel"]), colors.get("card", DEFAULT_THEME["card"]), 0.5)
+            handle = _blend(colors.get("accent", DEFAULT_THEME["accent"]), track, 0.4)
+            self.mods_scroll.setStyleSheet(
+                f"""
+                QScrollArea#ModsScrollArea {{
+                    background: transparent;
+                    border: none;
+                }}
+                QScrollArea#ModsScrollArea > QWidget {{
+                    background: transparent;
+                }}
+                QScrollArea#ModsScrollArea > QWidget > QWidget {{
+                    background: transparent;
+                }}
+                QScrollArea#ModsScrollArea QScrollBar:vertical {{
+                    background: transparent;
+                    width: 12px;
+                    margin: 6px 0 6px 0;
+                }}
+                QScrollArea#ModsScrollArea QScrollBar::handle:vertical {{
+                    background: {handle};
+                    border-radius: 6px;
+                    min-height: 32px;
+                }}
+                QScrollArea#ModsScrollArea QScrollBar::add-line:vertical,
+                QScrollArea#ModsScrollArea QScrollBar::sub-line:vertical {{
+                    background: none;
+                }}
+                QScrollArea#ModsScrollArea QScrollBar::add-page:vertical,
+                QScrollArea#ModsScrollArea QScrollBar::sub-page:vertical {{
+                    background: {track};
+                    border-radius: 6px;
+                }}
+                """
+            )
 
     def _wire_mod_controls(self) -> None:
         mods = self.mods
@@ -767,7 +815,13 @@ class StreamWidget(QGroupBox):
     def _on_mods_toggled(self, checked: bool) -> None:
         if self.sender() is self.mods_toggle:
             self._mods_user_collapse = not checked
-        self.mods.setVisible(checked)
+        if hasattr(self, "mods_scroll"):
+            self.mods_scroll.setVisible(checked)
+            self.mods.setVisible(True)
+            if checked:
+                self.mods_scroll.verticalScrollBar().setValue(0)
+        else:
+            self.mods.setVisible(checked)
         self.mods_toggle.setArrowType(Qt.DownArrow if checked else Qt.RightArrow)
         if hasattr(self, "mods_spacer"):
             self.mods_spacer.changeSize(0, 6 if checked else 0, QSizePolicy.Minimum, QSizePolicy.Fixed)

@@ -80,8 +80,8 @@ class CollapsibleMod(QWidget):
         self.body = QFrame()
         self.body.setObjectName("ModBody")
         self.body_layout = QVBoxLayout(self.body)
-        self.body_layout.setContentsMargins(14, 12, 14, 14)
-        self.body_layout.setSpacing(8)
+        self.body_layout.setContentsMargins(18, 16, 18, 18)
+        self.body_layout.setSpacing(10)
         self.body.setVisible(False)
         self.layout.addWidget(self.body)
 
@@ -761,7 +761,7 @@ class StreamModsContainer(QWidget):
         self.setObjectName("StreamModsContainer")
         self.layout = QVBoxLayout(self)
         self.layout.setContentsMargins(0, 0, 0, 0)
-        self.layout.setSpacing(10)
+        self.layout.setSpacing(12)
 
         self.time_pitch = TimePitchMod()
         self.muffle = MuffleMod()
@@ -799,20 +799,21 @@ class StreamModsContainer(QWidget):
         text = colors.get("text", DEFAULT_THEME["text"])
         accent = colors.get("accent", DEFAULT_THEME["accent"])
         border = colors.get("border", DEFAULT_THEME["border"])
-        header_bg = _blend(card, panel, 0.65)
-        header_hover = _blend(accent, header_bg, 0.25)
-        header_checked = _blend(header_hover, accent, 0.35)
+        header_bg = _blend(card, panel, 0.6)
+        header_hover = _blend(accent, header_bg, 0.22)
+        header_checked = _blend(header_hover, accent, 0.33)
         header_text = text if dark else "#101010"
-        body_bg = _blend(card, panel, 0.55)
-        body_border = _blend(border, body_bg, 0.7)
-        button_bg = _blend(body_bg, accent, 0.12)
-        button_hover = _blend(body_bg, accent, 0.28)
-        button_checked = _blend(accent, body_bg, 0.6)
+        body_bg = _blend(card, panel, 0.45)
+        body_border = _blend(border, body_bg, 0.65)
+        button_bg = _blend(body_bg, accent, 0.18)
+        button_hover = _blend(body_bg, accent, 0.32)
+        button_checked = _blend(accent, body_bg, 0.55)
         button_checked_text = text if dark else "#000000"
-        combo_bg = _mix_with_white(body_bg, 0.78 if dark else 0.35)
-        combo_border = _blend(border, accent, 0.35)
-        slider_track = _blend(panel, card, 0.45)
-        slider_handle = _blend(accent, "#ffffff", 0.4)
+        combo_bg = _mix_with_white(body_bg, 0.22 if dark else 0.18)
+        combo_border = _blend(border, accent, 0.3)
+        combo_text = "#101010" if dark else "#000000"
+        slider_track = _blend(panel, card, 0.38)
+        slider_handle = _blend(accent, "#ffffff", 0.45)
         slider_fill = accent
         style = f"""
             QWidget#StreamModsContainer {{
@@ -861,26 +862,26 @@ class StreamModsContainer(QWidget):
             QWidget#StreamModsContainer QFrame#ModBody QComboBox,
             QWidget#StreamModsContainer QFrame#ModBody QDoubleSpinBox {{
                 background-color: {combo_bg};
-                color: #000000;
+                color: {combo_text};
                 border: 1px solid {combo_border};
-                border-radius: 6px;
-                padding: 2px 8px;
+                border-radius: 8px;
+                padding: 4px 10px;
             }}
             QWidget#StreamModsContainer QFrame#ModBody QComboBox QAbstractItemView {{
-                background-color: {_mix_with_white(combo_bg, 0.35)};
-                color: #000000;
+                background-color: {_mix_with_white(combo_bg, 0.18 if dark else 0.25)};
+                color: {combo_text};
             }}
             QWidget#StreamModsContainer QFrame#ModBody QSlider::groove:horizontal {{
-                height: 6px;
+                height: 8px;
                 background: {slider_track};
-                border-radius: 3px;
+                border-radius: 4px;
             }}
             QWidget#StreamModsContainer QFrame#ModBody QSlider::handle:horizontal {{
                 background: {slider_handle};
                 border: 1px solid {_blend(accent, '#000000', 0.55)};
-                width: 16px;
-                margin: -5px 0;
-                border-radius: 8px;
+                width: 18px;
+                margin: -6px 0;
+                border-radius: 9px;
             }}
             QWidget#StreamModsContainer QFrame#ModBody QSlider::sub-page:horizontal {{
                 background: {slider_fill};
