@@ -1,1 +1,3 @@
 - Integrate Strudel-style pattern language into audio engine (parser, scheduler, UI).
+- Prototype SuperCollider bridge so tone/noise controls can drive external synthdefs via OSC.
+- Keep `docs/synthesis_getting_started.md` up to date with beginner-friendly progress notes.
