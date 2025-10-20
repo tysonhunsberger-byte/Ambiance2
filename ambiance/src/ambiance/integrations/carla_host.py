@@ -856,6 +856,20 @@ class CarlaBackend:
             if root_parent != self.root:
                 search_roots.add(root_parent)
 
+        def register_release(directory: Path) -> None:
+            try:
+                resolved = directory.resolve(strict=False)
+            except OSError:
+                resolved = directory
+            if not resolved.exists():
+                return
+            if resolved not in self._release_binary_dirs:
+                self._release_binary_dirs.add(resolved)
+            self._binary_hints.add(resolved)
+            parent_dir = resolved.parent
+            if parent_dir.exists():
+                self._binary_hints.add(parent_dir)
+
         patterns = ("Carla*/Carla", "Carla-*/Carla")
         for root in list(search_roots):
             if not root:
@@ -867,17 +881,45 @@ class CarlaBackend:
             try:
                 for pattern in patterns:
                     for directory in glob(pattern):
-                        try:
-                            resolved = directory.resolve(strict=False)
-                        except OSError:
-                            resolved = directory
-                        if not resolved.exists():
-                            continue
-                        self._release_binary_dirs.add(resolved)
-                        self._binary_hints.add(resolved)
-                        parent_dir = resolved.parent
-                        if parent_dir.exists():
-                            self._binary_hints.add(parent_dir)
+                        register_release(directory)
+            except OSError:
+                continue
+
+        # Some source trees ship pre-built archives inside the Carla folder
+        # (e.g. Carla/Carla-2.5.10-win32/Carla). Walk those nested directories
+        # so the Win32 bridge executables become discoverable on Windows.
+        nested_roots: set[Path] = set()
+        for root in list(search_roots):
+            if not root:
+                continue
+            try:
+                resolved = root.resolve(strict=False)
+            except OSError:
+                resolved = root
+            if resolved.exists():
+                nested_roots.add(resolved)
+                candidate = resolved / "Carla"
+                if candidate.exists():
+                    nested_roots.add(candidate)
+
+        for hint in list(self._binary_hints):
+            try:
+                resolved = hint.resolve(strict=False)
+            except OSError:
+                resolved = hint
+            if resolved.exists():
+                nested_roots.add(resolved)
+
+        nested_patterns = ("Carla-*-win*/Carla", "Carla-*-Win*/Carla")
+        for root in nested_roots:
+            try:
+                glob = root.glob
+            except AttributeError:
+                continue
+            try:
+                for pattern in nested_patterns:
+                    for directory in glob(pattern):
+                        register_release(directory)
             except OSError:
                 continue
 
@@ -1037,12 +1079,15 @@ class CarlaBackend:
         cache_root = self.base_dir / ".cache" / "plugins"
         data_root = self.base_dir / "data" / "vsts"
 
-        # Add included_plugins folder (check both base_dir and parent for sibling folder)
-        included_plugins = self.base_dir / "included_plugins"
-        included_plugins_parent = self.base_dir.parent / "included_plugins"
+        # Add included_plugins folders regardless of where the app is launched
+        included_candidates: list[Path] = []
+        for ancestor in [self.base_dir] + list(self.base_dir.parents)[:4]:
+            candidate = ancestor / "included_plugins"
+            if candidate not in included_candidates:
+                included_candidates.append(candidate)
 
-        add(vst2, cache_root, data_root, included_plugins, included_plugins_parent)
-        add(vst3, cache_root, data_root, included_plugins, included_plugins_parent)
+        add(vst2, cache_root, data_root, *included_candidates)
+        add(vst3, cache_root, data_root, *included_candidates)
 
         if sys.platform.startswith("win"):
             program_files = Path(os.environ.get("PROGRAMFILES", "")).expanduser()
