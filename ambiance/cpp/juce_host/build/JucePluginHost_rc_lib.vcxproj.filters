@@ -1,0 +1,22 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="C:\Ambiance2\ambiance\cpp\juce_host\build\CMakeFiles\808bd112e574470bfa85c576de54a8ab\JucePluginHost_resources.rc.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="C:\Ambiance2\ambiance\cpp\juce_host\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="C:\Ambiance2\ambiance\cpp\juce_host\build\JucePluginHost_artefacts\JuceLibraryCode\JucePluginHost_resources.rc">
+      <Filter>Source Files</Filter>
+    </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{29FA3467-DBC1-3B6F-A7A5-0DFFA2051F83}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{0F539FAD-C13C-380D-B353-A53C3E70BAB0}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

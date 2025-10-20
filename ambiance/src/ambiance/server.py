@@ -7,8 +7,12 @@ import atexit
 import base64
 import json
 import logging
+import subprocess
+import sys
+import threading
 from http import HTTPStatus
 from http.server import HTTPServer, SimpleHTTPRequestHandler
+import time
 from pathlib import Path
 from socketserver import ThreadingMixIn
 from typing import Any
@@ -17,13 +21,60 @@ from urllib.parse import parse_qs, urlparse
 from .core.engine import AudioEngine
 from .core.registry import registry
 from .integrations.plugins import PluginRackManager
-from .integrations.carla_host import CarlaVSTHost
+from .integrations.carla_host import CarlaVSTHost, CarlaHostError
 from .integrations.juce_vst3_host import JuceVST3Host
 from .utils.audio import encode_wav_bytes
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
+
+_plugin_host_process: subprocess.Popen | None = None
+
+
+def _launch_plugin_host(plugin_path: Path, drivers: list[str], server_url: str = "http://127.0.0.1:8000") -> None:
+    global _plugin_host_process
+    script = Path(__file__).resolve().parents[3] / "plugin_host.py"
+    if not script.exists():
+        logger.error("plugin_host.py not found at %s", script)
+        return
+
+    args = [sys.executable, str(script), "--plugin", str(plugin_path), "--server", server_url]
+    for driver in drivers:
+        if driver:
+            args.extend(["--driver", driver])
+
+    try:
+        if _plugin_host_process and _plugin_host_process.poll() is None:
+            _plugin_host_process.terminate()
+    except Exception:
+        pass
+
+    try:
+        logger.info("Launching external plugin host: %s", " ".join(args))
+        _plugin_host_process = subprocess.Popen(args)
+        logger.info("Spawned external plugin host for %s (PID: %s)", plugin_path, _plugin_host_process.pid)
+    except Exception as exc:
+        logger.error("Failed to launch plugin host: %s", exc)
+
+
+def _terminate_plugin_host() -> None:
+    global _plugin_host_process
+    if _plugin_host_process and _plugin_host_process.poll() is None:
+        logger.info("Terminating external plugin host (PID: %s)", _plugin_host_process.pid)
+        try:
+            _plugin_host_process.terminate()
+            try:
+                _plugin_host_process.wait(timeout=3)
+                logger.info("External plugin host terminated gracefully")
+            except subprocess.TimeoutExpired:
+                logger.warning("External plugin host did not terminate, killing forcefully")
+                _plugin_host_process.kill()
+                _plugin_host_process.wait(timeout=2)
+                logger.info("External plugin host killed")
+        except Exception as exc:
+            logger.error("Failed to terminate plugin host: %s", exc)
+    _plugin_host_process = None
 
 
 def _build_engine(payload: dict[str, Any]) -> tuple[AudioEngine, float]:
@@ -74,12 +125,14 @@ class AmbianceRequestHandler(SimpleHTTPRequestHandler):
         ui_path: Path,
         vst_host: CarlaVSTHost,
         juce_host: JuceVST3Host | None,
+        server_url: str = "http://127.0.0.1:8000",
         **kwargs: Any,
     ) -> None:
         self.manager = manager
         self.ui_path = ui_path
         self.vst_host = vst_host
         self.juce_host = juce_host
+        self.server_url = server_url
         super().__init__(*args, directory=directory, **kwargs)
 
     def log_message(self, format, *args):
@@ -111,7 +164,7 @@ class AmbianceRequestHandler(SimpleHTTPRequestHandler):
             self._send_json(payload)
             return
         if path == "/api/vst/status":
-            status = self.vst_host.status()
+            status = self.vst_host.status(include_parameters=False)
             self._send_json({"ok": True, "status": status})
             return
         if path == "/api/juce/status":
@@ -127,11 +180,48 @@ class AmbianceRequestHandler(SimpleHTTPRequestHandler):
         if path == "/api/vst/ui":
             query = parse_qs(urlparse(self.path).query)
             plugin_path = query.get("path", [None])[0]
+            status_snapshot = self.vst_host.status(include_parameters=False)
+            current_plugin = (status_snapshot.get("plugin") or {}).get("path")
             try:
-                descriptor = self.vst_host.describe_ui(plugin_path)
-            except RuntimeError as exc:
+                if plugin_path:
+                    try:
+                        requested = Path(plugin_path).expanduser().resolve()
+                        current = Path(current_plugin).expanduser().resolve() if current_plugin else None
+                    except Exception:
+                        requested = None
+                        current = None
+                    if current_plugin and requested and requested == current:
+                        descriptor = self.vst_host.describe_ui(include_parameters=False)
+                    else:
+                        descriptor = self.vst_host.describe_ui(plugin_path, include_parameters=False)
+                else:
+                    descriptor = self.vst_host.describe_ui(include_parameters=False)
+            except FileNotFoundError as exc:
+                logger.error(f"Plugin not found for UI descriptor: {exc}")
+                self._send_json({"ok": False, "error": f"Plugin not found: {exc}"}, HTTPStatus.NOT_FOUND)
+                return
+            except Exception as exc:
+                # Catch all exceptions including CarlaHostError (subclass of RuntimeError)
                 logger.error(f"Failed to describe UI: {exc}")
-                self._send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                # Provide a fallback descriptor with basic keyboard enabled
+                # This allows the UI to show even if descriptor generation fails
+                fallback_descriptor = {
+                    "title": "Unknown Plugin",
+                    "subtitle": "Descriptor unavailable",
+                    "keyboard": {"min_note": 24, "max_note": 96},
+                    "panels": [],
+                    "parameters": [],
+                    "capabilities": {
+                        "instrument": bool((status_snapshot.get("capabilities") or {}).get("instrument")),
+                        "editor": False,
+                        "midi": bool((status_snapshot.get("capabilities") or {}).get("midi")),
+                    },
+                    "error": str(exc),
+                }
+                if fallback_descriptor["capabilities"]["instrument"] or fallback_descriptor["capabilities"]["midi"]:
+                    fallback_descriptor["subtitle"] = "Live play available"
+                logger.warning(f"Returning fallback descriptor due to error: {exc}")
+                self._send_json({"ok": True, "descriptor": fallback_descriptor, "warning": str(exc)})
                 return
             self._send_json({"ok": True, "descriptor": descriptor})
             return
@@ -192,6 +282,78 @@ class AmbianceRequestHandler(SimpleHTTPRequestHandler):
                 result = self.manager.toggle_lane(stream)
                 self._send_json({"ok": True, "toggle": result, "status": self.manager.status()})
                 return
+            if path == "/api/vst/midi/note-on":
+                payload = self._read_json()
+                note_value = payload.get("note")
+                if note_value is None:
+                    self._send_json({"ok": False, "error": "Missing 'note'"}, HTTPStatus.BAD_REQUEST)
+                    return
+                try:
+                    note = int(note_value)
+                except (TypeError, ValueError):
+                    self._send_json({"ok": False, "error": "Invalid 'note' value"}, HTTPStatus.BAD_REQUEST)
+                    return
+                try:
+                    velocity = float(payload.get("velocity", 0.8))
+                except (TypeError, ValueError):
+                    self._send_json({"ok": False, "error": "Invalid 'velocity' value"}, HTTPStatus.BAD_REQUEST)
+                    return
+                try:
+                    self.vst_host.note_on(note, velocity=velocity)
+                except RuntimeError as exc:
+                    logger.error(f"Failed to send MIDI note-on: {exc}")
+                    self._send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                    return
+                self._send_json({"ok": True})
+                return
+            if path == "/api/vst/midi/note-off":
+                payload = self._read_json()
+                note_value = payload.get("note")
+                if note_value is None:
+                    self._send_json({"ok": False, "error": "Missing 'note'"}, HTTPStatus.BAD_REQUEST)
+                    return
+                try:
+                    note = int(note_value)
+                except (TypeError, ValueError):
+                    self._send_json({"ok": False, "error": "Invalid 'note' value"}, HTTPStatus.BAD_REQUEST)
+                    return
+                try:
+                    self.vst_host.note_off(note)
+                except RuntimeError as exc:
+                    logger.error(f"Failed to send MIDI note-off: {exc}")
+                    self._send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                    return
+                self._send_json({"ok": True})
+                return
+            if path == "/api/vst/midi/send":
+                payload = self._read_json()
+                note_value = payload.get("note")
+                if note_value is None:
+                    self._send_json({"ok": False, "error": "Missing 'note'"}, HTTPStatus.BAD_REQUEST)
+                    return
+                try:
+                    note = int(note_value)
+                except (TypeError, ValueError):
+                    self._send_json({"ok": False, "error": "Invalid 'note' value"}, HTTPStatus.BAD_REQUEST)
+                    return
+                try:
+                    velocity = float(payload.get("velocity", 0.8))
+                except (TypeError, ValueError):
+                    self._send_json({"ok": False, "error": "Invalid 'velocity' value"}, HTTPStatus.BAD_REQUEST)
+                    return
+                try:
+                    duration = float(payload.get("duration", 1.0))
+                except (TypeError, ValueError):
+                    self._send_json({"ok": False, "error": "Invalid 'duration' value"}, HTTPStatus.BAD_REQUEST)
+                    return
+                try:
+                    self.vst_host.play_note(note, velocity=velocity, duration=duration)
+                except RuntimeError as exc:
+                    logger.error(f"Failed to trigger MIDI preview note: {exc}")
+                    self._send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                    return
+                self._send_json({"ok": True})
+                return
             if path == "/api/vst/load":
                 payload = self._read_json()
                 plugin_path = payload.get("path")
@@ -204,13 +366,61 @@ class AmbianceRequestHandler(SimpleHTTPRequestHandler):
                     self._send_json({"ok": False, "error": "Missing 'path'"}, HTTPStatus.BAD_REQUEST)
                     return
                 
+                start_time = time.perf_counter()
+                logger.info("Loading plugin %s ...", plugin_path)
                 try:
-                    plugin = self.vst_host.load_plugin(plugin_path, parameters)
-                    logger.info(f"Successfully loaded plugin: {plugin.get('metadata', {}).get('name', 'Unknown')}")
-                    self._send_json({"ok": True, "plugin": plugin, "status": self.vst_host.status()})
+                    plugin = self.vst_host.load_plugin(plugin_path, parameters, show_ui=False)
                 except Exception as load_exc:
                     logger.error(f"Failed to load plugin: {load_exc}", exc_info=True)
                     self._send_json({"ok": False, "error": str(load_exc)}, HTTPStatus.BAD_REQUEST)
+                    return
+
+                elapsed = (time.perf_counter() - start_time) * 1000.0
+                plugin_name = plugin.get("metadata", {}).get("name", "Unknown")
+                logger.info("Successfully loaded plugin %s in %.1f ms", plugin_name, elapsed)
+
+                ui_opened = False
+                ui_error: str | None = None
+                status_snapshot = self.vst_host.status(include_parameters=False)
+                engine_info = status_snapshot.get("engine", {}) or {}
+                preferred = engine_info.get("preferred_drivers") or []
+                current_driver = engine_info.get("driver")
+                ordered_drivers: list[str] = []
+                if current_driver:
+                    ordered_drivers.append(current_driver)
+                for candidate in preferred:
+                    if candidate and candidate.lower() not in {
+                        d.lower() for d in ordered_drivers
+                    }:
+                        ordered_drivers.append(candidate)
+                if not ordered_drivers:
+                    ordered_drivers = ["DirectSound", "ASIO", "JACK", "Dummy"]
+
+                # NOTE: Don't spawn external plugin_host.py - the server's Carla instance
+                # already opened the native UI on line 376. Spawning a separate process
+                # creates a second Carla instance that isn't connected to the audio engine,
+                # so parameter changes in that UI wouldn't affect the sound.
+                # _launch_plugin_host(Path(plugin_path), ordered_drivers)
+
+                response = {
+                    "ok": True,
+                    "plugin": plugin,
+                    "status": status_snapshot,
+                    "duration_ms": int(elapsed),
+                    "ui_opened": ui_opened,
+                    "desktop_host": {
+                        "launched": False,  # No longer launching external host
+                        "drivers": ordered_drivers,
+                    },
+                }
+                if ui_error:
+                    response["ui_error"] = ui_error
+                if elapsed > 1500:
+                    response["notice"] = (
+                        "Plugin load took {:.1f} seconds; bridging or heavy initialisation may still be running."
+                        .format(elapsed / 1000.0)
+                    )
+                self._send_json(response)
                 return
                 
             if path == "/api/vst/unload":
@@ -284,30 +494,31 @@ class AmbianceRequestHandler(SimpleHTTPRequestHandler):
                 )
                 return
             if path == "/api/vst/editor/open":
+                # Show the native UI using the server's Carla instance
+                # The Qt event loop running in main thread allows this to work
                 try:
                     status = self.vst_host.show_ui()
-                    logger.info("Plugin UI opened successfully")
-                except RuntimeError as exc:
-                    logger.error(f"Failed to open plugin UI: {exc}")
+                    logger.info("Opened native plugin UI in server process")
+                    self._send_json({"ok": True, "status": status})
+                except Exception as exc:
+                    logger.error(f"Failed to show UI: {exc}", exc_info=True)
                     self._send_json(
                         {"ok": False, "error": str(exc), "status": self.vst_host.status()},
                         HTTPStatus.BAD_REQUEST,
                     )
-                    return
-                self._send_json({"ok": True, "status": status})
                 return
             if path == "/api/vst/editor/close":
+                # Hide the native UI
                 try:
                     status = self.vst_host.hide_ui()
-                    logger.info("Plugin UI closed successfully")
-                except RuntimeError as exc:
-                    logger.error(f"Failed to close plugin UI: {exc}")
+                    logger.info("Closed native plugin UI")
+                    self._send_json({"ok": True, "status": status})
+                except Exception as exc:
+                    logger.error(f"Failed to hide UI: {exc}", exc_info=True)
                     self._send_json(
                         {"ok": False, "error": str(exc), "status": self.vst_host.status()},
                         HTTPStatus.BAD_REQUEST,
                     )
-                    return
-                self._send_json({"ok": True, "status": status})
                 return
             if path == "/api/juce/open":
                 if not self.juce_host:
@@ -366,6 +577,15 @@ def serve(host: str = "127.0.0.1", port: int = 8000, ui: Path | None = None) -> 
     ui_path = Path(ui) if ui else base_dir / "noisetown_ADV_CHORD_PATCHED_v4g1_applyfix.html"
     manager = PluginRackManager(base_dir=base_dir)
     vst_host = CarlaVSTHost(base_dir=base_dir)
+    # Prefer JACK when available (user can start JACK via scripts/start_jack.ps1).
+    # Fall back through ASIO/DirectSound/Dummy if JACK is not active.
+    # On Windows prefer native drivers first so we don't require JACK.
+    preferred_drivers = ["DirectSound", "WASAPI", "ASIO", "MME", "JACK", "Dummy"]
+    if sys.platform.startswith("linux"):
+        preferred_drivers = ["JACK", "ALSA", "PulseAudio", "Dummy"]
+    elif sys.platform == "darwin":
+        preferred_drivers = ["CoreAudio", "JACK", "Dummy"]
+    vst_host.configure_audio(preferred_drivers=preferred_drivers)
     juce_host = JuceVST3Host(base_dir=base_dir)
     atexit.register(vst_host.shutdown)
 
@@ -379,11 +599,84 @@ def serve(host: str = "127.0.0.1", port: int = 8000, ui: Path | None = None) -> 
         kwargs.setdefault("ui_path", ui_path)
         kwargs.setdefault("vst_host", vst_host)
         kwargs.setdefault("juce_host", juce_host)
+        kwargs.setdefault("server_url", f"http://{host}:{port}")
         return AmbianceRequestHandler(*args, **kwargs)
 
-    with ThreadingHTTPServer((host, port), handler) as httpd:
+    # Check if Qt is available for running plugin UIs
+    try:
+        from PyQt5.QtWidgets import QApplication
+        from PyQt5.QtCore import QTimer
+        HAS_PYQT5 = True
+    except ImportError:
+        HAS_PYQT5 = False
+
+    httpd = ThreadingHTTPServer((host, port), handler)
+
+    # If PyQt5 is available, run HTTP server in a thread and Qt event loop in main thread
+    if HAS_PYQT5:
+        logger.info("PyQt5 available - running Qt event loop for responsive plugin UIs")
+
+        # Get or create Qt application (MUST be before starting HTTP server)
+        qt_app = QApplication.instance()
+        if qt_app is None:
+            qt_app = QApplication(sys.argv if sys.argv else ['Ambiance'])
+        qt_app.setQuitOnLastWindowClosed(False)
+
+        # Initialize QtApplicationManager on main thread BEFORE starting event loop
+        # This ensures the QTimer is created on the main thread where the event loop runs
+        try:
+            from ambiance.integrations.carla_host import HAS_PYQT5 as CARLA_HAS_PYQT5
+            if CARLA_HAS_PYQT5:
+                from ambiance.integrations.carla_host import QtApplicationManager
+                qt_mgr = QtApplicationManager.get_instance()
+                logger.info("QtApplicationManager initialized on main thread")
+            else:
+                logger.warning("QtApplicationManager not available (carla_host HAS_PYQT5 is False)")
+        except ImportError as exc:
+            logger.warning(f"Failed to import QtApplicationManager: {exc}")
+        except Exception as exc:
+            logger.warning(f"Failed to initialize QtApplicationManager: {exc}")
+
+        # Start HTTP server in daemon thread AFTER Qt is set up
+        server_thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        server_thread.start()
+
         print(f"Ambiance UI available at http://{host}:{port}/")
-        httpd.serve_forever()
+        print("Qt event loop running for plugin UIs. Press Ctrl+C to exit.")
+
+        # Setup cleanup on exit
+        def cleanup():
+            logger.info("Shutting down server...")
+            httpd.shutdown()
+            httpd.server_close()
+
+        import signal
+        def signal_handler(sig, frame):
+            logger.info("Received interrupt signal")
+            cleanup()
+            qt_app.quit()
+
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
+
+        # Run Qt event loop (blocking)
+        try:
+            sys.exit(qt_app.exec_())
+        finally:
+            cleanup()
+    else:
+        # No PyQt5 - run HTTP server normally in main thread
+        logger.warning("PyQt5 not available - plugin UIs may not be responsive")
+        logger.warning("Install PyQt5 for better UI support: pip install PyQt5")
+
+        with httpd:
+            print(f"Ambiance UI available at http://{host}:{port}/")
+            print("Press Ctrl+C to exit.")
+            try:
+                httpd.serve_forever()
+            except KeyboardInterrupt:
+                logger.info("Server stopped")
+                httpd.shutdown()
 
 
 def main(argv: list[str] | None = None) -> None:

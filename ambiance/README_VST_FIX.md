@@ -199,7 +199,7 @@ for warning in status['warnings']:
 ✅ Qt initialized on-demand  
 ✅ Comprehensive DLL search  
 ✅ Detailed status reporting  
-✅ Graceful fallback without Qt  
+✅ Clear diagnostics when Qt is unavailable  
 
 ## 📁 File Structure
 
@@ -236,7 +236,8 @@ CarlaBackend (Core Integration)
 ## 💡 Key Features
 
 1. **Automatic Qt Initialization**: No manual setup required
-2. **Smart Fallback**: Works without PyQt5 (parameters only)
+2. **Native-Only Hosting**: Requires Qt for plugin editors; surfaces actionable warnings otherwise
+3. **JACK Helper**: Use `scripts/start_jack.ps1` to launch JACK when you want low-latency audio on Windows
 3. **Comprehensive Diagnostics**: Detailed status and warnings
 4. **Thread-Safe**: Proper locking throughout
 5. **Production-Ready**: Thoroughly tested and documented

@@ -86,6 +86,15 @@ integration automatically falls back to the Flutter shim when the Carla
 runtime is unavailable. Windows users can follow `docs/carla_windows.md` for
 MSYS2 build steps or instructions on reusing the official binary release.
 
+## TODO
+
+// TODO: break down full audio/plugin workflow revamp into milestones  
+// 1. Ship minimal Carla bridge window + REST endpoints (load/unload/toggle UI).  
+// 2. Wire Noisetown UI controls to new endpoints (load/unload/parameter polling).  
+// 3. Implement MIDI playback + audio routing from plugins to system output.  
+// 4. Support chaining multiple plugins (instrument + effects) inside rack lanes.  
+// 5. Verify audio across DirectSound/JACK/ASIO and document setup steps.
+
 ## Development
 
 - Run tests with `pytest`.

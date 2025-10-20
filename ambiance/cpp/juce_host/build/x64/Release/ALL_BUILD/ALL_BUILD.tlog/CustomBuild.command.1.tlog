@@ -1,0 +1,10 @@
+^C:\AMBIANCE2\AMBIANCE\CPP\JUCE_HOST\CMAKELISTS.TXT
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SC:/Ambiance2/ambiance/cpp/juce_host -BC:/Ambiance2/ambiance/cpp/juce_host/build --check-stamp-file C:/Ambiance2/ambiance/cpp/juce_host/build/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

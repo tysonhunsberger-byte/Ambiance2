@@ -1,0 +1,12 @@
+{
+  "plugin_host_overrides": {
+    "Aspen Trumpet 1.vst3": "flutter",
+    "default": "carla"
+  },
+  "carla_options": {
+    "ENGINE_OPTION_PREFER_PLUGIN_BRIDGES": 1,
+    "ENGINE_OPTION_PREVENT_BAD_BEHAVIOUR": 1,
+    "idle_timeout": 0.5
+  },
+  "flutter_fallback": true
+}

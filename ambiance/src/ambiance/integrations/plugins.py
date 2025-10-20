@@ -58,22 +58,33 @@ class PluginRackManager:
         return Path(self.workspace_dir)
 
     def _candidate_paths(self) -> Iterable[Path]:
-        root = self.workspace_path()
-        if not root.exists():
-            return []
+        # Scan both workspace and included_plugins folder
+        roots_to_scan = [self.workspace_path()]
+
+        # Add included_plugins folder if it exists
+        included_plugins = self.base_dir / "included_plugins"
+        included_plugins_parent = self.base_dir.parent / "included_plugins"
+
+        if included_plugins.exists():
+            roots_to_scan.append(included_plugins)
+        elif included_plugins_parent.exists():
+            roots_to_scan.append(included_plugins_parent)
 
         def walker() -> Iterator[Path]:
-            for dirpath, dirnames, filenames in os.walk(root):
-                current = Path(dirpath)
-                for dirname in list(dirnames):
-                    candidate = current / dirname
-                    if self._looks_like_plugin(candidate):
-                        yield candidate
-                        dirnames.remove(dirname)
-                for filename in filenames:
-                    candidate = current / filename
-                    if self._looks_like_plugin(candidate):
-                        yield candidate
+            for root in roots_to_scan:
+                if not root.exists():
+                    continue
+                for dirpath, dirnames, filenames in os.walk(root):
+                    current = Path(dirpath)
+                    for dirname in list(dirnames):
+                        candidate = current / dirname
+                        if self._looks_like_plugin(candidate):
+                            yield candidate
+                            dirnames.remove(dirname)
+                    for filename in filenames:
+                        candidate = current / filename
+                        if self._looks_like_plugin(candidate):
+                            yield candidate
 
         return walker()
 
@@ -147,13 +158,30 @@ class PluginRackManager:
 
     def discover_plugins(self, limit: int = 256) -> list[dict[str, object]]:
         entries: list[dict[str, object]] = []
+        seen_paths: set[str] = set()  # Track absolute paths to avoid duplicates
+
         for candidate in self._candidate_paths():
+            # Resolve to absolute path for deduplication
+            try:
+                absolute_path = str(candidate.resolve())
+            except (OSError, RuntimeError):
+                absolute_path = str(candidate.absolute())
+
+            # Skip if we've already seen this exact path
+            if absolute_path in seen_paths:
+                continue
+
             info = self._describe_plugin(candidate)
             if info is None:
                 continue
+
+            # Mark this path as seen
+            seen_paths.add(absolute_path)
             entries.append(info)
+
             if len(entries) >= limit:
                 break
+
         modalys = self._modalys_descriptor()
         if modalys and all(entry.get("path") != modalys.get("path") for entry in entries):
             entries.append(modalys)

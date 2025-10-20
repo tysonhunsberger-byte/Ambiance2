@@ -1,0 +1,5 @@
+      // Pre-validate requirements
+      const validation = PluginRackErrorHandling.validatePluginUiRequirements(status, plugin);
+      if (!validation.valid) {
+        log('⚠️ ' + validation.reason);
+        return;

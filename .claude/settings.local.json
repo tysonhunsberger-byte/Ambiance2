@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"import ambiance; print(''ambiance package location:'', ambiance.__file__)\")",
+      "Bash(pip uninstall ambiance -y)",
+      "Bash(pip install -e .)",
+      "Bash(pip install requests)",
+      "Bash(python ambiance_standalone.py)",
+      "Bash(pip install PyQtWebEngine)",
+      "Bash(pip install -e . --force-reinstall --no-deps)",
+      "Bash(where jackd)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

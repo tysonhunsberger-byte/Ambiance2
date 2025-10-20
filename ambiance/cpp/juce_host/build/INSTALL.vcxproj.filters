@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="C:\Ambiance2\ambiance\cpp\juce_host\build\CMakeFiles\74c5e46168a85f93b128f0684d1d3e10\INSTALL_force.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{29FA3467-DBC1-3B6F-A7A5-0DFFA2051F83}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

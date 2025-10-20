@@ -1,5 +1,9 @@
 from pathlib import Path
 
+import pytest
+
+from ambiance.integrations import carla_host as carla_host_module
+from ambiance.integrations.carla_host import CarlaHostError, CarlaVSTHost
 from ambiance.integrations.flutter_vst_host import FlutterVSTHost, FlutterVSTToolkit
 from ambiance.npcompat import np
 
@@ -72,3 +76,35 @@ def test_instrument_descriptor_and_playback(tmp_path):
     assert isinstance(audio, np.ndarray)
     assert audio.shape[0] > 0
     assert np.max(np.abs(audio)) > 0
+
+
+def test_carla_host_render_preview_not_supported(monkeypatch, tmp_path):
+    class MinimalBackend:
+        def __init__(self, base_dir=None, **_: object) -> None:
+            self.available = True
+            self.warnings: list[str] = []
+
+    monkeypatch.setattr(carla_host_module, "CarlaBackend", MinimalBackend)
+
+    host = CarlaVSTHost(base_dir=tmp_path)
+
+    with pytest.raises(CarlaHostError):
+        host.render_preview()
+    with pytest.raises(CarlaHostError):
+        host.play_note(60)
+
+
+def test_carla_host_ensure_available_reports_warnings(monkeypatch, tmp_path):
+    class UnavailableBackend:
+        def __init__(self, base_dir=None, **_: object) -> None:
+            self.available = False
+            self.warnings = ["No drivers detected"]
+
+    monkeypatch.setattr(carla_host_module, "CarlaBackend", UnavailableBackend)
+
+    host = CarlaVSTHost(base_dir=tmp_path)
+
+    with pytest.raises(CarlaHostError) as exc:
+        host.ensure_available()
+
+    assert "No drivers detected" in str(exc.value)

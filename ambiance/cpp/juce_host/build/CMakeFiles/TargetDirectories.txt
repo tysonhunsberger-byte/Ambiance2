@@ -1,0 +1,10 @@
+C:/Ambiance2/ambiance/cpp/juce_host/build/CMakeFiles/JucePluginHost.dir
+C:/Ambiance2/ambiance/cpp/juce_host/build/CMakeFiles/JucePluginHost_rc_lib.dir
+C:/Ambiance2/ambiance/cpp/juce_host/build/CMakeFiles/INSTALL.dir
+C:/Ambiance2/ambiance/cpp/juce_host/build/CMakeFiles/ALL_BUILD.dir
+C:/Ambiance2/ambiance/cpp/juce_host/build/CMakeFiles/ZERO_CHECK.dir
+C:/Ambiance2/ambiance/cpp/juce_host/build/JUCE/CMakeFiles/INSTALL.dir
+C:/Ambiance2/ambiance/cpp/juce_host/build/JUCE/CMakeFiles/ALL_BUILD.dir
+C:/Ambiance2/ambiance/cpp/juce_host/build/JUCE/modules/CMakeFiles/INSTALL.dir
+C:/Ambiance2/ambiance/cpp/juce_host/build/JUCE/extras/Build/CMakeFiles/INSTALL.dir
+C:/Ambiance2/ambiance/cpp/juce_host/build/JUCE/extras/Build/juceaide/CMakeFiles/INSTALL.dir

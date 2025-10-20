@@ -16,7 +16,7 @@ I've created an improved version of `carla_host.py` that:
 2. ✅ **Detects PyQt5**: Checks if PyQt5 is available and provides clear warnings
 3. ✅ **Better error messages**: Detailed diagnostics to help identify issues
 4. ✅ **Improved DLL discovery**: Searches more locations on Windows
-5. ✅ **Graceful fallback**: Works without Qt (parameters only) if PyQt5 unavailable
+5. ✅ **Native-first hosting**: Flutter fallback removed; surfaces clear guidance when Qt is unavailable
 6. ✅ **Status reporting**: Provides detailed status including Qt availability
 
 ## Files Created

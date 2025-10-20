@@ -21,7 +21,7 @@ I've created a fixed version of `carla_host.py` that addresses all these issues.
 
 2. **Better Error Handling**
    - More detailed warnings about what's not working
-   - Graceful fallback when Qt isn't available
+   - Clear diagnostics when Qt isn't available
    - Better library discovery on Windows
 
 3. **Enhanced Library Discovery**

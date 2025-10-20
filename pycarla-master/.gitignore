@@ -1,0 +1,7 @@
+**__pycache__
+carla_proj/
+pycarla/carla/
+dist/
+session.wav
+
+tags

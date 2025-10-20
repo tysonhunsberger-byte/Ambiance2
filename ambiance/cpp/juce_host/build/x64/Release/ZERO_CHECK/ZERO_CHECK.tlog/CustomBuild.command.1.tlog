@@ -1,0 +1,10 @@
+^C:\AMBIANCE2\AMBIANCE\CPP\JUCE_HOST\BUILD\CMAKEFILES\74C5E46168A85F93B128F0684D1D3E10\GENERATE.STAMP.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SC:/Ambiance2/ambiance/cpp/juce_host -BC:/Ambiance2/ambiance/cpp/juce_host/build --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file C:/Ambiance2/ambiance/cpp/juce_host/build/JucePluginHost.sln
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

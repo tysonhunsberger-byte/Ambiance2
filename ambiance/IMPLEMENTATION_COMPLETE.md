@@ -83,7 +83,7 @@ Your VST plugin UIs weren't opening because:
 2. ✅ Creates Qt application with event loop
 3. ✅ Provides detailed diagnostics
 4. ✅ Better DLL discovery on Windows
-5. ✅ Graceful fallback without Qt
+5. ✅ Native-first Carla hosting (Qt required for plugin editors)
 6. ✅ Clear, helpful error messages
 
 ---
@@ -330,14 +330,15 @@ for warning in status['warnings']:
     print(f"Warning: {warning}")
 ```
 
-### Graceful Fallback
+### Handling Missing Qt
 ```python
-# Works even without PyQt5 (parameters only)
 host = CarlaVSTHost()
 if not host.status()['qt_available']:
-    print("No Qt - using parameter control only")
-    plugin = host.load_plugin("plugin.vst3")
-    host.set_parameter("Volume", 0.8)  # Still works!
+    try:
+        host.ensure_available()
+        host.load_plugin("plugin.vst3")
+    except CarlaHostError as exc:
+        print(f"Native UI unavailable: {exc}")
 ```
 
 ### HTTP API Integration

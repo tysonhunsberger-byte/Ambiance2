@@ -1,0 +1,11 @@
+{
+	"InstallScripts" : 
+	[
+		"C:/Ambiance2/ambiance/cpp/juce_host/build/cmake_install.cmake",
+		"C:/Ambiance2/ambiance/cpp/juce_host/build/JUCE/cmake_install.cmake",
+		"C:/Ambiance2/ambiance/cpp/juce_host/build/JUCE/modules/cmake_install.cmake",
+		"C:/Ambiance2/ambiance/cpp/juce_host/build/JUCE/extras/Build/cmake_install.cmake",
+		"C:/Ambiance2/ambiance/cpp/juce_host/build/JUCE/extras/Build/juceaide/cmake_install.cmake"
+	],
+	"Parallel" : false
+}
