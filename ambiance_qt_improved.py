@@ -7,6 +7,8 @@ from typing import Optional, List, Dict, Any, Tuple, cast
 from dataclasses import dataclass, field
 from datetime import datetime
 import threading
+from string import Template
+from textwrap import dedent
 
 try:
     import winsound  # Windows-only fallback tone generator
@@ -17,9 +19,9 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QListWidget, QListWidgetItem, QScrollArea,
     QSlider, QFrame, QMessageBox, QComboBox, QTabWidget, QCheckBox,
-    QPlainTextEdit, QToolButton
+    QPlainTextEdit, QToolButton, QSizePolicy, QStackedWidget
 )
-from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal, QObject, QEvent
+from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal, QObject, QEvent, QUrl, QSize
 from PyQt5.QtGui import (
     QPainter,
     QColor,
@@ -28,10 +30,17 @@ from PyQt5.QtGui import (
     QPalette,
     QFont,
     QPaintEvent,
+    QResizeEvent,
     QMouseEvent,
     QKeyEvent,
     QCloseEvent,
+    QWindow,
 )
+
+try:
+    from PyQt5.QtWebEngineWidgets import QWebEngineView
+except ImportError:  # pragma: no cover - optional dependency
+    QWebEngineView = None  # type: ignore
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -103,6 +112,8 @@ THEME_PRESETS = {
         "dark": True
     }
 }
+
+STRUDEL_WEB_URL = "https://strudel.tidalcycles.org/"
 
 
 @dataclass(eq=False)
@@ -282,8 +293,108 @@ class PianoKeyboard(QWidget):
                             self.note_on_callback(current_note)
                 else:
                     self.mouse_down_note = None
-                
+
                 self.update()
+
+
+class PluginEditorContainer(QFrame):
+    """Container that can host a native plugin editor window."""
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("PluginEditorContainer")
+        self._window_container: Optional[QWidget] = None
+        self._window: Optional[QWindow] = None
+        self._base_minimum_height = 320
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.setMinimumHeight(self._base_minimum_height)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(0)
+
+        self.placeholder = QLabel("Dock the plugin UI to keep it pinned above the keyboard.")
+        self.placeholder.setObjectName("PluginEditorPlaceholder")
+        self.placeholder.setAlignment(Qt.AlignCenter)
+        self.placeholder.setWordWrap(True)
+        layout.addWidget(self.placeholder, 1)
+
+    def embed_handle(self, hwnd: int | None) -> None:
+        """Embed a native window handle inside the container."""
+
+        self.clear_container()
+        if not hwnd:
+            return
+
+        window = QWindow.fromWinId(int(hwnd))
+        window.setFlags(Qt.FramelessWindowHint)
+        container = QWidget.createWindowContainer(window, self)
+        container.setFocusPolicy(Qt.StrongFocus)
+        container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.layout().addWidget(container)
+        self._window_container = container
+        self._window = window
+        try:
+            window.widthChanged.connect(self._on_window_dimension_changed)  # type: ignore[attr-defined]
+            window.heightChanged.connect(self._on_window_dimension_changed)  # type: ignore[attr-defined]
+        except Exception:
+            pass
+        self._apply_window_size(window.size())
+        self.placeholder.hide()
+
+    def clear_container(self) -> None:
+        """Remove any embedded plugin editor from the container."""
+
+        if self._window_container is not None:
+            self._window_container.setParent(None)
+            self._window_container.deleteLater()
+            self._window_container = None
+        if self._window is not None:
+            try:
+                self._window.widthChanged.disconnect(self._on_window_dimension_changed)  # type: ignore[attr-defined]
+            except Exception:
+                pass
+            try:
+                self._window.heightChanged.disconnect(self._on_window_dimension_changed)  # type: ignore[attr-defined]
+            except Exception:
+                pass
+            self._window.setParent(None)
+            self._window = None
+        self.placeholder.show()
+        self.setMinimumHeight(self._base_minimum_height)
+        self.setMinimumWidth(0)
+        self.updateGeometry()
+
+    def resizeEvent(self, event: QResizeEvent) -> None:  # type: ignore[override]
+        super().resizeEvent(event)
+        if self._window is None:
+            return
+        size = event.size()
+        if size.isValid():
+            try:
+                self._window.resize(size)
+            except Exception:
+                pass
+
+    def _apply_window_size(self, size: QSize) -> None:
+        if not size.isValid():
+            return
+        margins = self.layout().contentsMargins()
+        width = max(size.width(), 320)
+        height = max(size.height(), self._base_minimum_height)
+        if self._window_container is not None:
+            self._window_container.setMinimumSize(size)
+            self._window_container.resize(size)
+        self.setMinimumSize(
+            width + margins.left() + margins.right(),
+            height + margins.top() + margins.bottom(),
+        )
+        self.updateGeometry()
+
+    def _on_window_dimension_changed(self, _value: int) -> None:
+        if self._window is None:
+            return
+        self._apply_window_size(self._window.size())
 
 
 class CollapsibleSection(QFrame):
@@ -296,25 +407,19 @@ class CollapsibleSection(QFrame):
         self.setObjectName("CollapsibleSection")
 
         self.toggle_button = QToolButton()
+        self.toggle_button.setObjectName("SectionToggle")
         self.toggle_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.toggle_button.setArrowType(Qt.DownArrow)
         self.toggle_button.setText(title)
         self.toggle_button.setCheckable(True)
         self.toggle_button.setChecked(True)
         self.toggle_button.toggled.connect(self._on_toggled)
-        self.toggle_button.setStyleSheet("""
-            QToolButton {
-                border: none;
-                font-weight: 600;
-                padding: 6px 4px;
-                text-align: left;
-            }
-        """)
+        self.toggle_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
         self.content_area = QFrame()
         self.content_area.setObjectName("CollapsibleSectionContent")
         self.content_layout = QVBoxLayout(self.content_area)
-        self.content_layout.setContentsMargins(0, 0, 0, 0)
+        self.content_layout.setContentsMargins(12, 12, 12, 12)
         self.content_layout.setSpacing(0)
 
         wrapper_layout = QVBoxLayout(self)
@@ -322,6 +427,8 @@ class CollapsibleSection(QFrame):
         wrapper_layout.setSpacing(6)
         wrapper_layout.addWidget(self.toggle_button)
         wrapper_layout.addWidget(self.content_area)
+
+        self.content_area.setVisible(self.toggle_button.isChecked())
 
     def _on_toggled(self, checked: bool) -> None:
         self.toggle_button.setArrowType(Qt.DownArrow if checked else Qt.RightArrow)
@@ -334,6 +441,11 @@ class CollapsibleSection(QFrame):
             if item.widget():
                 item.widget().setParent(None)
         self.content_layout.addWidget(widget)
+
+    def set_expanded(self, expanded: bool) -> None:
+        """Programmatically expand or collapse the section."""
+
+        self.toggle_button.setChecked(bool(expanded))
 
 
 class PluginChainWidget(QWidget):
@@ -348,12 +460,29 @@ class PluginChainWidget(QWidget):
         self.slots: List[PluginChainSlot] = []
         self.selected_slot_index = -1
         self._ui_threads: Dict[PluginChainSlot, threading.Thread] = {}
+        self.host_window_id: Optional[int] = None
+        self.host_dock_check: Optional[QCheckBox] = None
+        self.host_editor_container: Optional["PluginEditorContainer"] = None
 
         self.init_ui()
         self._install_event_filter()
 
         # Create one default slot (multi-slot disabled for now)
         self.add_slot()
+
+    def set_host_controls(
+        self,
+        dock_check: Optional[QCheckBox],
+        editor_container: Optional["PluginEditorContainer"],
+    ) -> None:
+        """Share the host dock toggle and container owned by the main window."""
+
+        self.host_dock_check = dock_check
+        self.host_editor_container = editor_container
+
+    def _clear_host_container(self) -> None:
+        if self.host_editor_container:
+            self.host_editor_container.clear_container()
 
     def init_ui(self):
         layout = QVBoxLayout(self)
@@ -450,6 +579,76 @@ class PluginChainWidget(QWidget):
         except Exception:
             pass
 
+    def register_host_window(self, win_id: int) -> None:
+        """Remember the main window handle for plugin window discovery."""
+
+        self.host_window_id = int(win_id)
+        for slot in self.slots:
+            if slot.host:
+                slot.host.register_host_window(self.host_window_id)
+
+    def _current_slot(self) -> Optional[PluginChainSlot]:
+        if 0 <= self.selected_slot_index < len(self.slots):
+            return self.slots[self.selected_slot_index]
+        return None
+
+    def _activate_plugin_ui(self, slot: PluginChainSlot, handle: Optional[int]) -> None:
+        """Embed or raise the plugin UI based on the dock toggle state."""
+
+        if not slot.host:
+            return
+
+        dock_check = self.host_dock_check
+        container = self.host_editor_container
+
+        if dock_check and container and dock_check.isChecked():
+            parent_id = int(container.winId())
+            if handle and slot.host.embed_plugin_window(parent_id):
+                container.embed_handle(handle)
+                return
+
+            # Docking failed - fall back to floating window and inform the user.
+            container.clear_container()
+            dock_check.blockSignals(True)
+            dock_check.setChecked(False)
+            dock_check.blockSignals(False)
+            QMessageBox.warning(
+                self,
+                "Plugin Dock",
+                "This plugin's editor could not be docked. It will open as a separate window instead.",
+            )
+
+        # Ensure the plugin UI floats and can be focused from the taskbar.
+        slot.host.embed_plugin_window(None)
+        if container:
+            container.clear_container()
+        slot.host.ensure_plugin_window_taskbar()
+        slot.host.focus_plugin_window()
+
+    def on_host_dock_toggled(self, checked: bool) -> None:
+        slot = self._current_slot()
+        if not slot or not slot.host or not slot.ui_visible:
+            if not checked:
+                self._clear_host_container()
+            return
+
+        handle = slot.host.get_plugin_window_handle(attempts=20)
+        if checked:
+            self._activate_plugin_ui(slot, handle)
+        else:
+            slot.host.embed_plugin_window(None)
+            self._clear_host_container()
+            slot.host.ensure_plugin_window_taskbar()
+            slot.host.focus_plugin_window()
+
+    def _after_ui_shown(self, slot: PluginChainSlot) -> None:
+        if slot not in self.slots or not slot.host:
+            return
+        dock_check = self.host_dock_check
+        attempts = 30 if dock_check and dock_check.isChecked() else 15
+        handle = slot.host.get_plugin_window_handle(attempts=attempts)
+        self._activate_plugin_ui(slot, handle)
+
     def add_slot(self):
         """Add a new plugin slot to the chain."""
         slot = PluginChainSlot(index=len(self.slots))
@@ -474,6 +673,7 @@ class PluginChainWidget(QWidget):
                 slot.host.unload()
                 slot.host.shutdown()
         slot.supports_midi = False
+        self._clear_host_container()
 
         self.slots.pop(removed_index)
         self.chain_list.takeItem(removed_index)
@@ -569,6 +769,7 @@ class PluginChainWidget(QWidget):
         slot.plugin_path = None
         slot.supports_midi = False
         slot.ui_visible = False
+        self._clear_host_container()
         self.update_slot_display(self.selected_slot_index)
         self.update_controls()
     
@@ -598,15 +799,23 @@ class PluginChainWidget(QWidget):
         try:
             if slot.ui_visible:
                 with slot.lock:
+                    try:
+                        slot.host.embed_plugin_window(None)
+                    except Exception:
+                        pass
                     slot.host.hide_ui()
                 slot.ui_visible = False
+                self._clear_host_container()
                 self.update_controls()
             else:
                 # Call show_ui() without holding lock - it handles threading internally
                 self.logger.info("Requesting UI for slot %s (%s)", slot.index, slot.plugin_path)
+                if self.host_window_id is not None:
+                    slot.host.register_host_window(self.host_window_id)
                 slot.host.show_ui()
                 # Set visible flag with a small delay to let UI thread start
-                QTimer.singleShot(100, lambda: self._set_ui_visible(slot, True))
+                QTimer.singleShot(150, lambda: self._set_ui_visible(slot, True))
+                QTimer.singleShot(180, lambda s=slot: self._after_ui_shown(s))
         except Exception as e:
             self.logger.error("UI error for slot %s: %s", slot.index, e, exc_info=True)
             QMessageBox.warning(self, "UI Error", f"Failed to open UI: {e}\n\nSome plugins may not support native UI.")
@@ -744,6 +953,14 @@ class AmbianceQtImproved(QMainWindow):
         self.fallback_audio_threads: List[threading.Thread] = []
         self.warned_no_winsound = False
 
+        self.strudel_available = QWebEngineView is not None
+        self.strudel_loaded = False
+        self.body_stack: Optional[QStackedWidget] = None
+        self.strudel_container: Optional[QWidget] = None
+        self.strudel_view: Optional["QWebEngineView"] = None
+        self.strudel_mode_btn: Optional[QPushButton] = None
+        self.default_status_message = "Ready - pick a plugin from the library."
+
         self.audio_engine: Optional[AudioEngine] = None
         try:
             self.audio_engine = AudioEngine()
@@ -770,36 +987,45 @@ class AmbianceQtImproved(QMainWindow):
         self.setWindowTitle("Ambiance Studio Rack")
         self.setGeometry(120, 80, 1560, 960)
         self.update_theme_palette()
-        
+
         central = QWidget()
         central.setObjectName("CentralWidget")
         self.setCentralWidget(central)
-        
+
         root_layout = QVBoxLayout(central)
         root_layout.setContentsMargins(16, 16, 16, 16)
         root_layout.setSpacing(14)
-        
+
         self.toolbar = self.build_toolbar()
         root_layout.addWidget(self.toolbar)
-        
+
+        self.body_stack = QStackedWidget()
+        self.body_stack.setObjectName("BodyStack")
+        root_layout.addWidget(self.body_stack, 1)
+
         self.scroll_area = QScrollArea()
         self.scroll_area.setObjectName("BodyScrollArea")
         self.scroll_area.setWidgetResizable(True)
-        root_layout.addWidget(self.scroll_area)
-        
+        self.scroll_area.setFrameShape(QFrame.NoFrame)
+        self.body_stack.addWidget(self.scroll_area)
+
         self.body_widget = QWidget()
         self.body_widget.setObjectName("BodyWidget")
         self.scroll_area.setWidget(self.body_widget)
-        
+
         self.body_layout = QVBoxLayout(self.body_widget)
         self.body_layout.setContentsMargins(0, 0, 0, 0)
         self.body_layout.setSpacing(20)
         
         self.plugin_block = self.build_plugin_block()
-        self.body_layout.addWidget(self.plugin_block)
+        self.plugin_section = CollapsibleSection("Plugin Rack")
+        self.plugin_section.setContentWidget(self.plugin_block)
+        self.plugin_section.set_expanded(False)
+        self.body_layout.addWidget(self.plugin_section)
 
         if self.audio_engine is not None:
             self.blocks_panel = BlocksPanel(self.audio_engine)
+            self.blocks_panel.apply_theme(self.colors, dark=self.dark_mode)
             created_block = self.blocks_panel.create_block()
             if created_block is not None:
                 self.append_log("Blocks engine ready - Block 1 created.")
@@ -811,13 +1037,39 @@ class AmbianceQtImproved(QMainWindow):
             self.blocks_section = None
             self.append_log("Audio engine unavailable - Blocks panel disabled.")
 
+        self.strudel_container = QWidget()
+        self.strudel_container.setObjectName("StrudelContainer")
+        strudel_layout = QVBoxLayout(self.strudel_container)
+        strudel_layout.setContentsMargins(0, 0, 0, 0)
+        strudel_layout.setSpacing(0)
+
+        if self.strudel_available:
+            self.strudel_view = QWebEngineView(self.strudel_container)
+            self.strudel_view.setObjectName("StrudelView")
+            self.strudel_view.setContextMenuPolicy(Qt.NoContextMenu)
+            strudel_layout.addWidget(self.strudel_view)
+        else:
+            fallback_label = QLabel(
+                "Strudel Mode requires PyQtWebEngine. Install the 'PyQtWebEngine' package "
+                "to enable the embedded browser."
+            )
+            fallback_label.setObjectName("StrudelFallback")
+            fallback_label.setWordWrap(True)
+            fallback_label.setAlignment(Qt.AlignCenter)
+            strudel_layout.addStretch(1)
+            strudel_layout.addWidget(fallback_label)
+            strudel_layout.addStretch(1)
+
+        self.body_stack.addWidget(self.strudel_container)
+        self.body_stack.setCurrentWidget(self.scroll_area)
+
         self.body_layout.addStretch()
 
         self.update_host_controls()
-        
-        self.statusBar().showMessage("Ready - pick a plugin from the library.")
+
+        self.statusBar().showMessage(self.default_status_message)
         self.apply_theme(self.theme_key, update_combo=False)
-        
+
         QTimer.singleShot(150, self.scan_plugins)
 
     def build_toolbar(self) -> QFrame:
@@ -850,6 +1102,12 @@ class AmbianceQtImproved(QMainWindow):
         self.style_mode_btn.setCheckable(True)
         self.style_mode_btn.toggled.connect(self.on_style_mode_toggled)
         layout.addWidget(self.style_mode_btn)
+
+        self.strudel_mode_btn = QPushButton("Strudel Mode: OFF")
+        self.strudel_mode_btn.setCheckable(True)
+        self.strudel_mode_btn.setEnabled(self.strudel_available)
+        self.strudel_mode_btn.toggled.connect(self.on_strudel_mode_toggled)
+        layout.addWidget(self.strudel_mode_btn)
 
         self.theme_combo = QComboBox()
         self.theme_combo.setObjectName("ThemePicker")
@@ -891,6 +1149,50 @@ class AmbianceQtImproved(QMainWindow):
         layout.addWidget(self.load_preset_btn)
 
         return toolbar
+
+    def ensure_strudel_loaded(self) -> None:
+        if not self.strudel_available:
+            return
+        if self.strudel_loaded:
+            return
+        if not self.strudel_view:
+            return
+        try:
+            self.strudel_view.setUrl(QUrl(STRUDEL_WEB_URL))
+            self.statusBar().showMessage("Strudel Mode active – loading web playground…")
+        except Exception as exc:
+            self.append_log(f"Failed to load Strudel playground: {exc}")
+            return
+        self.strudel_loaded = True
+
+    def on_strudel_mode_toggled(self, checked: bool) -> None:
+        if not self.strudel_mode_btn:
+            return
+        self.strudel_mode_btn.setText("Strudel Mode: ON" if checked else "Strudel Mode: OFF")
+
+        if not self.strudel_available:
+            if checked:
+                QMessageBox.warning(
+                    self,
+                    "Strudel Mode",
+                    "PyQtWebEngine is not installed. Install 'PyQtWebEngine' to enable the Strudel playground."
+                )
+                self.strudel_mode_btn.blockSignals(True)
+                self.strudel_mode_btn.setChecked(False)
+                self.strudel_mode_btn.blockSignals(False)
+            return
+
+        if not self.body_stack or not self.strudel_container:
+            return
+
+        if checked:
+            self.ensure_strudel_loaded()
+            self.body_stack.setCurrentWidget(self.strudel_container)
+            if self.strudel_loaded:
+                self.statusBar().showMessage("Strudel Mode active – jam inside the embedded playground.")
+        else:
+            self.body_stack.setCurrentWidget(self.scroll_area)
+            self.statusBar().showMessage(self.default_status_message)
 
     def on_start_audio_clicked(self) -> None:
         if not self.audio_engine:
@@ -1032,6 +1334,7 @@ class AmbianceQtImproved(QMainWindow):
         self.chain_widget.slot_selected.connect(self.on_chain_slot_selected)
         self.chain_widget.slot_updated.connect(self.on_chain_slot_updated)
         layout.addWidget(self.chain_widget)
+        QTimer.singleShot(0, self._register_chain_window)
 
         self.rack_notes_label = QLabel()
         self.rack_notes_label.setObjectName("RackNotes")
@@ -1044,6 +1347,7 @@ class AmbianceQtImproved(QMainWindow):
     def build_host_panel(self) -> QFrame:
         frame = QFrame()
         frame.setObjectName("HostPanel")
+        frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         layout = QVBoxLayout(frame)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(12)
@@ -1092,6 +1396,24 @@ class AmbianceQtImproved(QMainWindow):
         self.host_warnings_label.setObjectName("HostWarnings")
         self.host_warnings_label.setWordWrap(True)
         layout.addWidget(self.host_warnings_label)
+
+        dock_row = QHBoxLayout()
+        dock_row.setSpacing(8)
+        self.host_dock_check = QCheckBox("Dock plugin UI inside host panel")
+        self.host_dock_check.setObjectName("HostDockToggle")
+        self.host_dock_check.setChecked(False)
+        dock_row.addWidget(self.host_dock_check)
+        dock_row.addStretch()
+        layout.addLayout(dock_row)
+
+        self.host_editor_container = PluginEditorContainer()
+        layout.addWidget(self.host_editor_container, 1)
+
+        if hasattr(self, "chain_widget"):
+            self.chain_widget.set_host_controls(self.host_dock_check, self.host_editor_container)
+            self.host_dock_check.toggled.connect(self.chain_widget.on_host_dock_toggled)
+        else:
+            self.host_dock_check.toggled.connect(lambda _checked: None)
 
         return frame
 
@@ -1177,6 +1499,19 @@ class AmbianceQtImproved(QMainWindow):
 
         return frame
 
+    def _register_chain_window(self) -> None:
+        """Share the main window handle with the plugin chain widget."""
+
+        if not getattr(self, "chain_widget", None):
+            return
+        window = self.windowHandle()
+        if window is None:
+            return
+        try:
+            self.chain_widget.register_host_window(int(window.winId()))
+        except Exception:
+            pass
+
     def build_rack_log_panel(self) -> QFrame:
         frame = QFrame()
         frame.setObjectName("RackLogPanel")
@@ -1223,6 +1558,9 @@ class AmbianceQtImproved(QMainWindow):
 
         self.update_theme_palette()
         self.apply_global_styles()
+
+        if getattr(self, "blocks_panel", None):
+            self.blocks_panel.apply_theme(self.colors, dark=self.dark_mode)
 
         if log_change and hasattr(self, "rack_output"):
             label = self.theme_combo.currentText() if hasattr(self, "theme_combo") else theme_key
@@ -1334,129 +1672,234 @@ class AmbianceQtImproved(QMainWindow):
         c = self.colors
         accent_soft = self.rgba(c['accent'], 0.22)
         accent_border = self.rgba(c['accent'], 0.45)
+        accent_hover = self.rgba(c['accent'], 0.32)
+        accent_selected = self.rgba(c['accent'], 0.4)
         badge_bg = self.rgba(c['accent'], 0.16)
         badge_border = self.rgba(c['accent'], 0.32)
         panel_border = self.rgba(c['border'], 0.9)
         card_border = self.rgba(c['border'], 0.4)
+        panel_opaque = self.rgba(c['panel'], 1.0)
+        panel_soft = self.rgba(c['panel'], 0.9)
         list_bg = self.rgba(c['card'], 0.65) if self.dark_mode else self.rgba(c['card'], 0.35)
         list_hover = self.rgba(c['accent'], 0.12)
         list_selected = self.rgba(c['accent'], 0.35)
         log_bg = self.rgba(c['card'], 0.55)
+        text_disabled = self.rgba(c['text'], 0.45)
+        border_disabled = self.rgba(c['border'], 0.25)
+        card_disabled = self.rgba(c['card'], 0.25)
+        card_half = self.rgba(c['card'], 0.5)
+        card_sixty = self.rgba(c['card'], 0.6)
 
-        self.setStyleSheet(f"""
-            QMainWindow {{
-                background-color: {c['bg']};
-                color: {c['text']};
-                font-family: 'Segoe UI', Arial, sans-serif;
-                font-size: 14px;
-            }}
-            QFrame#Toolbar {{
-                background-color: {c['panel']};
-                border: 1px solid {panel_border};
-                border-radius: 10px;
-            }}
-            QLabel#ToolbarTitle {{
-                font-size: 18px;
-                font-weight: 600;
-                color: {c['text']};
-            }}
-            QComboBox#ThemePicker {{
-                background-color: {c['card']};
-                border: 1px solid {panel_border};
-                border-radius: 6px;
-                padding: 6px 10px;
-                color: {c['text']};
-            }}
-            QFrame#PluginBlock {{
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {c['panel']}, stop:1 {c['card']});
-                border-radius: 16px;
-                border: 1px solid {panel_border};
-                box-shadow: 0px 26px 48px rgba(0, 0, 0, 0.30);
-            }}
-            QLabel#RackTitle {{
-                font-size: 22px;
-                font-weight: 700;
-                color: {c['text']};
-            }}
-            QLabel#RackTagline {{
-                color: {c['muted']};
-            }}
-            QLabel#RackStatus {{
-                padding: 6px 12px;
-                border-radius: 999px;
-                background-color: {badge_bg};
-                border: 1px solid {badge_border};
-                color: {c['text']};
-                font-size: 12px;
-            }}
-            QFrame#WorkspacePanel, QFrame#RackPanel, QFrame#HostPanel,
-            QFrame#InstrumentPanel, QFrame#RackLogPanel {{
-                background-color: {self.rgba(c['panel'], 0.9)};
-                border: 1px solid {card_border};
-                border-radius: 12px;
-            }}
-            QFrame#HostPanel {{
-                border: 1px solid {accent_border};
-            }}
-            QListWidget#PluginList {{
-                background-color: {list_bg};
-                border: 1px solid {card_border};
-                border-radius: 10px;
-                padding: 6px;
-            }}
-            QListWidget#PluginList::item {{
-                padding: 10px;
-                border-radius: 8px;
-                margin: 4px 0;
-                color: {c['text']};
-            }}
-            QListWidget#PluginList::item:selected {{
-                background-color: {list_selected};
-                border: 1px solid {accent_border};
-            }}
-            QListWidget#PluginList::item:hover {{
-                background-color: {list_hover};
-            }}
-            QPlainTextEdit#RackOutput {{
-                background-color: {log_bg};
-                border: 1px solid {card_border};
-                border-radius: 10px;
-                padding: 10px;
-                color: {c['text']};
-            }}
-            QPushButton {{
-                background-color: {accent_soft};
-                border: 1px solid {accent_border};
-                border-radius: 8px;
-                padding: 8px 14px;
-                color: {c['text']};
-                font-weight: 600;
-            }}
-            QPushButton:hover {{
-                background-color: {self.rgba(c['accent'], 0.32)};
-            }}
-            QPushButton:disabled {{
-                color: {self.rgba(c['text'], 0.45)};
-                border-color: {self.rgba(c['border'], 0.25)};
-                background-color: {self.rgba(c['card'], 0.25)};
-            }}
-            QTabWidget#ParameterTabs::pane {{
-                border: 1px solid {card_border};
-                background-color: {self.rgba(c['card'], 0.5)};
-                border-radius: 10px;
-            }}
-            QTabBar::tab {{
-                background-color: {self.rgba(c['card'], 0.6)};
-                border: 1px solid {card_border};
-                border-radius: 8px;
-                padding: 8px 16px;
-                color: {c['text']};
-                margin-right: 6px;
-            }}
-            QTabBar::tab:selected {{
-                background-color: {self.rgba(c['accent'], 0.4)};
-            }}
-        """)
+        style_template = Template(
+            dedent(
+                """
+                QMainWindow {
+                    background-color: $bg;
+                    color: $text;
+                    font-family: 'Segoe UI', Arial, sans-serif;
+                    font-size: 14px;
+                }
+                QWidget#CentralWidget,
+                QWidget#BodyWidget {
+                    background-color: $panel_opaque;
+                }
+                QScrollArea#BodyScrollArea {
+                    background-color: $panel_opaque;
+                    border: none;
+                }
+                QScrollArea#BodyScrollArea QWidget {
+                    background-color: $panel_opaque;
+                }
+                QStackedWidget#BodyStack {
+                    background-color: transparent;
+                    border: none;
+                }
+                QWidget#StrudelContainer {
+                    background-color: $panel_opaque;
+                    border: 1px solid $panel_border;
+                    border-radius: 16px;
+                }
+                QWebEngineView#StrudelView {
+                    background-color: $bg;
+                    border: none;
+                }
+                QLabel#StrudelFallback {
+                    color: $text;
+                    padding: 24px;
+                }
+                QFrame#Toolbar {
+                    background-color: $panel;
+                    border: 1px solid $panel_border;
+                    border-radius: 10px;
+                }
+                QLabel#ToolbarTitle {
+                    font-size: 18px;
+                    font-weight: 600;
+                    color: $text;
+                }
+                QComboBox#ThemePicker {
+                    background-color: $card;
+                    border: 1px solid $panel_border;
+                    border-radius: 6px;
+                    padding: 6px 10px;
+                    color: $text;
+                }
+                QFrame#PluginBlock {
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 $panel, stop:1 $card);
+                    border-radius: 16px;
+                    border: 1px solid $panel_border;
+                    box-shadow: 0px 26px 48px rgba(0, 0, 0, 0.30);
+                }
+                QFrame#CollapsibleSection {
+                    background-color: transparent;
+                    border: none;
+                }
+                QToolButton#SectionToggle {
+                    border: 1px solid $panel_border;
+                    border-radius: 10px;
+                    font-weight: 600;
+                    padding: 6px 10px;
+                    text-align: left;
+                    background-color: rgba(240, 240, 240, 0.94);
+                    color: #000000;
+                }
+                QToolButton#SectionToggle:hover {
+                    background-color: rgba(255, 255, 255, 0.98);
+                    color: #000000;
+                }
+                QFrame#CollapsibleSectionContent {
+                    background-color: $panel_soft;
+                    border: 1px solid $panel_border;
+                    border-radius: 14px;
+                }
+                QLabel#RackTitle {
+                    font-size: 22px;
+                    font-weight: 700;
+                    color: $text;
+                }
+                QLabel#RackTagline {
+                    color: $muted;
+                }
+                QLabel#RackStatus {
+                    padding: 6px 12px;
+                    border-radius: 999px;
+                    background-color: $badge_bg;
+                    border: 1px solid $badge_border;
+                    color: $text;
+                    font-size: 12px;
+                }
+                QFrame#WorkspacePanel,
+                QFrame#RackPanel,
+                QFrame#HostPanel,
+                QFrame#InstrumentPanel,
+                QFrame#RackLogPanel {
+                    background-color: $panel_soft;
+                    border: 1px solid $card_border;
+                    border-radius: 12px;
+                }
+                QFrame#HostPanel {
+                    border: 1px solid $accent_border;
+                }
+                QFrame#PluginEditorContainer {
+                    background-color: $panel_soft;
+                    border: 1px dashed $card_border;
+                    border-radius: 12px;
+                    min-height: 320px;
+                }
+                QFrame#PluginEditorContainer QLabel#PluginEditorPlaceholder {
+                    color: $muted;
+                    font-style: italic;
+                }
+                QListWidget#PluginList {
+                    background-color: $list_bg;
+                    border: 1px solid $card_border;
+                    border-radius: 10px;
+                    padding: 6px;
+                }
+                QListWidget#PluginList::item {
+                    padding: 10px;
+                    border-radius: 8px;
+                    margin: 4px 0;
+                    color: $text;
+                }
+                QListWidget#PluginList::item:selected {
+                    background-color: $list_selected;
+                    border: 1px solid $accent_border;
+                }
+                QListWidget#PluginList::item:hover {
+                    background-color: $list_hover;
+                }
+                QPlainTextEdit#RackOutput {
+                    background-color: $log_bg;
+                    border: 1px solid $card_border;
+                    border-radius: 10px;
+                    padding: 10px;
+                    color: $text;
+                }
+                QPushButton {
+                    background-color: $accent_soft;
+                    border: 1px solid $accent_border;
+                    border-radius: 8px;
+                    padding: 8px 14px;
+                    color: $text;
+                    font-weight: 600;
+                }
+                QPushButton:hover {
+                    background-color: $accent_hover;
+                }
+                QPushButton:disabled {
+                    color: $text_disabled;
+                    border-color: $border_disabled;
+                    background-color: $card_disabled;
+                }
+                QTabWidget#ParameterTabs::pane {
+                    border: 1px solid $card_border;
+                    background-color: $card_half;
+                    border-radius: 10px;
+                }
+                QTabBar::tab {
+                    background-color: $card_sixty;
+                    border: 1px solid $card_border;
+                    border-radius: 8px;
+                    padding: 8px 16px;
+                    color: $text;
+                    margin-right: 6px;
+                }
+                QTabBar::tab:selected {
+                    background-color: $accent_selected;
+                }
+                """
+            )
+        )
+
+        stylesheet = style_template.substitute(
+            bg=c['bg'],
+            text=c['text'],
+            muted=c['muted'],
+            panel=c['panel'],
+            panel_opaque=panel_opaque,
+            panel_soft=panel_soft,
+            panel_border=panel_border,
+            card=c['card'],
+            card_border=card_border,
+            card_half=card_half,
+            card_sixty=card_sixty,
+            card_disabled=card_disabled,
+            list_bg=list_bg,
+            list_hover=list_hover,
+            list_selected=list_selected,
+            log_bg=log_bg,
+            accent_soft=accent_soft,
+            accent_border=accent_border,
+            accent_hover=accent_hover,
+            accent_selected=accent_selected,
+            badge_bg=badge_bg,
+            badge_border=badge_border,
+            text_disabled=text_disabled,
+            border_disabled=border_disabled,
+        )
+
+        self.setStyleSheet(stylesheet)
 
     def on_edit_mode_toggled(self, checked: bool):
         self.edit_mode_btn.setText("Edit: ON" if checked else "Edit: OFF")
@@ -1766,6 +2209,8 @@ class AmbianceQtImproved(QMainWindow):
 
             # Create fresh host with unique JACK client name (prevents conflicts)
             slot.host = CarlaVSTHost(client_name=f"AmbianceSlot{slot.index}")
+            if self.chain_widget.host_window_id is not None:
+                slot.host.register_host_window(self.chain_widget.host_window_id)
 
             # Configure audio WITHOUT lock (plugin_host.py doesn't use locks)
             # Try DirectSound first for testing - JACK needs server running + routing setup
