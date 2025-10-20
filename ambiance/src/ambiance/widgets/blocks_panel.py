@@ -334,7 +334,11 @@ class BlocksPanel(QFrame):
 class BlockWidget(QGroupBox):
     """UI wrapper for a BlockController."""
 
-    def __init__(self, controller: BlockController, panel: BlocksPanel):
+    def __init__(
+        self,
+        controller: BlockController,
+        panel: BlocksPanel | None = None,
+    ):
         super().__init__(f"Block {controller.index}")
         self.controller = controller
         self.panel = panel
@@ -378,6 +382,11 @@ class BlockWidget(QGroupBox):
         self.stream_container.setContentsMargins(0, 0, 0, 0)
         self.stream_container.setSpacing(20)
         layout.addLayout(self.stream_container)
+
+        self.mods = StreamModsContainer()
+        layout.addWidget(self.mods)
+
+        self._wire_mod_controls()
 
         controller.stream_added.connect(self._on_stream_added)
         controller.stream_removed.connect(self._on_stream_removed)
@@ -434,7 +443,7 @@ class BlockWidget(QGroupBox):
             "Remove Block",
             "Are you sure you want to remove this block and all streams?",
         )
-        if confirm == QMessageBox.Yes:
+        if confirm == QMessageBox.Yes and self.panel is not None:
             self.panel.remove_block(self.controller)
 
     # ------------------------------------------------------------------
