@@ -21,6 +21,7 @@ from PyQt5.QtWidgets import (
 )
 
 from ambiance.audio_engine import AudioEngine, BlockController, StreamController
+from .stream_mods import StreamModsContainer
 
 
 class BlocksPanel(QFrame):
@@ -140,6 +141,11 @@ class BlockWidget(QGroupBox):
         self.stream_container.setContentsMargins(0, 0, 0, 0)
         self.stream_container.setSpacing(20)
         layout.addLayout(self.stream_container)
+
+        self.mods = StreamModsContainer()
+        layout.addWidget(self.mods)
+
+        self._wire_mod_controls()
 
         controller.stream_added.connect(self._on_stream_added)
         controller.stream_removed.connect(self._on_stream_removed)
@@ -263,8 +269,43 @@ class StreamWidget(QGroupBox):
 
         controller.file_loaded.connect(self._on_file_loaded)
         controller.state_changed.connect(self._sync_state)
-        self._update_file_labels()
         self._sync_state()
+
+    def _wire_mod_controls(self) -> None:
+        mods = self.mods
+        mods.time_pitch.tempo_changed.connect(self.controller.set_tempo)
+        mods.time_pitch.pitch_changed.connect(self.controller.set_pitch)
+        mods.time_pitch.reverse_a_changed.connect(lambda val: self.controller.set_reverse("A", val))
+        mods.time_pitch.reverse_b_changed.connect(lambda val: self.controller.set_reverse("B", val))
+        mods.time_pitch.loop_changed.connect(self.controller.set_loop)
+
+        mods.muffle.enabled_changed.connect(self.controller.set_muffle_enabled)
+        mods.muffle.amount_changed.connect(self.controller.set_muffle_amount)
+
+        mods.tone.enabled_changed.connect(self.controller.set_tone_enabled)
+        mods.tone.wave_changed.connect(self.controller.set_tone_wave)
+        mods.tone.base_changed.connect(self.controller.set_tone_base)
+        mods.tone.beat_changed.connect(self.controller.set_tone_beat)
+        mods.tone.level_changed.connect(self.controller.set_tone_level)
+
+        mods.noise.enabled_changed.connect(self.controller.set_noise_enabled)
+        mods.noise.type_changed.connect(self.controller.set_noise_type)
+        mods.noise.level_changed.connect(self.controller.set_noise_level)
+        mods.noise.tilt_changed.connect(self.controller.set_noise_tilt)
+
+        mods.eq.low_changed.connect(self.controller.set_eq_low)
+        mods.eq.mid_changed.connect(self.controller.set_eq_mid)
+        mods.eq.high_changed.connect(self.controller.set_eq_high)
+
+        mods.fx.mix_changed.connect(self.controller.set_fx_mix)
+        mods.fx.delay_changed.connect(self.controller.set_fx_delay)
+        mods.fx.feedback_changed.connect(self.controller.set_fx_feedback)
+        mods.fx.dist_changed.connect(self.controller.set_fx_distortion)
+
+        mods.space.preset_changed.connect(self.controller.set_space_preset)
+        mods.space.mix_changed.connect(self.controller.set_space_mix)
+        mods.space.decay_changed.connect(self.controller.set_space_decay)
+        mods.space.predelay_changed.connect(self.controller.set_space_predelay)
 
     def _make_slider(self, minimum: int, maximum: int, value: int) -> QSlider:
         slider = QSlider(Qt.Horizontal)
@@ -341,3 +382,4 @@ class StreamWidget(QGroupBox):
         self.mute_btn.setChecked(self.controller.muted)
         self.mute_btn.blockSignals(False)
         self._update_file_labels()
+        self.mods.set_state(self.controller.get_mod_state())
