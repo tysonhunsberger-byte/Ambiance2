@@ -17,6 +17,8 @@ from PyQt5.QtWidgets import (
     QCheckBox,
     QMessageBox,
     QSizePolicy,
+    QToolButton,
+    QSpacerItem,
 )
 
 from ambiance.audio_engine import AudioEngine, BlockController, StreamController
@@ -138,6 +140,92 @@ class BlocksPanel(QFrame):
         self._block_widgets: Dict[BlockController, BlockWidget] = {}
         self.setObjectName("BlocksPanel")
 
+        self.setStyleSheet(
+            """
+            #BlocksPanel {
+                background-color: #101010;
+                color: #f1f1f1;
+            }
+            #BlocksPanel QLabel {
+                color: #f1f1f1;
+            }
+            #BlocksPanel QPushButton {
+                background-color: #232323;
+                color: #f1f1f1;
+                border: 1px solid #3a3a3a;
+                border-radius: 6px;
+                padding: 6px 12px;
+            }
+            #BlocksPanel QPushButton:hover {
+                background-color: #2f2f2f;
+            }
+            #BlocksPanel QPushButton:pressed {
+                background-color: #3b3b3b;
+            }
+            #BlocksPanel QGroupBox {
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                border-radius: 12px;
+                margin-top: 18px;
+            }
+            #BlocksPanel QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                padding: 0 8px;
+                color: #f1f1f1;
+            }
+            #BlockWidget {
+                background-color: rgba(34, 34, 34, 0.92);
+            }
+            #BlockWidget QLabel {
+                color: #f1f1f1;
+            }
+            #StreamWidget {
+                background-color: rgba(28, 28, 28, 0.95);
+            }
+            #StreamWidget QLabel {
+                color: #f1f1f1;
+            }
+            #StreamWidget QCheckBox,
+            #StreamWidget QComboBox,
+            #StreamWidget QDoubleSpinBox {
+                color: #f1f1f1;
+            }
+            #StreamWidget QComboBox,
+            #StreamWidget QDoubleSpinBox {
+                background-color: #1c1c1c;
+                border: 1px solid #3a3a3a;
+                border-radius: 4px;
+                padding: 2px 6px;
+            }
+            #StreamWidget QToolButton {
+                background-color: #232323;
+                color: #f1f1f1;
+                border: 1px solid #3a3a3a;
+                border-radius: 6px;
+                padding: 4px 10px;
+            }
+            #StreamWidget QToolButton:checked {
+                background-color: #2d2d2d;
+            }
+            #StreamWidget QSlider::groove:horizontal {
+                height: 6px;
+                background: #2e2e2e;
+                border-radius: 3px;
+            }
+            #StreamWidget QSlider::handle:horizontal {
+                background: #4f6fe8;
+                border: 1px solid #6d8cff;
+                width: 14px;
+                margin: -4px 0;
+                border-radius: 7px;
+            }
+            #StreamWidget QSlider::sub-page:horizontal {
+                background: #4f6fe8;
+                border-radius: 3px;
+            }
+        """
+        )
+
         # Legacy compatibility handles for the desktop shell which still
         # references panel-level seeker and label attributes.
         self.seekerA = _LegacySliderProxy()
@@ -247,8 +335,8 @@ class BlockWidget(QGroupBox):
         self.stream_widgets: Dict[StreamController, StreamWidget] = {}
 
         self.setObjectName("BlockWidget")
-        self.setStyleSheet("BlockWidget { border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; }")
 
+        self.setObjectName("BlockWidget")
         layout = QVBoxLayout(self)
         layout.setContentsMargins(18, 20, 18, 20)
         layout.setSpacing(18)
@@ -372,7 +460,6 @@ class StreamWidget(QGroupBox):
         self._duration_info = {"A": 0.0, "B": 0.0}
         self._seeking_layer: str | None = None
         self.setObjectName("StreamWidget")
-        self.setStyleSheet("StreamWidget { border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; }")
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.setMinimumHeight(260)
 
@@ -462,7 +549,21 @@ class StreamWidget(QGroupBox):
         layout.addLayout(self._slider_row("Volume", self.volume_slider))
         layout.addSpacing(8)
         layout.addLayout(self._slider_row("Pan", self.pan_slider))
-        layout.addSpacing(6)
+        self.mods_spacer = QSpacerItem(0, 6, QSizePolicy.Minimum, QSizePolicy.Fixed)
+        layout.addItem(self.mods_spacer)
+
+        self.mods_toggle = QToolButton()
+        self.mods_toggle.setText("Effects Rack")
+        self.mods_toggle.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.mods_toggle.setArrowType(Qt.DownArrow)
+        self.mods_toggle.setCheckable(True)
+        self.mods_toggle.setChecked(True)
+        self.mods_toggle.toggled.connect(self._on_mods_toggled)
+        layout.addWidget(self.mods_toggle, 0, Qt.AlignLeft)
+
+        self.mods = StreamModsContainer()
+        layout.addWidget(self.mods)
+        self._wire_mod_controls()
 
         self.mods = StreamModsContainer()
         layout.addWidget(self.mods)
@@ -512,6 +613,13 @@ class StreamWidget(QGroupBox):
         mods.space.mix_changed.connect(self.controller.set_space_mix)
         mods.space.decay_changed.connect(self.controller.set_space_decay)
         mods.space.predelay_changed.connect(self.controller.set_space_predelay)
+
+    def _on_mods_toggled(self, checked: bool) -> None:
+        self.mods.setVisible(checked)
+        self.mods_toggle.setArrowType(Qt.DownArrow if checked else Qt.RightArrow)
+        if hasattr(self, "mods_spacer"):
+            self.mods_spacer.changeSize(0, 6 if checked else 0, QSizePolicy.Minimum, QSizePolicy.Fixed)
+            self.layout().invalidate()
 
     def _make_slider(self, minimum: int, maximum: int, value: int) -> QSlider:
         slider = QSlider(Qt.Horizontal)

@@ -87,26 +87,68 @@ class CollapsibleMod(QWidget):
         self.setStyleSheet(
             """
             QFrame#ModHeader {
-                background-color: #2a2a2a;
-                border: 1px solid #555;
+                background-color: #2d2d2d;
+                border: 1px solid #4a4a4a;
                 border-radius: 6px 6px 0 0;
             }
             QFrame#ModHeader:hover {
-                background-color: #333;
+                background-color: #383838;
             }
-            QLabel#ModTitle {
+            QLabel#ModTitle, QLabel#ModCaret {
                 font-weight: 700;
-                color: #f0f0f0;
-            }
-            QLabel#ModCaret {
-                font-weight: 800;
-                color: #f0f0f0;
+                color: #f5f5f5;
             }
             QFrame#ModBody {
-                background-color: #1a1a1a;
-                border: 1px solid #555;
+                background-color: #1b1b1b;
+                border: 1px solid #4a4a4a;
                 border-top: none;
                 border-radius: 0 0 6px 6px;
+            }
+            QFrame#ModBody QLabel,
+            QFrame#ModBody QCheckBox,
+            QFrame#ModBody QRadioButton {
+                color: #e8e8e8;
+            }
+            QFrame#ModBody QPushButton {
+                background-color: #2d2d2d;
+                color: #f5f5f5;
+                border: 1px solid #4c4c4c;
+                border-radius: 4px;
+                padding: 4px 8px;
+            }
+            QFrame#ModBody QPushButton:checked {
+                background-color: #3f63b8;
+                border-color: #5b7fe2;
+            }
+            QFrame#ModBody QComboBox,
+            QFrame#ModBody QDoubleSpinBox,
+            QFrame#ModBody QSpinBox {
+                background-color: #252525;
+                border: 1px solid #4c4c4c;
+                border-radius: 4px;
+                color: #f0f0f0;
+                padding: 2px 6px;
+            }
+            QFrame#ModBody QComboBox QAbstractItemView {
+                background-color: #2e2e2e;
+                color: #f0f0f0;
+                selection-background-color: #3f63b8;
+            }
+            QFrame#ModBody QSlider::groove:horizontal {
+                height: 6px;
+                background: #303030;
+                border-radius: 3px;
+            }
+            QFrame#ModBody QSlider::handle:horizontal {
+                background: #5b7fe2;
+                border: 1px solid #7c95f0;
+                width: 14px;
+                margin: -4px 0;
+                border-radius: 7px;
+            }
+            QFrame#ModBody QSlider::sub-page:horizontal {
+                background: #3f63b8;
+                border-radius: 3px;
             }
         """
         )
@@ -365,7 +407,7 @@ class ToneMod(CollapsibleMod):
         self._update_summary()
 
     def _on_toggle(self, checked: bool) -> None:
-        self.toggle_btn.setText(f"Tone: {'ON' if checked else 'OFF'}")
+        self._update_toggle_text(checked)
         self.enabled_changed.emit(checked)
 
     def _on_preset_changed(self, preset: str) -> None:
@@ -388,6 +430,9 @@ class ToneMod(CollapsibleMod):
     def _on_level_changed(self, value: int) -> None:
         self.level_changed.emit(value / 100.0)
 
+    def _update_toggle_text(self, checked: bool) -> None:
+        self.toggle_btn.setText(f"Tone: {'ON' if checked else 'OFF'}")
+
     def _update_summary(self) -> None:
         base = self.base_spin.value()
         beat = self.beat_spin.value()
@@ -402,7 +447,7 @@ class ToneMod(CollapsibleMod):
             self.toggle_btn.blockSignals(True)
             self.toggle_btn.setChecked(bool(state["enabled"]))
             self.toggle_btn.blockSignals(False)
-            self._on_toggle(bool(state["enabled"]))
+            self._update_toggle_text(bool(state["enabled"]))
         if "wave" in state:
             wave = str(state["wave"])
             index = self.wave_combo.findText(wave)
@@ -474,8 +519,11 @@ class NoiseMod(CollapsibleMod):
         self.add_layout(row)
 
     def _on_toggle(self, checked: bool) -> None:
-        self.toggle_btn.setText(f"Noise: {'ON' if checked else 'OFF'}")
+        self._update_toggle_text(checked)
         self.enabled_changed.emit(checked)
+
+    def _update_toggle_text(self, checked: bool) -> None:
+        self.toggle_btn.setText(f"Noise: {'ON' if checked else 'OFF'}")
 
     def set_state(self, state: Dict[str, object]) -> None:
         if not state:
@@ -484,7 +532,7 @@ class NoiseMod(CollapsibleMod):
             self.toggle_btn.blockSignals(True)
             self.toggle_btn.setChecked(bool(state["enabled"]))
             self.toggle_btn.blockSignals(False)
-            self._on_toggle(bool(state["enabled"]))
+            self._update_toggle_text(bool(state["enabled"]))
         if "type" in state:
             index = self.type_combo.findText(str(state["type"]))
             if index >= 0:

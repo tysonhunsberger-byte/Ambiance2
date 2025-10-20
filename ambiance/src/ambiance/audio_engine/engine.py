@@ -770,8 +770,10 @@ class StreamController(QObject):
             }
             wave_type = wave_map.get(self._tone_wave, 0)
             tone = pyo.LFO(freq=freqs, type=wave_type, mul=self._tone_level)
-            generators.append(tone)
             self._register_generator(tone)
+            tone_mix = pyo.Mix(tone, voices=2)
+            generators.append(tone_mix)
+            self._register_generator(tone_mix)
 
         if self._noise_enabled and self._noise_level > 0:
             noise_source: Optional[pyo.PyoObject] = None
