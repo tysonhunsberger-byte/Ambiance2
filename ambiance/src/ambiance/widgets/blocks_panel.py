@@ -348,8 +348,6 @@ class BlockWidget(QGroupBox):
         self.stream_widgets: Dict[StreamController, StreamWidget] = {}
 
         self.setObjectName("BlockWidget")
-
-        self.setObjectName("BlockWidget")
         layout = QVBoxLayout(self)
         layout.setContentsMargins(18, 20, 18, 20)
         layout.setSpacing(18)
@@ -463,19 +461,6 @@ class BlockWidget(QGroupBox):
                 self.setEnabled(True)
                 self.add_stream_btn.setEnabled(True)
                 self.remove_btn.setEnabled(True)
-
-    # ------------------------------------------------------------------
-    def _wire_mod_controls(self) -> None:
-        """Legacy no-op retained for backwards compatibility.
-
-        Older versions of the desktop shell used to poke the block widgets
-        directly to wire the per-stream effect controls. The modern widgets
-        handle that work internally (see :class:`StreamWidget`), but we keep
-        the attribute so that stale imports don't crash during startup.
-        """
-
-        # Nothing to do here – the method simply needs to exist.
-        return None
 
     # ------------------------------------------------------------------
     def _wire_mod_controls(self) -> None:

@@ -7,6 +7,8 @@ from typing import Optional, List, Dict, Any, Tuple, cast
 from dataclasses import dataclass, field
 from datetime import datetime
 import threading
+from string import Template
+from textwrap import dedent
 
 try:
     import winsound  # Windows-only fallback tone generator
@@ -1339,162 +1341,207 @@ class AmbianceQtImproved(QMainWindow):
         c = self.colors
         accent_soft = self.rgba(c['accent'], 0.22)
         accent_border = self.rgba(c['accent'], 0.45)
+        accent_hover = self.rgba(c['accent'], 0.32)
+        accent_selected = self.rgba(c['accent'], 0.4)
         badge_bg = self.rgba(c['accent'], 0.16)
         badge_border = self.rgba(c['accent'], 0.32)
         panel_border = self.rgba(c['border'], 0.9)
         card_border = self.rgba(c['border'], 0.4)
+        panel_opaque = self.rgba(c['panel'], 1.0)
+        panel_soft = self.rgba(c['panel'], 0.9)
         list_bg = self.rgba(c['card'], 0.65) if self.dark_mode else self.rgba(c['card'], 0.35)
         list_hover = self.rgba(c['accent'], 0.12)
         list_selected = self.rgba(c['accent'], 0.35)
         log_bg = self.rgba(c['card'], 0.55)
+        text_disabled = self.rgba(c['text'], 0.45)
+        border_disabled = self.rgba(c['border'], 0.25)
+        card_disabled = self.rgba(c['card'], 0.25)
+        card_half = self.rgba(c['card'], 0.5)
+        card_sixty = self.rgba(c['card'], 0.6)
 
-        self.setStyleSheet(f"""
-            QMainWindow {{
-                background-color: {c['bg']};
-                color: {c['text']};
-                font-family: 'Segoe UI', Arial, sans-serif;
-                font-size: 14px;
-            }}
-            QWidget#CentralWidget,
-            QWidget#BodyWidget {
-                background-color: {self.rgba(c['panel'], 1.0)};
-            }
-            QScrollArea#BodyScrollArea {
-                background-color: {self.rgba(c['panel'], 1.0)};
-                border: none;
-            }
-            QScrollArea#BodyScrollArea QWidget {
-                background-color: {self.rgba(c['panel'], 1.0)};
-            }
-            QFrame#Toolbar {{
-                background-color: {c['panel']};
-                border: 1px solid {panel_border};
-                border-radius: 10px;
-            }}
-            QLabel#ToolbarTitle {{
-                font-size: 18px;
-                font-weight: 600;
-                color: {c['text']};
-            }}
-            QComboBox#ThemePicker {{
-                background-color: {c['card']};
-                border: 1px solid {panel_border};
-                border-radius: 6px;
-                padding: 6px 10px;
-                color: {c['text']};
-            }}
-            QFrame#PluginBlock {{
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {c['panel']}, stop:1 {c['card']});
-                border-radius: 16px;
-                border: 1px solid {panel_border};
-                box-shadow: 0px 26px 48px rgba(0, 0, 0, 0.30);
-            }}
-            QFrame#CollapsibleSection {{
-                background-color: transparent;
-                border: none;
-            }}
-            QToolButton#SectionToggle {{
-                border: 1px solid {panel_border};
-                border-radius: 10px;
-                font-weight: 600;
-                padding: 6px 10px;
-                text-align: left;
-                background-color: rgba(240, 240, 240, 0.94);
-                color: #000000;
-            }}
-            QToolButton#SectionToggle:hover {{
-                background-color: rgba(255, 255, 255, 0.98);
-                color: #000000;
-            }}
-            QFrame#CollapsibleSectionContent {{
-                background-color: {self.rgba(c['panel'], 0.9)};
-                border: 1px solid {panel_border};
-                border-radius: 14px;
-            }}
-            QLabel#RackTitle {{
-                font-size: 22px;
-                font-weight: 700;
-                color: {c['text']};
-            }}
-            QLabel#RackTagline {{
-                color: {c['muted']};
-            }}
-            QLabel#RackStatus {{
-                padding: 6px 12px;
-                border-radius: 999px;
-                background-color: {badge_bg};
-                border: 1px solid {badge_border};
-                color: {c['text']};
-                font-size: 12px;
-            }}
-            QFrame#WorkspacePanel, QFrame#RackPanel, QFrame#HostPanel,
-            QFrame#InstrumentPanel, QFrame#RackLogPanel {{
-                background-color: {self.rgba(c['panel'], 0.9)};
-                border: 1px solid {card_border};
-                border-radius: 12px;
-            }}
-            QFrame#HostPanel {{
-                border: 1px solid {accent_border};
-            }}
-            QListWidget#PluginList {{
-                background-color: {list_bg};
-                border: 1px solid {card_border};
-                border-radius: 10px;
-                padding: 6px;
-            }}
-            QListWidget#PluginList::item {{
-                padding: 10px;
-                border-radius: 8px;
-                margin: 4px 0;
-                color: {c['text']};
-            }}
-            QListWidget#PluginList::item:selected {{
-                background-color: {list_selected};
-                border: 1px solid {accent_border};
-            }}
-            QListWidget#PluginList::item:hover {{
-                background-color: {list_hover};
-            }}
-            QPlainTextEdit#RackOutput {{
-                background-color: {log_bg};
-                border: 1px solid {card_border};
-                border-radius: 10px;
-                padding: 10px;
-                color: {c['text']};
-            }}
-            QPushButton {{
-                background-color: {accent_soft};
-                border: 1px solid {accent_border};
-                border-radius: 8px;
-                padding: 8px 14px;
-                color: {c['text']};
-                font-weight: 600;
-            }}
-            QPushButton:hover {{
-                background-color: {self.rgba(c['accent'], 0.32)};
-            }}
-            QPushButton:disabled {{
-                color: {self.rgba(c['text'], 0.45)};
-                border-color: {self.rgba(c['border'], 0.25)};
-                background-color: {self.rgba(c['card'], 0.25)};
-            }}
-            QTabWidget#ParameterTabs::pane {{
-                border: 1px solid {card_border};
-                background-color: {self.rgba(c['card'], 0.5)};
-                border-radius: 10px;
-            }}
-            QTabBar::tab {{
-                background-color: {self.rgba(c['card'], 0.6)};
-                border: 1px solid {card_border};
-                border-radius: 8px;
-                padding: 8px 16px;
-                color: {c['text']};
-                margin-right: 6px;
-            }}
-            QTabBar::tab:selected {{
-                background-color: {self.rgba(c['accent'], 0.4)};
-            }}
-        """)
+        style_template = Template(
+            dedent(
+                """
+                QMainWindow {
+                    background-color: $bg;
+                    color: $text;
+                    font-family: 'Segoe UI', Arial, sans-serif;
+                    font-size: 14px;
+                }
+                QWidget#CentralWidget,
+                QWidget#BodyWidget {
+                    background-color: $panel_opaque;
+                }
+                QScrollArea#BodyScrollArea {
+                    background-color: $panel_opaque;
+                    border: none;
+                }
+                QScrollArea#BodyScrollArea QWidget {
+                    background-color: $panel_opaque;
+                }
+                QFrame#Toolbar {
+                    background-color: $panel;
+                    border: 1px solid $panel_border;
+                    border-radius: 10px;
+                }
+                QLabel#ToolbarTitle {
+                    font-size: 18px;
+                    font-weight: 600;
+                    color: $text;
+                }
+                QComboBox#ThemePicker {
+                    background-color: $card;
+                    border: 1px solid $panel_border;
+                    border-radius: 6px;
+                    padding: 6px 10px;
+                    color: $text;
+                }
+                QFrame#PluginBlock {
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 $panel, stop:1 $card);
+                    border-radius: 16px;
+                    border: 1px solid $panel_border;
+                    box-shadow: 0px 26px 48px rgba(0, 0, 0, 0.30);
+                }
+                QFrame#CollapsibleSection {
+                    background-color: transparent;
+                    border: none;
+                }
+                QToolButton#SectionToggle {
+                    border: 1px solid $panel_border;
+                    border-radius: 10px;
+                    font-weight: 600;
+                    padding: 6px 10px;
+                    text-align: left;
+                    background-color: rgba(240, 240, 240, 0.94);
+                    color: #000000;
+                }
+                QToolButton#SectionToggle:hover {
+                    background-color: rgba(255, 255, 255, 0.98);
+                    color: #000000;
+                }
+                QFrame#CollapsibleSectionContent {
+                    background-color: $panel_soft;
+                    border: 1px solid $panel_border;
+                    border-radius: 14px;
+                }
+                QLabel#RackTitle {
+                    font-size: 22px;
+                    font-weight: 700;
+                    color: $text;
+                }
+                QLabel#RackTagline {
+                    color: $muted;
+                }
+                QLabel#RackStatus {
+                    padding: 6px 12px;
+                    border-radius: 999px;
+                    background-color: $badge_bg;
+                    border: 1px solid $badge_border;
+                    color: $text;
+                    font-size: 12px;
+                }
+                QFrame#WorkspacePanel,
+                QFrame#RackPanel,
+                QFrame#HostPanel,
+                QFrame#InstrumentPanel,
+                QFrame#RackLogPanel {
+                    background-color: $panel_soft;
+                    border: 1px solid $card_border;
+                    border-radius: 12px;
+                }
+                QFrame#HostPanel {
+                    border: 1px solid $accent_border;
+                }
+                QListWidget#PluginList {
+                    background-color: $list_bg;
+                    border: 1px solid $card_border;
+                    border-radius: 10px;
+                    padding: 6px;
+                }
+                QListWidget#PluginList::item {
+                    padding: 10px;
+                    border-radius: 8px;
+                    margin: 4px 0;
+                    color: $text;
+                }
+                QListWidget#PluginList::item:selected {
+                    background-color: $list_selected;
+                    border: 1px solid $accent_border;
+                }
+                QListWidget#PluginList::item:hover {
+                    background-color: $list_hover;
+                }
+                QPlainTextEdit#RackOutput {
+                    background-color: $log_bg;
+                    border: 1px solid $card_border;
+                    border-radius: 10px;
+                    padding: 10px;
+                    color: $text;
+                }
+                QPushButton {
+                    background-color: $accent_soft;
+                    border: 1px solid $accent_border;
+                    border-radius: 8px;
+                    padding: 8px 14px;
+                    color: $text;
+                    font-weight: 600;
+                }
+                QPushButton:hover {
+                    background-color: $accent_hover;
+                }
+                QPushButton:disabled {
+                    color: $text_disabled;
+                    border-color: $border_disabled;
+                    background-color: $card_disabled;
+                }
+                QTabWidget#ParameterTabs::pane {
+                    border: 1px solid $card_border;
+                    background-color: $card_half;
+                    border-radius: 10px;
+                }
+                QTabBar::tab {
+                    background-color: $card_sixty;
+                    border: 1px solid $card_border;
+                    border-radius: 8px;
+                    padding: 8px 16px;
+                    color: $text;
+                    margin-right: 6px;
+                }
+                QTabBar::tab:selected {
+                    background-color: $accent_selected;
+                }
+                """
+            )
+        )
+
+        stylesheet = style_template.substitute(
+            bg=c['bg'],
+            text=c['text'],
+            muted=c['muted'],
+            panel=c['panel'],
+            panel_opaque=panel_opaque,
+            panel_soft=panel_soft,
+            panel_border=panel_border,
+            card=c['card'],
+            card_border=card_border,
+            card_half=card_half,
+            card_sixty=card_sixty,
+            card_disabled=card_disabled,
+            list_bg=list_bg,
+            list_hover=list_hover,
+            list_selected=list_selected,
+            log_bg=log_bg,
+            accent_soft=accent_soft,
+            accent_border=accent_border,
+            accent_hover=accent_hover,
+            accent_selected=accent_selected,
+            badge_bg=badge_bg,
+            badge_border=badge_border,
+            text_disabled=text_disabled,
+            border_disabled=border_disabled,
+        )
+
+        self.setStyleSheet(stylesheet)
 
     def on_edit_mode_toggled(self, checked: bool):
         self.edit_mode_btn.setText("Edit: ON" if checked else "Edit: OFF")
