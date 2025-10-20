@@ -20,6 +20,31 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any, Sequence
 
+if os.name == "nt":
+    import ctypes
+    from ctypes import wintypes
+else:  # pragma: no cover - non-Windows environments skip Win32 helpers
+    ctypes = None
+    wintypes = None
+
+if os.name == "nt":
+    GWL_STYLE = -16
+    GWL_EXSTYLE = -20
+    GWL_HWNDPARENT = -8
+    SW_SHOWNORMAL = 1
+    SW_SHOW = 5
+    WS_CHILD = 0x40000000
+    WS_POPUP = 0x80000000
+    WS_CAPTION = 0x00C00000
+    WS_THICKFRAME = 0x00040000
+    WS_EX_APPWINDOW = 0x00040000
+    WS_EX_TOOLWINDOW = 0x00000080
+else:  # pragma: no cover - non-Windows environments
+    GWL_STYLE = GWL_EXSTYLE = GWL_HWNDPARENT = 0
+    SW_SHOWNORMAL = SW_SHOW = 0
+    WS_CHILD = WS_POPUP = WS_CAPTION = WS_THICKFRAME = 0
+    WS_EX_APPWINDOW = WS_EX_TOOLWINDOW = 0
+
 
 # Try to import PyQt5 for UI support
 try:
@@ -321,6 +346,7 @@ class CarlaBackend:
         default_base = Path(__file__).resolve().parents[3]
         self.base_dir = Path(base_dir) if base_dir else default_base
         self._binary_hints: set[Path] = set()
+        self._release_binary_dirs: set[Path] = set()
         self._client_name = client_name or "AmbianceCarlaHost"
         self.root = self._discover_root()
         self.library_path: Path | None = None
@@ -360,6 +386,11 @@ class CarlaBackend:
         self._preferred_drivers = self._compose_driver_order()
         self._engine_sample_rate = int(sample_rate) if sample_rate else None
         self._engine_buffer_size = int(buffer_size) if buffer_size else None
+        self._host_window_hwnd: int | None = None
+        self._plugin_window_hwnd: int | None = None
+        self._plugin_window_parent_hwnd: int | None = None
+        self._plugin_window_style: int | None = None
+        self._plugin_window_exstyle: int | None = None
 
         if not self.root:
             self.warnings.append(
@@ -368,11 +399,21 @@ class CarlaBackend:
             )
             return
 
+        self._harvest_release_directories()
+
         try:
             self.library_path = self._locate_library(self.root)
-            self._prepare_environment(self.library_path)
         except FileNotFoundError as exc:
-            self.warnings.append(str(exc))
+            fallback_library = self._locate_release_library()
+            if fallback_library is None:
+                self.warnings.append(str(exc))
+                return
+            self.library_path = fallback_library
+
+        try:
+            self._prepare_environment(self.library_path)
+        except Exception as exc:
+            self.warnings.append(f"Failed to prepare Carla environment: {exc}")
             return
 
         try:
@@ -594,7 +635,13 @@ class CarlaBackend:
         if self.library_path:
             for parent in self.library_path.parents[:3]:  # Up to 3 levels
                 candidates.add(parent)
-        
+
+        for release_dir in self._release_binary_dirs:
+            candidates.add(release_dir)
+            candidates.add(release_dir.parent)
+            candidates.add(release_dir / "resources")
+            candidates.add(release_dir / "resources" / "windows")
+
         return {path for path in candidates if path.exists()}
 
     def _load_backend_module(self, root: Path) -> ModuleType:
@@ -758,7 +805,18 @@ class CarlaBackend:
                     sub_path = ancestor / subdir
                     if sub_path.exists() and sub_path not in candidates:
                         candidates.append(sub_path)
-        
+
+        for release_dir in sorted(self._release_binary_dirs):
+            try:
+                resolved = release_dir.resolve(strict=False)
+            except OSError:
+                resolved = release_dir
+            if resolved.exists() and resolved not in candidates:
+                candidates.append(resolved)
+            parent = resolved.parent
+            if parent.exists() and parent not in candidates:
+                candidates.append(parent)
+
         return candidates
 
     def _candidate_resource_dirs(self) -> list[Path]:
@@ -775,7 +833,116 @@ class CarlaBackend:
                     continue
                 if path.exists() and path not in candidates:
                     candidates.append(path)
+        for release_dir in sorted(self._release_binary_dirs):
+            for relative in ("resources", "resources/windows"):
+                try:
+                    path = (release_dir / relative).resolve(strict=False)
+                except OSError:
+                    continue
+                if path.exists() and path not in candidates:
+                    candidates.append(path)
         return candidates
+
+    def _harvest_release_directories(self) -> None:
+        """Record bundled Carla binary releases for bridge discovery."""
+
+        search_roots: set[Path] = {self.base_dir}
+        parent = self.base_dir.parent
+        if parent != self.base_dir:
+            search_roots.add(parent)
+        if self.root:
+            search_roots.add(self.root)
+            root_parent = self.root.parent
+            if root_parent != self.root:
+                search_roots.add(root_parent)
+
+        def register_release(directory: Path) -> None:
+            try:
+                resolved = directory.resolve(strict=False)
+            except OSError:
+                resolved = directory
+            if not resolved.exists():
+                return
+            if resolved not in self._release_binary_dirs:
+                self._release_binary_dirs.add(resolved)
+            self._binary_hints.add(resolved)
+            parent_dir = resolved.parent
+            if parent_dir.exists():
+                self._binary_hints.add(parent_dir)
+
+        patterns = ("Carla*/Carla", "Carla-*/Carla")
+        for root in list(search_roots):
+            if not root:
+                continue
+            try:
+                glob = root.glob
+            except AttributeError:
+                continue
+            try:
+                for pattern in patterns:
+                    for directory in glob(pattern):
+                        register_release(directory)
+            except OSError:
+                continue
+
+        # Some source trees ship pre-built archives inside the Carla folder
+        # (e.g. Carla/Carla-2.5.10-win32/Carla). Walk those nested directories
+        # so the Win32 bridge executables become discoverable on Windows.
+        nested_roots: set[Path] = set()
+        for root in list(search_roots):
+            if not root:
+                continue
+            try:
+                resolved = root.resolve(strict=False)
+            except OSError:
+                resolved = root
+            if resolved.exists():
+                nested_roots.add(resolved)
+                candidate = resolved / "Carla"
+                if candidate.exists():
+                    nested_roots.add(candidate)
+
+        for hint in list(self._binary_hints):
+            try:
+                resolved = hint.resolve(strict=False)
+            except OSError:
+                resolved = hint
+            if resolved.exists():
+                nested_roots.add(resolved)
+
+        nested_patterns = ("Carla-*-win*/Carla", "Carla-*-Win*/Carla")
+        for root in nested_roots:
+            try:
+                glob = root.glob
+            except AttributeError:
+                continue
+            try:
+                for pattern in nested_patterns:
+                    for directory in glob(pattern):
+                        register_release(directory)
+            except OSError:
+                continue
+
+        # Some packaged builds place bridge executables in a nested bin directory.
+        for release_dir in list(self._release_binary_dirs):
+            for bridge_name in ("carla-bridge-win32.exe", "carla-bridge-win64.exe", "carla-bridge-native.exe"):
+                if (release_dir / bridge_name).exists():
+                    continue
+                candidate = release_dir / "bin" / bridge_name
+                if candidate.exists():
+                    container = candidate.parent
+                    self._binary_hints.add(container)
+                    self._release_binary_dirs.add(container)
+
+    def _locate_release_library(self) -> Path | None:
+        """Search bundled Carla binary releases for the standalone library."""
+
+        for release_dir in sorted(self._release_binary_dirs):
+            try:
+                return self._locate_library(release_dir)
+            except FileNotFoundError:
+                continue
+        return None
 
     def _find_pe_image(self, path: Path) -> Path | None:
         """Locate a Windows PE binary for the given plugin path."""
@@ -912,12 +1079,15 @@ class CarlaBackend:
         cache_root = self.base_dir / ".cache" / "plugins"
         data_root = self.base_dir / "data" / "vsts"
 
-        # Add included_plugins folder (check both base_dir and parent for sibling folder)
-        included_plugins = self.base_dir / "included_plugins"
-        included_plugins_parent = self.base_dir.parent / "included_plugins"
+        # Add included_plugins folders regardless of where the app is launched
+        included_candidates: list[Path] = []
+        for ancestor in [self.base_dir] + list(self.base_dir.parents)[:4]:
+            candidate = ancestor / "included_plugins"
+            if candidate not in included_candidates:
+                included_candidates.append(candidate)
 
-        add(vst2, cache_root, data_root, included_plugins, included_plugins_parent)
-        add(vst3, cache_root, data_root, included_plugins, included_plugins_parent)
+        add(vst2, cache_root, data_root, *included_candidates)
+        add(vst3, cache_root, data_root, *included_candidates)
 
         if sys.platform.startswith("win"):
             program_files = Path(os.environ.get("PROGRAMFILES", "")).expanduser()
@@ -963,25 +1133,34 @@ class CarlaBackend:
             if option is not None:
                 self._set_engine_option(option_name, 1)
 
-        binary_dirs = [str(path) for path in self._candidate_binary_dirs()]
+        binary_paths = [path for path in self._candidate_binary_dirs() if path.exists()]
+        binary_dirs = [str(path) for path in binary_paths]
         if binary_dirs:
             payload = os.pathsep.join(dict.fromkeys(binary_dirs))
             self._set_engine_option("ENGINE_OPTION_PATH_BINARIES", 0, payload)
-            
+
             # Log bridge executable search for debugging
             bridge_found = False
-            for path_str in binary_dirs:
-                path = Path(path_str)
-                for bridge_name in ("carla-bridge-win32.exe", "carla-bridge-win64.exe", 
+            has_win32_bridge = False
+            for path in binary_paths:
+                for bridge_name in ("carla-bridge-win32.exe", "carla-bridge-win64.exe",
                                    "carla-bridge-native.exe", "carla-bridge-native"):
                     if (path / bridge_name).exists():
                         bridge_found = True
+                        if bridge_name == "carla-bridge-win32.exe":
+                            has_win32_bridge = True
                         break
-            
+
             if not bridge_found and sys.platform.startswith("win"):
                 self.warnings.append(
                     f"Bridge executables not found in {len(binary_dirs)} directories. "
                     "32-bit plugin loading may fail. Download Carla binary release or build from source."
+                )
+            elif sys.platform.startswith("win") and not has_win32_bridge:
+                self.warnings.append(
+                    "carla-bridge-win32.exe not found alongside the Carla installation. "
+                    "Install the 32-bit Carla runtime or copy the Win32 bridge into the Carla folder to enable "
+                    "32-bit VST2 plugins."
                 )
 
         resource_dirs = [str(path) for path in self._candidate_resource_dirs()]
@@ -1858,6 +2037,193 @@ class CarlaBackend:
             self._note_timers[note] = timer
         timer.start()
 
+    # ------------------------------------------------------------------
+    # Plugin UI window helpers (Windows only)
+    def register_host_window(self, hwnd: int | None) -> None:
+        if os.name != "nt":  # pragma: no cover - Windows specific behaviour
+            self._host_window_hwnd = None
+            return
+        self._host_window_hwnd = int(hwnd) if hwnd else None
+
+    def _windows_available(self) -> bool:
+        return os.name == "nt" and ctypes is not None
+
+    def _get_window_long(self, hwnd: int, index: int) -> int:
+        user32 = ctypes.windll.user32
+        if hasattr(user32, "GetWindowLongPtrW"):
+            return user32.GetWindowLongPtrW(hwnd, index)
+        return user32.GetWindowLongW(hwnd, index)
+
+    def _set_window_long(self, hwnd: int, index: int, value: int) -> int:
+        user32 = ctypes.windll.user32
+        if hasattr(user32, "SetWindowLongPtrW"):
+            return user32.SetWindowLongPtrW(hwnd, index, value)
+        return user32.SetWindowLongW(hwnd, index, value)
+
+    def _is_window(self, hwnd: int | None) -> bool:
+        if not self._windows_available() or not hwnd:
+            return False
+        return bool(ctypes.windll.user32.IsWindow(int(hwnd)))
+
+    def _enumerate_process_windows(self) -> list[tuple[int, str]]:
+        if not self._windows_available():  # pragma: no cover - Windows specific behaviour
+            return []
+
+        handles: list[tuple[int, str]] = []
+        pid = os.getpid()
+        user32 = ctypes.windll.user32
+
+        EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+
+        def callback(hwnd, _lparam):
+            if not user32.IsWindowVisible(hwnd):
+                return True
+            proc_id = wintypes.DWORD()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(proc_id))
+            if proc_id.value != pid:
+                return True
+            length = user32.GetWindowTextLengthW(hwnd)
+            if length > 0:
+                buffer = ctypes.create_unicode_buffer(length + 1)
+                user32.GetWindowTextW(hwnd, buffer, length + 1)
+                title = buffer.value.strip()
+            else:
+                title = ""
+            handles.append((int(hwnd), title))
+            return True
+
+        user32.EnumWindows(EnumWindowsProc(callback), 0)
+        return handles
+
+    def _store_plugin_window(self, hwnd: int) -> None:
+        if not self._windows_available():  # pragma: no cover - Windows specific behaviour
+            return
+        user32 = ctypes.windll.user32
+        self._plugin_window_hwnd = int(hwnd)
+        self._plugin_window_parent_hwnd = user32.GetParent(hwnd)
+        self._plugin_window_style = self._get_window_long(hwnd, GWL_STYLE)
+        self._plugin_window_exstyle = self._get_window_long(hwnd, GWL_EXSTYLE)
+
+    def _reset_plugin_window_snapshot(self) -> None:
+        self._plugin_window_hwnd = None
+        self._plugin_window_parent_hwnd = None
+        self._plugin_window_style = None
+        self._plugin_window_exstyle = None
+
+    def _detect_plugin_window(self, attempts: int = 15, delay: float = 0.05) -> int | None:
+        if not self._windows_available():
+            return None
+
+        name_hint = ""
+        if self.host is not None and self._plugin_id is not None:
+            try:
+                info = self.host.get_plugin_info(self._plugin_id)
+            except Exception:
+                info = {}
+            fallback = self._plugin_path.stem if self._plugin_path else ""
+            name_hint = str(info.get("name") or fallback).strip().lower()
+
+        for _ in range(max(1, attempts)):
+            for hwnd, title in self._enumerate_process_windows():
+                if self._host_window_hwnd and hwnd == self._host_window_hwnd:
+                    continue
+                if name_hint and title.lower().find(name_hint) == -1:
+                    continue
+                self._store_plugin_window(hwnd)
+                return hwnd
+            # Fallback to any other process window if hint not found
+            for hwnd, title in self._enumerate_process_windows():
+                if self._host_window_hwnd and hwnd == self._host_window_hwnd:
+                    continue
+                self._store_plugin_window(hwnd)
+                return hwnd
+            if delay > 0:
+                time.sleep(delay)
+        return None
+
+    def get_plugin_window_handle(self, attempts: int = 1) -> int | None:
+        if not self._windows_available():
+            return None
+        if self._plugin_window_hwnd and not self._is_window(self._plugin_window_hwnd):
+            self._reset_plugin_window_snapshot()
+        if self._plugin_window_hwnd is None and self._ui_visible:
+            return self._detect_plugin_window(attempts=attempts)
+        return self._plugin_window_hwnd
+
+    def _restore_plugin_window_parent(self) -> None:
+        if not self._windows_available():
+            self._reset_plugin_window_snapshot()
+            return
+        hwnd = self._plugin_window_hwnd
+        if not self._is_window(hwnd):
+            self._reset_plugin_window_snapshot()
+            return
+        user32 = ctypes.windll.user32
+        if self._plugin_window_parent_hwnd is not None:
+            user32.SetParent(hwnd, self._plugin_window_parent_hwnd)
+        if self._plugin_window_style is not None:
+            self._set_window_long(hwnd, GWL_STYLE, self._plugin_window_style)
+        if self._plugin_window_exstyle is not None:
+            self._set_window_long(hwnd, GWL_EXSTYLE, self._plugin_window_exstyle)
+        # Refresh snapshot so future embeds have the correct baseline
+        self._plugin_window_parent_hwnd = user32.GetParent(hwnd)
+        self._plugin_window_style = self._get_window_long(hwnd, GWL_STYLE)
+        self._plugin_window_exstyle = self._get_window_long(hwnd, GWL_EXSTYLE)
+
+    def focus_plugin_window(self) -> bool:
+        if not self._windows_available():
+            return False
+        hwnd = self.get_plugin_window_handle(attempts=5)
+        if not self._is_window(hwnd):
+            return False
+        user32 = ctypes.windll.user32
+        show_flag = SW_SHOW if SW_SHOW else SW_SHOWNORMAL
+        user32.ShowWindow(hwnd, show_flag)
+        user32.SetForegroundWindow(hwnd)
+        user32.SetFocus(hwnd)
+        return True
+
+    def ensure_plugin_window_taskbar(self) -> bool:
+        if not self._windows_available():
+            return False
+        hwnd = self.get_plugin_window_handle(attempts=5)
+        if not self._is_window(hwnd):
+            return False
+        exstyle = self._get_window_long(hwnd, GWL_EXSTYLE)
+        new_exstyle = (exstyle | WS_EX_APPWINDOW) & ~WS_EX_TOOLWINDOW
+        if new_exstyle != exstyle:
+            self._set_window_long(hwnd, GWL_EXSTYLE, new_exstyle)
+        owner = self._get_window_long(hwnd, GWL_HWNDPARENT)
+        if owner != 0:
+            self._set_window_long(hwnd, GWL_HWNDPARENT, 0)
+        ctypes.windll.user32.ShowWindow(hwnd, SW_SHOW)
+        return True
+
+    def embed_plugin_window(self, parent_hwnd: int | None) -> bool:
+        if not self._windows_available():
+            return False
+        hwnd = self.get_plugin_window_handle(attempts=10)
+        if not self._is_window(hwnd):
+            return False
+        user32 = ctypes.windll.user32
+        if parent_hwnd:
+            parent = int(parent_hwnd)
+            if self._plugin_window_parent_hwnd is None:
+                self._plugin_window_parent_hwnd = user32.GetParent(hwnd)
+            if self._plugin_window_style is None:
+                self._plugin_window_style = self._get_window_long(hwnd, GWL_STYLE)
+            if self._plugin_window_exstyle is None:
+                self._plugin_window_exstyle = self._get_window_long(hwnd, GWL_EXSTYLE)
+            child_style = (self._plugin_window_style | WS_CHILD) & ~(WS_POPUP | WS_CAPTION | WS_THICKFRAME)
+            self._set_window_long(hwnd, GWL_STYLE, child_style)
+            child_exstyle = self._plugin_window_exstyle & ~WS_EX_APPWINDOW
+            self._set_window_long(hwnd, GWL_EXSTYLE, child_exstyle)
+            user32.SetParent(hwnd, parent)
+            user32.ShowWindow(hwnd, SW_SHOW)
+        else:
+            self._restore_plugin_window_parent()
+        return True
+
     def show_ui(self) -> dict[str, Any]:
         import logging
         logging.info("🪟 show_ui() called")
@@ -2123,10 +2489,15 @@ class CarlaBackend:
             raise CarlaHostError(
                 f"Unexpected error while trying to {action} {plugin_name} UI: {type(exc).__name__}: {exc}"
             ) from exc
-        
+
         self._ui_visible = bool(visible)
         logging.info(f"🪟 UI visibility updated to: {self._ui_visible}")
         logging.info(f"🪟 After UI change - audio_routed={self._audio_routed}, midi_routed={self._midi_routed}")
+        if visible:
+            self._detect_plugin_window(attempts=30, delay=0.05)
+        else:
+            self._restore_plugin_window_parent()
+            self._reset_plugin_window_snapshot()
 
     def _snapshot_state(self) -> dict[str, Any] | None:
         if self._plugin_id is None or self._plugin_path is None:
@@ -2267,6 +2638,26 @@ class CarlaVSTHost:
         with self._lock:
             self.ensure_available()
             return self._backend.describe_ui(plugin_path, include_parameters=include_parameters)
+
+    def register_host_window(self, hwnd: int | None) -> None:
+        with self._lock:
+            self._backend.register_host_window(hwnd)
+
+    def get_plugin_window_handle(self, attempts: int = 1) -> int | None:
+        with self._lock:
+            return self._backend.get_plugin_window_handle(attempts=attempts)
+
+    def focus_plugin_window(self) -> bool:
+        with self._lock:
+            return self._backend.focus_plugin_window()
+
+    def ensure_plugin_window_taskbar(self) -> bool:
+        with self._lock:
+            return self._backend.ensure_plugin_window_taskbar()
+
+    def embed_plugin_window(self, parent_hwnd: int | None) -> bool:
+        with self._lock:
+            return self._backend.embed_plugin_window(parent_hwnd)
 
     def show_ui(self) -> dict[str, Any]:
         with self._lock:
