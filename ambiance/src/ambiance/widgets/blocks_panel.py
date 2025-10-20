@@ -435,7 +435,11 @@ class BlocksPanel(QFrame):
 class BlockWidget(QGroupBox):
     """UI wrapper for a BlockController."""
 
-    def __init__(self, controller: BlockController, panel: BlocksPanel):
+    def __init__(
+        self,
+        controller: BlockController,
+        panel: BlocksPanel | None = None,
+    ):
         super().__init__(f"Block {controller.index}")
         self.controller = controller
         self.panel = panel
