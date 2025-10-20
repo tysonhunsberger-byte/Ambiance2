@@ -238,17 +238,24 @@ class BlocksPanel(QFrame):
         border = colors.get("border", DEFAULT_THEME["border"])
         muted = colors.get("muted", DEFAULT_THEME["muted"])
 
-        panel_bg = _blend(card, bg, 0.55)
-        block_bg = _blend(card, bg, 0.7)
-        stream_bg = _blend(card, bg, 0.6)
-        button_bg = _blend(panel_bg, accent, 0.12)
-        button_hover = _blend(panel_bg, accent, 0.22)
-        button_pressed = _blend(panel_bg, accent, 0.35)
+        if dark:
+            panel_bg = _blend(bg, card, 0.3)
+            block_bg = _blend(panel_bg, card, 0.52)
+            stream_bg = _blend(panel_bg, card, 0.45)
+            combo_mix = 0.2
+        else:
+            panel_bg = _blend(bg, card, 0.65)
+            block_bg = _blend(panel_bg, card, 0.75)
+            stream_bg = _blend(panel_bg, card, 0.7)
+            combo_mix = 0.14
+        button_bg = _blend(panel_bg, accent, 0.12 if dark else 0.18)
+        button_hover = _blend(panel_bg, accent, 0.2 if dark else 0.28)
+        button_pressed = _blend(panel_bg, accent, 0.32 if dark else 0.38)
         button_text = text
-        combo_bg = _mix_with_white(stream_bg, 0.28 if dark else 0.2)
-        combo_border = _blend(border, accent, 0.3)
+        combo_bg = _mix_with_white(stream_bg, combo_mix)
+        combo_border = _blend(border, combo_bg, 0.6)
         combo_text = "#101010" if dark else "#000000"
-        slider_track = _blend(bg, card, 0.45)
+        slider_track = _blend(bg, card, 0.32 if dark else 0.48)
         slider_handle = _blend(accent, "#ffffff", 0.45)
         slider_fill = accent
         secondary_text = _blend(text, muted, 0.6)

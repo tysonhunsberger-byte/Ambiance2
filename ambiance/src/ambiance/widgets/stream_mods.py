@@ -74,7 +74,7 @@ class CollapsibleMod(QWidget):
         self.toggle_button.setArrowType(Qt.RightArrow)
         self.toggle_button.setCheckable(True)
         self.toggle_button.setChecked(False)
-        self.toggle_button.toggled.connect(self._on_toggled)
+        self.toggle_button.toggled.connect(self._handle_toggle)
         self.layout.addWidget(self.toggle_button)
 
         self.body = QFrame()
@@ -86,16 +86,18 @@ class CollapsibleMod(QWidget):
         self.layout.addWidget(self.body)
 
     # ------------------------------------------------------------------
-    def _on_toggled(self, checked: bool) -> None:
+    def _handle_toggle(self, checked: bool) -> None:
         self.body.setVisible(checked)
         self.toggle_button.setArrowType(Qt.DownArrow if checked else Qt.RightArrow)
         self.toggled.emit(checked)
 
     def set_expanded(self, expanded: bool) -> None:
+        if self.toggle_button.isChecked() == expanded and self.body.isVisible() == expanded:
+            return
         self.toggle_button.blockSignals(True)
         self.toggle_button.setChecked(expanded)
         self.toggle_button.blockSignals(False)
-        self._on_toggled(expanded)
+        self._handle_toggle(expanded)
 
     def add_widget(self, widget: QWidget) -> None:
         self.body_layout.addWidget(widget)
@@ -243,7 +245,7 @@ class MuffleMod(CollapsibleMod):
         row = QHBoxLayout()
         self.toggle_btn = QPushButton("Muffle: OFF")
         self.toggle_btn.setCheckable(True)
-        self.toggle_btn.toggled.connect(self._on_toggled)
+        self.toggle_btn.toggled.connect(self._on_toggle)
         row.addWidget(self.toggle_btn)
 
         row.addWidget(QLabel("Amount"))
@@ -257,7 +259,7 @@ class MuffleMod(CollapsibleMod):
         row.addWidget(self.freq_label)
         self.add_layout(row)
 
-    def _on_toggled(self, checked: bool) -> None:
+    def _on_toggle(self, checked: bool) -> None:
         self.toggle_btn.setText(f"Muffle: {'ON' if checked else 'OFF'}")
         if checked:
             self.set_expanded(True)
@@ -799,20 +801,20 @@ class StreamModsContainer(QWidget):
         text = colors.get("text", DEFAULT_THEME["text"])
         accent = colors.get("accent", DEFAULT_THEME["accent"])
         border = colors.get("border", DEFAULT_THEME["border"])
-        header_bg = _blend(card, panel, 0.6)
-        header_hover = _blend(accent, header_bg, 0.22)
-        header_checked = _blend(header_hover, accent, 0.33)
+        header_bg = _blend(panel, card, 0.35 if dark else 0.65)
+        header_hover = _blend(accent, header_bg, 0.2)
+        header_checked = _blend(header_bg, accent, 0.35)
         header_text = text if dark else "#101010"
-        body_bg = _blend(card, panel, 0.45)
-        body_border = _blend(border, body_bg, 0.65)
-        button_bg = _blend(body_bg, accent, 0.18)
-        button_hover = _blend(body_bg, accent, 0.32)
-        button_checked = _blend(accent, body_bg, 0.55)
+        body_bg = _blend(panel, card, 0.4 if dark else 0.6)
+        body_border = _blend(border, body_bg, 0.6)
+        button_bg = _blend(body_bg, accent, 0.15 if dark else 0.24)
+        button_hover = _blend(body_bg, accent, 0.28 if dark else 0.34)
+        button_checked = _blend(accent, body_bg, 0.5)
         button_checked_text = text if dark else "#000000"
-        combo_bg = _mix_with_white(body_bg, 0.22 if dark else 0.18)
-        combo_border = _blend(border, accent, 0.3)
+        combo_bg = _mix_with_white(body_bg, 0.16 if dark else 0.18)
+        combo_border = _blend(border, combo_bg, 0.6)
         combo_text = "#101010" if dark else "#000000"
-        slider_track = _blend(panel, card, 0.38)
+        slider_track = _blend(panel, card, 0.32 if dark else 0.4)
         slider_handle = _blend(accent, "#ffffff", 0.45)
         slider_fill = accent
         style = f"""

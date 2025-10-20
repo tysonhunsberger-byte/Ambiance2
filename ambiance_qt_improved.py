@@ -19,9 +19,9 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QListWidget, QListWidgetItem, QScrollArea,
     QSlider, QFrame, QMessageBox, QComboBox, QTabWidget, QCheckBox,
-    QPlainTextEdit, QToolButton, QSizePolicy
+    QPlainTextEdit, QToolButton, QSizePolicy, QStackedWidget
 )
-from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal, QObject, QEvent
+from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal, QObject, QEvent, QUrl
 from PyQt5.QtGui import (
     QPainter,
     QColor,
@@ -33,7 +33,13 @@ from PyQt5.QtGui import (
     QMouseEvent,
     QKeyEvent,
     QCloseEvent,
+    QWindow,
 )
+
+try:
+    from PyQt5.QtWebEngineWidgets import QWebEngineView
+except ImportError:  # pragma: no cover - optional dependency
+    QWebEngineView = None  # type: ignore
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -105,6 +111,8 @@ THEME_PRESETS = {
         "dark": True
     }
 }
+
+STRUDEL_WEB_URL = "https://strudel.tidalcycles.org/"
 
 
 @dataclass(eq=False)
@@ -284,8 +292,59 @@ class PianoKeyboard(QWidget):
                             self.note_on_callback(current_note)
                 else:
                     self.mouse_down_note = None
-                
+
                 self.update()
+
+
+class PluginEditorContainer(QFrame):
+    """Container that can host a native plugin editor window."""
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("PluginEditorContainer")
+        self._window_container: Optional[QWidget] = None
+        self._window: Optional[QWindow] = None
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(0)
+
+        self.placeholder = QLabel("Dock the plugin UI to keep it pinned above the keyboard.")
+        self.placeholder.setObjectName("PluginEditorPlaceholder")
+        self.placeholder.setAlignment(Qt.AlignCenter)
+        self.placeholder.setWordWrap(True)
+        layout.addWidget(self.placeholder, 1)
+
+    def embed_handle(self, hwnd: int | None) -> None:
+        """Embed a native window handle inside the container."""
+
+        self.clear_container()
+        if not hwnd:
+            return
+
+        window = QWindow.fromWinId(int(hwnd))
+        window.setFlags(Qt.FramelessWindowHint)
+        container = QWidget.createWindowContainer(window, self)
+        container.setFocusPolicy(Qt.StrongFocus)
+        container.setMinimumHeight(360)
+        container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.layout().addWidget(container)
+        self._window_container = container
+        self._window = window
+        self.placeholder.hide()
+
+    def clear_container(self) -> None:
+        """Remove any embedded plugin editor from the container."""
+
+        if self._window_container is not None:
+            self._window_container.setParent(None)
+            self._window_container.deleteLater()
+            self._window_container = None
+        if self._window is not None:
+            self._window.setParent(None)
+            self._window = None
+        self.placeholder.show()
 
 
 class CollapsibleSection(QFrame):
@@ -351,6 +410,7 @@ class PluginChainWidget(QWidget):
         self.slots: List[PluginChainSlot] = []
         self.selected_slot_index = -1
         self._ui_threads: Dict[PluginChainSlot, threading.Thread] = {}
+        self.host_window_id: Optional[int] = None
 
         self.init_ui()
         self._install_event_filter()
@@ -453,6 +513,71 @@ class PluginChainWidget(QWidget):
         except Exception:
             pass
 
+    def register_host_window(self, win_id: int) -> None:
+        """Remember the main window handle for plugin window discovery."""
+
+        self.host_window_id = int(win_id)
+        for slot in self.slots:
+            if slot.host:
+                slot.host.register_host_window(self.host_window_id)
+
+    def _current_slot(self) -> Optional[PluginChainSlot]:
+        if 0 <= self.selected_slot_index < len(self.slots):
+            return self.slots[self.selected_slot_index]
+        return None
+
+    def _activate_plugin_ui(self, slot: PluginChainSlot, handle: Optional[int]) -> None:
+        """Embed or raise the plugin UI based on the dock toggle state."""
+
+        if not slot.host:
+            return
+
+        if self.host_dock_check.isChecked():
+            parent_id = int(self.host_editor_container.winId())
+            if handle and slot.host.embed_plugin_window(parent_id):
+                self.host_editor_container.embed_handle(handle)
+                return
+
+            # Docking failed - fall back to floating window and inform the user.
+            self.host_editor_container.clear_container()
+            self.host_dock_check.blockSignals(True)
+            self.host_dock_check.setChecked(False)
+            self.host_dock_check.blockSignals(False)
+            QMessageBox.warning(
+                self,
+                "Plugin Dock",
+                "This plugin's editor could not be docked. It will open as a separate window instead.",
+            )
+
+        # Ensure the plugin UI floats and can be focused from the taskbar.
+        slot.host.embed_plugin_window(None)
+        self.host_editor_container.clear_container()
+        slot.host.ensure_plugin_window_taskbar()
+        slot.host.focus_plugin_window()
+
+    def on_host_dock_toggled(self, checked: bool) -> None:
+        slot = self._current_slot()
+        if not slot or not slot.host or not slot.ui_visible:
+            if not checked:
+                self.host_editor_container.clear_container()
+            return
+
+        handle = slot.host.get_plugin_window_handle(attempts=20)
+        if checked:
+            self._activate_plugin_ui(slot, handle)
+        else:
+            slot.host.embed_plugin_window(None)
+            self.host_editor_container.clear_container()
+            slot.host.ensure_plugin_window_taskbar()
+            slot.host.focus_plugin_window()
+
+    def _after_ui_shown(self, slot: PluginChainSlot) -> None:
+        if slot not in self.slots or not slot.host:
+            return
+        attempts = 30 if self.host_dock_check.isChecked() else 15
+        handle = slot.host.get_plugin_window_handle(attempts=attempts)
+        self._activate_plugin_ui(slot, handle)
+
     def add_slot(self):
         """Add a new plugin slot to the chain."""
         slot = PluginChainSlot(index=len(self.slots))
@@ -477,6 +602,7 @@ class PluginChainWidget(QWidget):
                 slot.host.unload()
                 slot.host.shutdown()
         slot.supports_midi = False
+        self.host_editor_container.clear_container()
 
         self.slots.pop(removed_index)
         self.chain_list.takeItem(removed_index)
@@ -572,6 +698,7 @@ class PluginChainWidget(QWidget):
         slot.plugin_path = None
         slot.supports_midi = False
         slot.ui_visible = False
+        self.host_editor_container.clear_container()
         self.update_slot_display(self.selected_slot_index)
         self.update_controls()
     
@@ -601,15 +728,23 @@ class PluginChainWidget(QWidget):
         try:
             if slot.ui_visible:
                 with slot.lock:
+                    try:
+                        slot.host.embed_plugin_window(None)
+                    except Exception:
+                        pass
                     slot.host.hide_ui()
                 slot.ui_visible = False
+                self.host_editor_container.clear_container()
                 self.update_controls()
             else:
                 # Call show_ui() without holding lock - it handles threading internally
                 self.logger.info("Requesting UI for slot %s (%s)", slot.index, slot.plugin_path)
+                if self.host_window_id is not None:
+                    slot.host.register_host_window(self.host_window_id)
                 slot.host.show_ui()
                 # Set visible flag with a small delay to let UI thread start
-                QTimer.singleShot(100, lambda: self._set_ui_visible(slot, True))
+                QTimer.singleShot(150, lambda: self._set_ui_visible(slot, True))
+                QTimer.singleShot(180, lambda s=slot: self._after_ui_shown(s))
         except Exception as e:
             self.logger.error("UI error for slot %s: %s", slot.index, e, exc_info=True)
             QMessageBox.warning(self, "UI Error", f"Failed to open UI: {e}\n\nSome plugins may not support native UI.")
@@ -747,6 +882,14 @@ class AmbianceQtImproved(QMainWindow):
         self.fallback_audio_threads: List[threading.Thread] = []
         self.warned_no_winsound = False
 
+        self.strudel_available = QWebEngineView is not None
+        self.strudel_loaded = False
+        self.body_stack: Optional[QStackedWidget] = None
+        self.strudel_container: Optional[QWidget] = None
+        self.strudel_view: Optional["QWebEngineView"] = None
+        self.strudel_mode_btn: Optional[QPushButton] = None
+        self.default_status_message = "Ready - pick a plugin from the library."
+
         self.audio_engine: Optional[AudioEngine] = None
         try:
             self.audio_engine = AudioEngine()
@@ -773,28 +916,32 @@ class AmbianceQtImproved(QMainWindow):
         self.setWindowTitle("Ambiance Studio Rack")
         self.setGeometry(120, 80, 1560, 960)
         self.update_theme_palette()
-        
+
         central = QWidget()
         central.setObjectName("CentralWidget")
         self.setCentralWidget(central)
-        
+
         root_layout = QVBoxLayout(central)
         root_layout.setContentsMargins(16, 16, 16, 16)
         root_layout.setSpacing(14)
-        
+
         self.toolbar = self.build_toolbar()
         root_layout.addWidget(self.toolbar)
-        
+
+        self.body_stack = QStackedWidget()
+        self.body_stack.setObjectName("BodyStack")
+        root_layout.addWidget(self.body_stack, 1)
+
         self.scroll_area = QScrollArea()
         self.scroll_area.setObjectName("BodyScrollArea")
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setFrameShape(QFrame.NoFrame)
-        root_layout.addWidget(self.scroll_area)
-        
+        self.body_stack.addWidget(self.scroll_area)
+
         self.body_widget = QWidget()
         self.body_widget.setObjectName("BodyWidget")
         self.scroll_area.setWidget(self.body_widget)
-        
+
         self.body_layout = QVBoxLayout(self.body_widget)
         self.body_layout.setContentsMargins(0, 0, 0, 0)
         self.body_layout.setSpacing(20)
@@ -819,13 +966,39 @@ class AmbianceQtImproved(QMainWindow):
             self.blocks_section = None
             self.append_log("Audio engine unavailable - Blocks panel disabled.")
 
+        self.strudel_container = QWidget()
+        self.strudel_container.setObjectName("StrudelContainer")
+        strudel_layout = QVBoxLayout(self.strudel_container)
+        strudel_layout.setContentsMargins(0, 0, 0, 0)
+        strudel_layout.setSpacing(0)
+
+        if self.strudel_available:
+            self.strudel_view = QWebEngineView(self.strudel_container)
+            self.strudel_view.setObjectName("StrudelView")
+            self.strudel_view.setContextMenuPolicy(Qt.NoContextMenu)
+            strudel_layout.addWidget(self.strudel_view)
+        else:
+            fallback_label = QLabel(
+                "Strudel Mode requires PyQtWebEngine. Install the 'PyQtWebEngine' package "
+                "to enable the embedded browser."
+            )
+            fallback_label.setObjectName("StrudelFallback")
+            fallback_label.setWordWrap(True)
+            fallback_label.setAlignment(Qt.AlignCenter)
+            strudel_layout.addStretch(1)
+            strudel_layout.addWidget(fallback_label)
+            strudel_layout.addStretch(1)
+
+        self.body_stack.addWidget(self.strudel_container)
+        self.body_stack.setCurrentWidget(self.scroll_area)
+
         self.body_layout.addStretch()
 
         self.update_host_controls()
-        
-        self.statusBar().showMessage("Ready - pick a plugin from the library.")
+
+        self.statusBar().showMessage(self.default_status_message)
         self.apply_theme(self.theme_key, update_combo=False)
-        
+
         QTimer.singleShot(150, self.scan_plugins)
 
     def build_toolbar(self) -> QFrame:
@@ -858,6 +1031,12 @@ class AmbianceQtImproved(QMainWindow):
         self.style_mode_btn.setCheckable(True)
         self.style_mode_btn.toggled.connect(self.on_style_mode_toggled)
         layout.addWidget(self.style_mode_btn)
+
+        self.strudel_mode_btn = QPushButton("Strudel Mode: OFF")
+        self.strudel_mode_btn.setCheckable(True)
+        self.strudel_mode_btn.setEnabled(self.strudel_available)
+        self.strudel_mode_btn.toggled.connect(self.on_strudel_mode_toggled)
+        layout.addWidget(self.strudel_mode_btn)
 
         self.theme_combo = QComboBox()
         self.theme_combo.setObjectName("ThemePicker")
@@ -899,6 +1078,50 @@ class AmbianceQtImproved(QMainWindow):
         layout.addWidget(self.load_preset_btn)
 
         return toolbar
+
+    def ensure_strudel_loaded(self) -> None:
+        if not self.strudel_available:
+            return
+        if self.strudel_loaded:
+            return
+        if not self.strudel_view:
+            return
+        try:
+            self.strudel_view.setUrl(QUrl(STRUDEL_WEB_URL))
+            self.statusBar().showMessage("Strudel Mode active – loading web playground…")
+        except Exception as exc:
+            self.append_log(f"Failed to load Strudel playground: {exc}")
+            return
+        self.strudel_loaded = True
+
+    def on_strudel_mode_toggled(self, checked: bool) -> None:
+        if not self.strudel_mode_btn:
+            return
+        self.strudel_mode_btn.setText("Strudel Mode: ON" if checked else "Strudel Mode: OFF")
+
+        if not self.strudel_available:
+            if checked:
+                QMessageBox.warning(
+                    self,
+                    "Strudel Mode",
+                    "PyQtWebEngine is not installed. Install 'PyQtWebEngine' to enable the Strudel playground."
+                )
+                self.strudel_mode_btn.blockSignals(True)
+                self.strudel_mode_btn.setChecked(False)
+                self.strudel_mode_btn.blockSignals(False)
+            return
+
+        if not self.body_stack or not self.strudel_container:
+            return
+
+        if checked:
+            self.ensure_strudel_loaded()
+            self.body_stack.setCurrentWidget(self.strudel_container)
+            if self.strudel_loaded:
+                self.statusBar().showMessage("Strudel Mode active – jam inside the embedded playground.")
+        else:
+            self.body_stack.setCurrentWidget(self.scroll_area)
+            self.statusBar().showMessage(self.default_status_message)
 
     def on_start_audio_clicked(self) -> None:
         if not self.audio_engine:
@@ -1040,6 +1263,7 @@ class AmbianceQtImproved(QMainWindow):
         self.chain_widget.slot_selected.connect(self.on_chain_slot_selected)
         self.chain_widget.slot_updated.connect(self.on_chain_slot_updated)
         layout.addWidget(self.chain_widget)
+        QTimer.singleShot(0, self._register_chain_window)
 
         self.rack_notes_label = QLabel()
         self.rack_notes_label.setObjectName("RackNotes")
@@ -1100,6 +1324,19 @@ class AmbianceQtImproved(QMainWindow):
         self.host_warnings_label.setObjectName("HostWarnings")
         self.host_warnings_label.setWordWrap(True)
         layout.addWidget(self.host_warnings_label)
+
+        dock_row = QHBoxLayout()
+        dock_row.setSpacing(8)
+        self.host_dock_check = QCheckBox("Dock plugin UI inside host panel")
+        self.host_dock_check.setObjectName("HostDockToggle")
+        self.host_dock_check.setChecked(False)
+        self.host_dock_check.toggled.connect(self.on_host_dock_toggled)
+        dock_row.addWidget(self.host_dock_check)
+        dock_row.addStretch()
+        layout.addLayout(dock_row)
+
+        self.host_editor_container = PluginEditorContainer()
+        layout.addWidget(self.host_editor_container)
 
         return frame
 
@@ -1184,6 +1421,19 @@ class AmbianceQtImproved(QMainWindow):
         layout.addWidget(self.param_tabs)
 
         return frame
+
+    def _register_chain_window(self) -> None:
+        """Share the main window handle with the plugin chain widget."""
+
+        if not getattr(self, "chain_widget", None):
+            return
+        window = self.windowHandle()
+        if window is None:
+            return
+        try:
+            self.chain_widget.register_host_window(int(window.winId()))
+        except Exception:
+            pass
 
     def build_rack_log_panel(self) -> QFrame:
         frame = QFrame()
@@ -1383,6 +1633,23 @@ class AmbianceQtImproved(QMainWindow):
                 QScrollArea#BodyScrollArea QWidget {
                     background-color: $panel_opaque;
                 }
+                QStackedWidget#BodyStack {
+                    background-color: transparent;
+                    border: none;
+                }
+                QWidget#StrudelContainer {
+                    background-color: $panel_opaque;
+                    border: 1px solid $panel_border;
+                    border-radius: 16px;
+                }
+                QWebEngineView#StrudelView {
+                    background-color: $bg;
+                    border: none;
+                }
+                QLabel#StrudelFallback {
+                    color: $text;
+                    padding: 24px;
+                }
                 QFrame#Toolbar {
                     background-color: $panel;
                     border: 1px solid $panel_border;
@@ -1455,6 +1722,16 @@ class AmbianceQtImproved(QMainWindow):
                 }
                 QFrame#HostPanel {
                     border: 1px solid $accent_border;
+                }
+                QFrame#PluginEditorContainer {
+                    background-color: $panel_soft;
+                    border: 1px dashed $card_border;
+                    border-radius: 12px;
+                    min-height: 320px;
+                }
+                QFrame#PluginEditorContainer QLabel#PluginEditorPlaceholder {
+                    color: $muted;
+                    font-style: italic;
                 }
                 QListWidget#PluginList {
                     background-color: $list_bg;
@@ -1855,6 +2132,8 @@ class AmbianceQtImproved(QMainWindow):
 
             # Create fresh host with unique JACK client name (prevents conflicts)
             slot.host = CarlaVSTHost(client_name=f"AmbianceSlot{slot.index}")
+            if self.chain_widget.host_window_id is not None:
+                slot.host.register_host_window(self.chain_widget.host_window_id)
 
             # Configure audio WITHOUT lock (plugin_host.py doesn't use locks)
             # Try DirectSound first for testing - JACK needs server running + routing setup

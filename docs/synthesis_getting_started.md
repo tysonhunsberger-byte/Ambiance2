@@ -13,7 +13,7 @@ To make that happen inside Ambiance, we can break the work into approachable ste
 3. **Schedule events on the engine clock.**  Feed those events into the existing stream controllers by calling `set_crossfade`, `set_volume`, or `load_file` at the right beats.  A 16th-note scheduler driven by Qt’s timer is sufficient for a first pass.
 4. **Provide friendly feedback.**  Highlight the active beat inside the scratchpad, and surface errors (such as typos) in a toast message so non-programmers know what went wrong.
 
-If you want to experiment before the full integration lands, visit [https://strudel.tidalcycles.org/](https://strudel.tidalcycles.org/) and try the interactive tutorials.  Anything you create there can later inform the patterns we support in Ambiance.
+If you want to experiment before the full integration lands, visit [https://strudel.tidalcycles.org/](https://strudel.tidalcycles.org/) and try the interactive tutorials.  Anything you create there can later inform the patterns we support in Ambiance.  When you are ready to wire Strudel into the desktop app, follow the step-by-step instructions in [`docs/strudel_integration.md`](strudel_integration.md).
 
 ## 2. SuperCollider exploration
 
