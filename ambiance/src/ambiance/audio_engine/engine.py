@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -219,6 +220,52 @@ class StreamController(QObject):
         self._volume_value = 1.0
         self._pan_value = 0.0
 
+        # Time/pitch parameters
+        self._tempo = 1.0
+        self._pitch = 0
+        self._reverse_a = False
+        self._reverse_b = False
+
+        # Effect parameters
+        self._muffle_enabled = False
+        self._muffle_amount = 1.0
+        self._tone_enabled = False
+        self._tone_wave = "sine"
+        self._tone_base = 200.0
+        self._tone_beat = 10.0
+        self._tone_level = 0.0
+        self._noise_enabled = False
+        self._noise_type = "white"
+        self._noise_level = 0.0
+        self._noise_tilt = 0.0
+        self._eq_low = 0.0
+        self._eq_mid = 0.0
+        self._eq_high = 0.0
+        self._fx_mix = 0.0
+        self._fx_delay = 0.25
+        self._fx_feedback = 0.3
+        self._fx_dist = 0.0
+        self._space_preset = "none"
+        self._space_mix = 0.0
+        self._space_decay = 1.2
+        self._space_pre = 0.0
+
+        # Effect nodes
+        self._effect_nodes: List[pyo.PyoObject] = []
+        self._generator_nodes: List[pyo.PyoObject] = []
+        self._pitch_node: Optional[pyo.PyoObject] = None
+        self._muffle_node: Optional[pyo.PyoObject] = None
+        self._eq_low_node: Optional[pyo.PyoObject] = None
+        self._eq_mid_node: Optional[pyo.PyoObject] = None
+        self._eq_high_node: Optional[pyo.PyoObject] = None
+        self._disto_node: Optional[pyo.PyoObject] = None
+        self._delay_node: Optional[pyo.PyoObject] = None
+        self._fx_mix_sig: Optional[pyo.Sig] = None
+        self._fx_interp: Optional[pyo.PyoObject] = None
+        self._space_predelay: Optional[pyo.PyoObject] = None
+        self._reverb_node: Optional[pyo.PyoObject] = None
+        self.silence = pyo.Sig(0.0)
+
         self.file_info_a: Optional[AudioFileInfo] = None
         self.file_info_b: Optional[AudioFileInfo] = None
 
@@ -328,28 +375,133 @@ class StreamController(QObject):
         self.volume.setValue(0.0 if self.muted else self._volume_value)
         self.state_changed.emit()
 
-    def _rebuild_output(self) -> None:
-        signals: List[pyo.PyoObject] = []
-        if self.player_a is not None:
-            signals.append(self.player_a * (1.0 - self.crossfade))
-        if self.player_b is not None:
-            signals.append(self.player_b * self.crossfade)
-
-        if self.output is not None:
+    def seek(self, layer: str, seconds: float) -> None:
+        player, info = self._player_and_info(layer)
+        if not player or not info or info.duration <= 0:
+            return
+        seconds = max(0.0, min(float(seconds), info.duration))
+        norm = 0.0 if info.duration <= 0 else seconds / info.duration
+        try:
+            player.setPos(norm)
+        except AttributeError:
             try:
-                self.output.stop()
+                player.pos = norm
             except Exception:
-                pass
-            self.output = None
+                return
+        self.state_changed.emit()
 
-        if signals:
-            mix = signals[0]
-            for sig in signals[1:]:
-                mix = mix + sig
-            mixed = mix * self.volume
-            self.output = pyo.Pan(mixed, outs=2, pan=self.pan)
+    def get_position(self, layer: str) -> float:
+        player, info = self._player_and_info(layer)
+        if not player or not info or info.duration <= 0:
+            return 0.0
+        position: float = 0.0
+        for accessor in ("getPos", "getpos", "getPointer"):
+            if hasattr(player, accessor):
+                try:
+                    raw = getattr(player, accessor)()
+                    position = self._normalise_position_value(raw, info)
+                    break
+                except Exception:
+                    continue
         else:
-            self.output = None
+            for attr in ("pos", "pointer", "index"):
+                if hasattr(player, attr):
+                    try:
+                        raw = getattr(player, attr)
+                        position = self._normalise_position_value(raw, info)
+                        break
+                    except Exception:
+                        continue
+        return max(0.0, min(info.duration, position))
+
+    def _player_and_info(
+        self, layer: str
+    ) -> Tuple[Optional[pyo.SfPlayer], Optional[AudioFileInfo]]:
+        layer = layer.upper()
+        if layer == "A":
+            return self.player_a, self.file_info_a
+        return self.player_b, self.file_info_b
+
+    def _normalise_position_value(self, raw: object, info: AudioFileInfo) -> float:
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return 0.0
+        if not math.isfinite(value):
+            return 0.0
+        duration = info.duration
+        if duration <= 0:
+            return 0.0
+        if 0.0 <= value <= 1.0:
+            return value * duration
+        if 0.0 <= value <= duration * 1.1:
+            return value
+        total_frames = duration * info.sample_rate
+        if total_frames > 0 and 0.0 <= value <= total_frames * 1.1:
+            return (value / total_frames) * duration
+        return 0.0
+
+    def _rebuild_output(self) -> None:
+        self._cleanup_effects()
+
+        source_a = self.player_a if self.player_a is not None else self.silence
+        source_b = self.player_b if self.player_b is not None else self.silence
+
+        cross = pyo.Interp(source_a, source_b, interp=self.crossfade)
+        self._register_node(cross)
+
+        pitch = pyo.Harmonizer(cross, transpo=self._pitch)
+        self._pitch_node = pitch
+        self._register_node(pitch)
+
+        muffle_freq = self._muffle_cutoff()
+        muffle = pyo.Biquad(pitch, freq=muffle_freq, q=0.707, type=0)
+        self._muffle_node = muffle
+        self._register_node(muffle)
+
+        eq_low = pyo.EQ(muffle, freq=120, boost=self._eq_low, q=0.7, type=1)
+        self._eq_low_node = eq_low
+        self._register_node(eq_low)
+        eq_mid = pyo.EQ(eq_low, freq=1000, boost=self._eq_mid, q=1.0, type=0)
+        self._eq_mid_node = eq_mid
+        self._register_node(eq_mid)
+        eq_high = pyo.EQ(eq_mid, freq=8000, boost=self._eq_high, q=0.7, type=2)
+        self._eq_high_node = eq_high
+        self._register_node(eq_high)
+
+        disto = pyo.Disto(eq_high, drive=self._fx_dist, slope=0.8, mul=1.0)
+        self._disto_node = disto
+        self._register_node(disto)
+
+        delay = pyo.Delay(disto, delay=self._fx_delay, feedback=self._fx_feedback, maxdelay=2.0)
+        self._delay_node = delay
+        self._register_node(delay)
+
+        self._fx_mix_sig = pyo.Sig(self._fx_mix)
+        self._register_node(self._fx_mix_sig)
+        fx_interp = pyo.Interp(eq_high, delay, interp=self._fx_mix_sig)
+        self._fx_interp = fx_interp
+        self._register_node(fx_interp)
+
+        predelay = pyo.Delay(fx_interp, delay=self._space_pre, maxdelay=1.0)
+        self._space_predelay = predelay
+        self._register_node(predelay)
+
+        size, damp = self._space_params()
+        reverb_mix = self._space_mix if self._space_preset != "none" else 0.0
+        reverb = pyo.Freeverb(predelay, size=size, damp=damp, bal=reverb_mix)
+        self._reverb_node = reverb
+        self._register_node(reverb)
+
+        signal: pyo.PyoObject = reverb
+
+        generators = self._build_generators()
+        if generators is not None:
+            signal = signal + generators
+
+        final = pyo.Pan(signal * self.volume, outs=2, pan=self.pan)
+        self.output = final
+        self._register_node(final)
         self.block._rebuild_output()
 
     # ------------------------------------------------------------------
@@ -360,6 +512,7 @@ class StreamController(QObject):
             self.player_b.stop()
         self.player_a = None
         self.player_b = None
+        self._cleanup_effects()
         if self.output is not None:
             try:
                 self.output.stop()
@@ -386,3 +539,354 @@ class StreamController(QObject):
     @property
     def pan_value(self) -> float:
         return self._pan_value
+
+    # Time & pitch -----------------------------------------------------
+    def set_tempo(self, tempo: float) -> None:
+        tempo = max(0.25, min(4.0, float(tempo)))
+        self._tempo = tempo
+        self._update_player_speed("A")
+        self._update_player_speed("B")
+        self.state_changed.emit()
+
+    def set_pitch(self, semitones: int) -> None:
+        self._pitch = int(max(-24, min(24, semitones)))
+        if self._pitch_node is not None:
+            self._set_attr(self._pitch_node, "transpo", self._pitch)
+        self.state_changed.emit()
+
+    def set_reverse(self, layer: str, enabled: bool) -> None:
+        if layer.upper() == "A":
+            self._reverse_a = bool(enabled)
+            self._update_player_speed("A")
+        else:
+            self._reverse_b = bool(enabled)
+            self._update_player_speed("B")
+        self.state_changed.emit()
+
+    def _update_player_speed(self, layer: str) -> None:
+        player, _ = self._player_and_info(layer)
+        if not player:
+            return
+        reverse = self._reverse_a if layer == "A" else self._reverse_b
+        speed = self._tempo * (-1.0 if reverse else 1.0)
+        try:
+            player.setSpeed(speed)
+        except AttributeError:
+            try:
+                player.speed = speed
+            except Exception:
+                pass
+
+    # Muffle -----------------------------------------------------------
+    def set_muffle_enabled(self, enabled: bool) -> None:
+        self._muffle_enabled = bool(enabled)
+        if self._muffle_node is not None:
+            self._set_attr(self._muffle_node, "freq", self._muffle_cutoff())
+        self.state_changed.emit()
+
+    def set_muffle_amount(self, amount: float) -> None:
+        self._muffle_amount = max(0.0, min(1.0, float(amount)))
+        if self._muffle_node is not None and self._muffle_enabled:
+            self._set_attr(self._muffle_node, "freq", self._muffle_cutoff())
+        self.state_changed.emit()
+
+    # Tone -------------------------------------------------------------
+    def set_tone_enabled(self, enabled: bool) -> None:
+        self._tone_enabled = bool(enabled)
+        self._rebuild_output()
+        self.state_changed.emit()
+
+    def set_tone_wave(self, wave: str) -> None:
+        self._tone_wave = str(wave) or "sine"
+        self._rebuild_output()
+        self.state_changed.emit()
+
+    def set_tone_base(self, base: float) -> None:
+        self._tone_base = max(20.0, min(2000.0, float(base)))
+        self._rebuild_output()
+        self.state_changed.emit()
+
+    def set_tone_beat(self, beat: float) -> None:
+        self._tone_beat = max(0.0, min(45.0, float(beat)))
+        self._rebuild_output()
+        self.state_changed.emit()
+
+    def set_tone_level(self, level: float) -> None:
+        self._tone_level = max(0.0, min(1.0, float(level)))
+        self._rebuild_output()
+        self.state_changed.emit()
+
+    # Noise ------------------------------------------------------------
+    def set_noise_enabled(self, enabled: bool) -> None:
+        self._noise_enabled = bool(enabled)
+        self._rebuild_output()
+        self.state_changed.emit()
+
+    def set_noise_type(self, noise_type: str) -> None:
+        self._noise_type = str(noise_type) or "white"
+        self._rebuild_output()
+        self.state_changed.emit()
+
+    def set_noise_level(self, level: float) -> None:
+        self._noise_level = max(0.0, min(1.0, float(level)))
+        self._rebuild_output()
+        self.state_changed.emit()
+
+    def set_noise_tilt(self, tilt: float) -> None:
+        self._noise_tilt = max(-1.0, min(1.0, float(tilt)))
+        self._rebuild_output()
+        self.state_changed.emit()
+
+    # EQ ----------------------------------------------------------------
+    def set_eq_low(self, gain: float) -> None:
+        self._eq_low = max(-12.0, min(12.0, float(gain)))
+        if self._eq_low_node is not None:
+            self._set_attr(self._eq_low_node, "boost", self._eq_low)
+        self.state_changed.emit()
+
+    def set_eq_mid(self, gain: float) -> None:
+        self._eq_mid = max(-12.0, min(12.0, float(gain)))
+        if self._eq_mid_node is not None:
+            self._set_attr(self._eq_mid_node, "boost", self._eq_mid)
+        self.state_changed.emit()
+
+    def set_eq_high(self, gain: float) -> None:
+        self._eq_high = max(-12.0, min(12.0, float(gain)))
+        if self._eq_high_node is not None:
+            self._set_attr(self._eq_high_node, "boost", self._eq_high)
+        self.state_changed.emit()
+
+    # FX chain ---------------------------------------------------------
+    def set_fx_mix(self, amount: float) -> None:
+        self._fx_mix = max(0.0, min(1.0, float(amount)))
+        if self._fx_mix_sig is not None:
+            self._fx_mix_sig.setValue(self._fx_mix)
+        self.state_changed.emit()
+
+    def set_fx_delay(self, seconds: float) -> None:
+        self._fx_delay = max(0.0, min(1.0, float(seconds)))
+        if self._delay_node is not None:
+            self._set_attr(self._delay_node, "delay", self._fx_delay, method_names=("setDelay",))
+        self.state_changed.emit()
+
+    def set_fx_feedback(self, amount: float) -> None:
+        self._fx_feedback = max(0.0, min(0.95, float(amount)))
+        if self._delay_node is not None:
+            self._set_attr(self._delay_node, "feedback", self._fx_feedback, method_names=("setFeedback",))
+        self.state_changed.emit()
+
+    def set_fx_distortion(self, amount: float) -> None:
+        self._fx_dist = max(0.0, min(1.0, float(amount)))
+        if self._disto_node is not None:
+            self._set_attr(self._disto_node, "drive", self._fx_dist, method_names=("setDrive",))
+        self.state_changed.emit()
+
+    # Spaces -----------------------------------------------------------
+    def set_space_preset(self, preset: str) -> None:
+        self._space_preset = str(preset) or "none"
+        self._update_space_nodes()
+        self.state_changed.emit()
+
+    def set_space_mix(self, mix: float) -> None:
+        self._space_mix = max(0.0, min(1.0, float(mix)))
+        self._update_space_nodes()
+        self.state_changed.emit()
+
+    def set_space_decay(self, decay: float) -> None:
+        self._space_decay = max(0.2, min(6.0, float(decay)))
+        self._update_space_nodes()
+        self.state_changed.emit()
+
+    def set_space_predelay(self, predelay: float) -> None:
+        self._space_pre = max(0.0, min(0.25, float(predelay)))
+        if self._space_predelay is not None:
+            self._set_attr(self._space_predelay, "delay", self._space_pre, method_names=("setDelay",))
+        self.state_changed.emit()
+
+    # Helpers ----------------------------------------------------------
+    def _cleanup_effects(self) -> None:
+        for node in self._effect_nodes:
+            try:
+                node.stop()
+            except Exception:
+                pass
+        self._effect_nodes.clear()
+        for node in self._generator_nodes:
+            try:
+                node.stop()
+            except Exception:
+                pass
+        self._generator_nodes.clear()
+        self._pitch_node = None
+        self._muffle_node = None
+        self._eq_low_node = None
+        self._eq_mid_node = None
+        self._eq_high_node = None
+        self._disto_node = None
+        self._delay_node = None
+        self._fx_mix_sig = None
+        self._fx_interp = None
+        self._space_predelay = None
+        self._reverb_node = None
+
+    def _register_node(self, node: pyo.PyoObject) -> None:
+        self._effect_nodes.append(node)
+
+    def _register_generator(self, node: Optional[pyo.PyoObject]) -> None:
+        if node is not None and node not in self._generator_nodes:
+            self._generator_nodes.append(node)
+
+    def _muffle_cutoff(self) -> float:
+        if not self._muffle_enabled:
+            return 20000.0
+        amount = self._muffle_amount
+        return 200.0 + (20000.0 - 200.0) * (amount ** 2)
+
+    def _space_params(self) -> Tuple[float, float]:
+        preset_defaults = {
+            "none": (0.2, 0.5),
+            "hall": (0.9, 0.6),
+            "studio": (0.6, 0.3),
+            "cabin": (0.4, 0.5),
+        }
+        base_size, base_damp = preset_defaults.get(self._space_preset, (0.6, 0.4))
+        size = max(0.1, min(1.0, base_size * (self._space_decay / 1.2)))
+        damp = max(0.0, min(1.0, base_damp + (self._space_mix - 0.5) * 0.3))
+        return size, damp
+
+    def _build_generators(self) -> Optional[pyo.PyoObject]:
+        generators: List[pyo.PyoObject] = []
+
+        if self._tone_enabled and self._tone_level > 0:
+            freqs = [
+                max(20.0, self._tone_base - self._tone_beat / 2.0),
+                max(20.0, self._tone_base + self._tone_beat / 2.0),
+            ]
+            wave_map = {
+                "sine": 0,
+                "square": 4,
+                "triangle": 3,
+                "sawtooth": 1,
+            }
+            wave_type = wave_map.get(self._tone_wave, 0)
+            tone = pyo.LFO(freq=freqs, type=wave_type, mul=self._tone_level)
+            generators.append(tone)
+            self._register_generator(tone)
+
+        if self._noise_enabled and self._noise_level > 0:
+            noise_source: Optional[pyo.PyoObject] = None
+            if self._noise_type == "pink":
+                noise_source = pyo.PinkNoise(mul=self._noise_level)
+            elif self._noise_type == "brown":
+                noise_source = pyo.BrownNoise(mul=self._noise_level)
+            else:
+                noise_source = pyo.Noise(mul=self._noise_level)
+            self._register_generator(noise_source)
+
+            if self._noise_tilt != 0:
+                if self._noise_tilt < 0:
+                    cutoff = 500.0 + 19500.0 * (1.0 + self._noise_tilt)
+                    noise_source = pyo.Biquad(noise_source, freq=cutoff, q=0.707, type=0)
+                else:
+                    cutoff = 20.0 + 8000.0 * self._noise_tilt
+                    noise_source = pyo.Biquad(noise_source, freq=max(20.0, cutoff), q=0.707, type=1)
+                self._register_generator(noise_source)
+
+            noise_mix = pyo.Mix(noise_source, voices=2)
+            generators.append(noise_mix)
+            self._register_generator(noise_mix)
+
+        if not generators:
+            return None
+
+        if len(generators) == 1:
+            self._register_generator(generators[0])
+            return generators[0]
+        mix = generators[0]
+        for gen in generators[1:]:
+            mix = mix + gen
+        self._register_generator(mix)
+        return mix
+
+    def _set_attr(
+        self,
+        obj: pyo.PyoObject,
+        attr: str,
+        value: float,
+        *,
+        method_names: Optional[Tuple[str, ...]] = None,
+    ) -> None:
+        if method_names:
+            for name in method_names:
+                if hasattr(obj, name):
+                    try:
+                        getattr(obj, name)(value)
+                        return
+                    except Exception:
+                        continue
+        if hasattr(obj, attr):
+            try:
+                setattr(obj, attr, value)
+                return
+            except Exception:
+                pass
+        method = f"set{attr.capitalize()}"
+        if hasattr(obj, method):
+            try:
+                getattr(obj, method)(value)
+            except Exception:
+                pass
+
+    def _update_space_nodes(self) -> None:
+        size, damp = self._space_params()
+        if self._reverb_node is not None:
+            self._set_attr(self._reverb_node, "size", size, method_names=("setSize",))
+            self._set_attr(self._reverb_node, "damp", damp, method_names=("setDamp",))
+            bal = self._space_mix if self._space_preset != "none" else 0.0
+            self._set_attr(self._reverb_node, "bal", bal, method_names=("setBal",))
+
+    # State ------------------------------------------------------------
+    def get_mod_state(self) -> Dict[str, Dict[str, object]]:
+        return {
+            "time_pitch": {
+                "tempo": self._tempo,
+                "pitch": self._pitch,
+                "reverse_a": self._reverse_a,
+                "reverse_b": self._reverse_b,
+                "loop": self.loop,
+            },
+            "muffle": {
+                "enabled": self._muffle_enabled,
+                "amount": self._muffle_amount,
+            },
+            "tone": {
+                "enabled": self._tone_enabled,
+                "wave": self._tone_wave,
+                "base": self._tone_base,
+                "beat": self._tone_beat,
+                "level": self._tone_level,
+            },
+            "noise": {
+                "enabled": self._noise_enabled,
+                "type": self._noise_type,
+                "level": self._noise_level,
+                "tilt": self._noise_tilt,
+            },
+            "eq": {
+                "low": self._eq_low,
+                "mid": self._eq_mid,
+                "high": self._eq_high,
+            },
+            "fx": {
+                "mix": self._fx_mix,
+                "delay": self._fx_delay,
+                "feedback": self._fx_feedback,
+                "dist": self._fx_dist,
+            },
+            "space": {
+                "preset": self._space_preset,
+                "mix": self._space_mix,
+                "decay": self._space_decay,
+                "pre": self._space_pre,
+            },
+        }

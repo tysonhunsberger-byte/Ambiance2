@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Dict
 
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtWidgets import (
     QFileDialog,
     QFrame,
@@ -12,7 +12,6 @@ from PyQt5.QtWidgets import (
     QLabel,
     QVBoxLayout,
     QPushButton,
-    QScrollArea,
     QWidget,
     QSlider,
     QCheckBox,
@@ -21,6 +20,7 @@ from PyQt5.QtWidgets import (
 )
 
 from ambiance.audio_engine import AudioEngine, BlockController, StreamController
+from .stream_mods import StreamModsContainer
 
 
 class BlocksPanel(QFrame):
@@ -50,17 +50,12 @@ class BlocksPanel(QFrame):
 
         root_layout.addLayout(header)
 
-        self.scroll_area = QScrollArea()
-        self.scroll_area.setWidgetResizable(True)
-        self.scroll_area.setFrameShape(QFrame.NoFrame)
-        root_layout.addWidget(self.scroll_area, 1)
-
-        self.scroll_widget = QWidget()
-        self.scroll_layout = QVBoxLayout(self.scroll_widget)
-        self.scroll_layout.setContentsMargins(0, 0, 0, 0)
-        self.scroll_layout.setSpacing(16)
-        self.scroll_layout.addStretch()
-        self.scroll_area.setWidget(self.scroll_widget)
+        self.list_widget = QWidget()
+        self.list_layout = QVBoxLayout(self.list_widget)
+        self.list_layout.setContentsMargins(0, 0, 0, 0)
+        self.list_layout.setSpacing(16)
+        self.list_layout.addStretch()
+        root_layout.addWidget(self.list_widget, 1)
 
         engine.block_created.connect(self._on_block_created)
         engine.block_removed.connect(self._on_block_removed)
@@ -82,7 +77,8 @@ class BlocksPanel(QFrame):
     def _on_block_created(self, block: BlockController) -> None:
         widget = BlockWidget(block, panel=self)
         self._block_widgets[block] = widget
-        self.scroll_layout.insertWidget(self.scroll_layout.count() - 1, widget)
+        insert_index = max(0, self.list_layout.count() - 1)
+        self.list_layout.insertWidget(insert_index, widget)
 
     def _on_block_removed(self, block: BlockController) -> None:
         widget = self._block_widgets.pop(block, None)
@@ -145,6 +141,15 @@ class BlockWidget(QGroupBox):
         controller.stream_removed.connect(self._on_stream_removed)
         controller.volume_changed.connect(self._sync_volume)
 
+        for stream in controller.streams:
+            self._add_stream_widget(stream)
+
+    # ------------------------------------------------------------------
+    def _add_stream_widget(self, stream: StreamController) -> None:
+        widget = StreamWidget(stream)
+        self.stream_widgets[stream] = widget
+        self.stream_container.addWidget(widget)
+
     # ------------------------------------------------------------------
     def _on_volume_changed(self, value: int) -> None:
         percent = value / 100.0
@@ -162,13 +167,11 @@ class BlockWidget(QGroupBox):
 
     def _on_add_stream(self) -> None:
         stream = self.controller.add_stream()
-        stream_widget = StreamWidget(stream)
-        self.stream_widgets[stream] = stream_widget
-        self.stream_container.addWidget(stream_widget)
+        self._add_stream_widget(stream)
 
     def _on_stream_added(self, stream: StreamController) -> None:
-        # Already created in _on_add_stream
-        pass
+        if stream not in self.stream_widgets:
+            self._add_stream_widget(stream)
 
     def _on_stream_removed(self, stream: StreamController) -> None:
         widget = self.stream_widgets.pop(stream, None)
@@ -192,6 +195,7 @@ class StreamWidget(QGroupBox):
         super().__init__(f"Stream {controller.index}")
         self.controller = controller
         self._duration_info = {"A": 0.0, "B": 0.0}
+        self._seeking_layer: str | None = None
         self.setObjectName("StreamWidget")
         self.setStyleSheet("StreamWidget { border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; }")
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
@@ -220,6 +224,24 @@ class StreamWidget(QGroupBox):
         file_row.addWidget(self.file_b_label, 1)
 
         layout.addLayout(file_row)
+        layout.addSpacing(10)
+
+        self.progress_a_slider = self._make_slider(0, 1, 0)
+        self.progress_a_slider.setEnabled(False)
+        self.progress_a_slider.sliderPressed.connect(lambda: self._begin_seek("A"))
+        self.progress_a_slider.sliderReleased.connect(lambda: self._commit_seek("A"))
+        self.progress_a_slider.sliderMoved.connect(lambda value: self._preview_seek("A", value))
+        self.progress_a_time = QLabel("0:00 / 0:00")
+
+        self.progress_b_slider = self._make_slider(0, 1, 0)
+        self.progress_b_slider.setEnabled(False)
+        self.progress_b_slider.sliderPressed.connect(lambda: self._begin_seek("B"))
+        self.progress_b_slider.sliderReleased.connect(lambda: self._commit_seek("B"))
+        self.progress_b_slider.sliderMoved.connect(lambda value: self._preview_seek("B", value))
+        self.progress_b_time = QLabel("0:00 / 0:00")
+
+        layout.addLayout(self._progress_row("File A", self.progress_a_slider, self.progress_a_time))
+        layout.addLayout(self._progress_row("File B", self.progress_b_slider, self.progress_b_time))
         layout.addSpacing(10)
 
         transport_row = QHBoxLayout()
@@ -261,10 +283,54 @@ class StreamWidget(QGroupBox):
         layout.addLayout(self._slider_row("Pan", self.pan_slider))
         layout.addSpacing(6)
 
+        self.mods = StreamModsContainer()
+        layout.addWidget(self.mods)
+        self._wire_mod_controls()
+
         controller.file_loaded.connect(self._on_file_loaded)
         controller.state_changed.connect(self._sync_state)
-        self._update_file_labels()
         self._sync_state()
+
+        self.position_timer = QTimer(self)
+        self.position_timer.setInterval(200)
+        self.position_timer.timeout.connect(self._refresh_positions)
+        self.position_timer.start()
+
+    def _wire_mod_controls(self) -> None:
+        mods = self.mods
+        mods.time_pitch.tempo_changed.connect(self.controller.set_tempo)
+        mods.time_pitch.pitch_changed.connect(self.controller.set_pitch)
+        mods.time_pitch.reverse_a_changed.connect(lambda val: self.controller.set_reverse("A", val))
+        mods.time_pitch.reverse_b_changed.connect(lambda val: self.controller.set_reverse("B", val))
+        mods.time_pitch.loop_changed.connect(self.controller.set_loop)
+
+        mods.muffle.enabled_changed.connect(self.controller.set_muffle_enabled)
+        mods.muffle.amount_changed.connect(self.controller.set_muffle_amount)
+
+        mods.tone.enabled_changed.connect(self.controller.set_tone_enabled)
+        mods.tone.wave_changed.connect(self.controller.set_tone_wave)
+        mods.tone.base_changed.connect(self.controller.set_tone_base)
+        mods.tone.beat_changed.connect(self.controller.set_tone_beat)
+        mods.tone.level_changed.connect(self.controller.set_tone_level)
+
+        mods.noise.enabled_changed.connect(self.controller.set_noise_enabled)
+        mods.noise.type_changed.connect(self.controller.set_noise_type)
+        mods.noise.level_changed.connect(self.controller.set_noise_level)
+        mods.noise.tilt_changed.connect(self.controller.set_noise_tilt)
+
+        mods.eq.low_changed.connect(self.controller.set_eq_low)
+        mods.eq.mid_changed.connect(self.controller.set_eq_mid)
+        mods.eq.high_changed.connect(self.controller.set_eq_high)
+
+        mods.fx.mix_changed.connect(self.controller.set_fx_mix)
+        mods.fx.delay_changed.connect(self.controller.set_fx_delay)
+        mods.fx.feedback_changed.connect(self.controller.set_fx_feedback)
+        mods.fx.dist_changed.connect(self.controller.set_fx_distortion)
+
+        mods.space.preset_changed.connect(self.controller.set_space_preset)
+        mods.space.mix_changed.connect(self.controller.set_space_mix)
+        mods.space.decay_changed.connect(self.controller.set_space_decay)
+        mods.space.predelay_changed.connect(self.controller.set_space_predelay)
 
     def _make_slider(self, minimum: int, maximum: int, value: int) -> QSlider:
         slider = QSlider(Qt.Horizontal)
@@ -277,6 +343,15 @@ class StreamWidget(QGroupBox):
         row.setSpacing(12)
         row.addWidget(QLabel(label))
         row.addWidget(slider, 1)
+        return row
+
+    def _progress_row(self, label: str, slider: QSlider, time_label: QLabel) -> QHBoxLayout:
+        row = QHBoxLayout()
+        row.setSpacing(12)
+        row.addWidget(QLabel(label))
+        row.addWidget(slider, 1)
+        time_label.setMinimumWidth(110)
+        row.addWidget(time_label)
         return row
 
     def _update_file_labels(self) -> None:
@@ -294,6 +369,7 @@ class StreamWidget(QGroupBox):
             else:
                 self._duration_info[layer] = 0.0
                 label.setText("None")
+        self._update_progress_controls()
 
     # ------------------------------------------------------------------
     def _pick_file(self, layer: str) -> None:
@@ -341,3 +417,80 @@ class StreamWidget(QGroupBox):
         self.mute_btn.setChecked(self.controller.muted)
         self.mute_btn.blockSignals(False)
         self._update_file_labels()
+        self.mods.set_state(self.controller.get_mod_state())
+        self._refresh_positions()
+
+    def _begin_seek(self, layer: str) -> None:
+        self._seeking_layer = layer
+
+    def _commit_seek(self, layer: str) -> None:
+        if self._seeking_layer != layer:
+            return
+        slider = self.progress_a_slider if layer == "A" else self.progress_b_slider
+        duration = self._duration_info.get(layer, 0.0)
+        target = min(duration, max(0.0, slider.value() / 1000.0))
+        self._seek_layer(layer, target)
+        self._seeking_layer = None
+
+    def _preview_seek(self, layer: str, value: int) -> None:
+        duration = self._duration_info.get(layer, 0.0)
+        seconds = min(duration, max(0.0, value / 1000.0))
+        label = self.progress_a_time if layer == "A" else self.progress_b_time
+        label.setText(f"{self._format_time(seconds)} / {self._format_time(duration)}")
+
+    def _seek_layer(self, layer: str, seconds: float) -> None:
+        try:
+            self.controller.seek(layer, seconds)
+        except AttributeError:
+            # Older controllers without seek support.
+            pass
+
+    def _refresh_positions(self) -> None:
+        if self._seeking_layer is not None:
+            return
+        mapping = (
+            ("A", self.progress_a_slider, self.progress_a_time),
+            ("B", self.progress_b_slider, self.progress_b_time),
+        )
+        for layer, slider, label in mapping:
+            duration = self._duration_info.get(layer, 0.0)
+            if duration <= 0:
+                slider.blockSignals(True)
+                slider.setEnabled(False)
+                slider.setRange(0, 1)
+                slider.setValue(0)
+                slider.blockSignals(False)
+                label.setText("0:00 / 0:00")
+                continue
+
+            slider.blockSignals(True)
+            slider.setEnabled(True)
+            slider.setRange(0, max(1, int(duration * 1000)))
+            try:
+                position = self.controller.get_position(layer)
+            except AttributeError:
+                position = 0.0
+            position = min(duration, max(0.0, float(position)))
+            slider.setValue(int(position * 1000))
+            slider.blockSignals(False)
+            label.setText(f"{self._format_time(position)} / {self._format_time(duration)}")
+
+    def _update_progress_controls(self) -> None:
+        for layer, slider, label in (
+            ("A", self.progress_a_slider, self.progress_a_time),
+            ("B", self.progress_b_slider, self.progress_b_time),
+        ):
+            duration = self._duration_info.get(layer, 0.0)
+            slider.blockSignals(True)
+            slider.setEnabled(duration > 0)
+            slider.setRange(0, max(1, int(duration * 1000)))
+            slider.setValue(0)
+            slider.blockSignals(False)
+            label.setText(f"0:00 / {self._format_time(duration)}")
+
+    def _format_time(self, seconds: float) -> str:
+        if seconds <= 0:
+            return "0:00"
+        minutes = int(seconds // 60)
+        remaining = int(seconds % 60)
+        return f"{minutes}:{remaining:02d}"
