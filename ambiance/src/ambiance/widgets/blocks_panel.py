@@ -137,6 +137,11 @@ class BlockWidget(QGroupBox):
         self.stream_container.setSpacing(20)
         layout.addLayout(self.stream_container)
 
+        self.mods = StreamModsContainer()
+        layout.addWidget(self.mods)
+
+        self._wire_mod_controls()
+
         controller.stream_added.connect(self._on_stream_added)
         controller.stream_removed.connect(self._on_stream_removed)
         controller.volume_changed.connect(self._sync_volume)
