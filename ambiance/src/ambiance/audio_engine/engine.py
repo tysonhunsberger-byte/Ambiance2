@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -374,6 +375,72 @@ class StreamController(QObject):
         self.volume.setValue(0.0 if self.muted else self._volume_value)
         self.state_changed.emit()
 
+    def seek(self, layer: str, seconds: float) -> None:
+        player, info = self._player_and_info(layer)
+        if not player or not info or info.duration <= 0:
+            return
+        seconds = max(0.0, min(float(seconds), info.duration))
+        norm = 0.0 if info.duration <= 0 else seconds / info.duration
+        try:
+            player.setPos(norm)
+        except AttributeError:
+            try:
+                player.pos = norm
+            except Exception:
+                return
+        self.state_changed.emit()
+
+    def get_position(self, layer: str) -> float:
+        player, info = self._player_and_info(layer)
+        if not player or not info or info.duration <= 0:
+            return 0.0
+        position: float = 0.0
+        for accessor in ("getPos", "getpos", "getPointer"):
+            if hasattr(player, accessor):
+                try:
+                    raw = getattr(player, accessor)()
+                    position = self._normalise_position_value(raw, info)
+                    break
+                except Exception:
+                    continue
+        else:
+            for attr in ("pos", "pointer", "index"):
+                if hasattr(player, attr):
+                    try:
+                        raw = getattr(player, attr)
+                        position = self._normalise_position_value(raw, info)
+                        break
+                    except Exception:
+                        continue
+        return max(0.0, min(info.duration, position))
+
+    def _player_and_info(
+        self, layer: str
+    ) -> Tuple[Optional[pyo.SfPlayer], Optional[AudioFileInfo]]:
+        layer = layer.upper()
+        if layer == "A":
+            return self.player_a, self.file_info_a
+        return self.player_b, self.file_info_b
+
+    def _normalise_position_value(self, raw: object, info: AudioFileInfo) -> float:
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return 0.0
+        if not math.isfinite(value):
+            return 0.0
+        duration = info.duration
+        if duration <= 0:
+            return 0.0
+        if 0.0 <= value <= 1.0:
+            return value * duration
+        if 0.0 <= value <= duration * 1.1:
+            return value
+        total_frames = duration * info.sample_rate
+        if total_frames > 0 and 0.0 <= value <= total_frames * 1.1:
+            return (value / total_frames) * duration
+        return 0.0
+
     def _rebuild_output(self) -> None:
         self._cleanup_effects()
 
@@ -497,7 +564,7 @@ class StreamController(QObject):
         self.state_changed.emit()
 
     def _update_player_speed(self, layer: str) -> None:
-        player = self.player_a if layer == "A" else self.player_b
+        player, _ = self._player_and_info(layer)
         if not player:
             return
         reverse = self._reverse_a if layer == "A" else self._reverse_b
