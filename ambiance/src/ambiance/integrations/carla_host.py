@@ -847,14 +847,35 @@ class CarlaBackend:
         """Record bundled Carla binary releases for bridge discovery."""
 
         search_roots: set[Path] = {self.base_dir}
-        parent = self.base_dir.parent
-        if parent != self.base_dir:
-            search_roots.add(parent)
+
+        # Walk a few ancestors of the base directory so repositories that keep
+        # Carla releases in sibling folders (e.g. ``Ambiance2/Carla``) are
+        # discovered even when the integration code lives inside
+        # ``ambiance/src``.  This mirrors how the Windows bundle is laid out on
+        # the user's machine.
+        for ancestor in list(self.base_dir.parents)[:4]:
+            search_roots.add(ancestor)
+
         if self.root:
             search_roots.add(self.root)
             root_parent = self.root.parent
             if root_parent != self.root:
                 search_roots.add(root_parent)
+            # Some distributions store additional runtime bundles alongside the
+            # root (e.g. ``Carla-main`` next to an extracted ``Carla`` release).
+            for ancestor in list(root_parent.parents)[:2]:
+                search_roots.add(ancestor)
+
+        # If any of the discovered roots have a ``Carla`` subdirectory, include
+        # that folder explicitly so patterns like ``Carla/Carla-*/Carla`` are
+        # evaluated during release harvesting.
+        for root in list(search_roots):
+            try:
+                candidate = (root / "Carla").resolve(strict=False)
+            except (AttributeError, OSError):
+                continue
+            if candidate.exists():
+                search_roots.add(candidate)
 
         def register_release(directory: Path) -> None:
             try:
@@ -944,6 +965,29 @@ class CarlaBackend:
                     container = candidate.parent
                     self._binary_hints.add(container)
                     self._release_binary_dirs.add(container)
+
+        # Finally, explicitly scan for bridge executables under the collected
+        # search roots.  This catches cases where the Win32 runtime is unpacked
+        # in ``deps`` or ``Carla/Carla-*/Carla`` without matching our glob
+        # patterns above.
+        bridge_names = (
+            "carla-bridge-win32.exe",
+            "carla-bridge-win64.exe",
+            "carla-bridge-native.exe",
+        )
+        for root in list(search_roots):
+            try:
+                iterator = root.rglob
+            except AttributeError:
+                continue
+            for bridge_name in bridge_names:
+                try:
+                    for binary in iterator(bridge_name):
+                        container = binary.parent
+                        if container not in self._release_binary_dirs:
+                            register_release(container)
+                except OSError:
+                    continue
 
     def _locate_release_library(self) -> Path | None:
         """Search bundled Carla binary releases for the standalone library."""
