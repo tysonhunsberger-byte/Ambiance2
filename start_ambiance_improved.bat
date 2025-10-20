@@ -30,7 +30,7 @@ if %errorlevel% neq 0 (
 REM Run the improved version
 echo.
 echo Launching Ambiance Improved...
-python ambiance_qt_improved.py
+py -3.10 ambiance_qt_improved.py
 
 if %errorlevel% neq 0 (
     echo.
