@@ -123,15 +123,15 @@ class CollapsibleMod(QWidget):
             QFrame#ModBody QComboBox,
             QFrame#ModBody QDoubleSpinBox,
             QFrame#ModBody QSpinBox {
-                background-color: #252525;
+                background-color: #f3f3f3;
                 border: 1px solid #4c4c4c;
                 border-radius: 4px;
-                color: #f0f0f0;
+                color: #000000;
                 padding: 2px 6px;
             }
             QFrame#ModBody QComboBox QAbstractItemView {
-                background-color: #2e2e2e;
-                color: #f0f0f0;
+                background-color: #ffffff;
+                color: #000000;
                 selection-background-color: #3f63b8;
             }
             QFrame#ModBody QSlider::groove:horizontal {
@@ -397,7 +397,7 @@ class ToneMod(CollapsibleMod):
         bottom_row.addWidget(QLabel("Level"))
         self.level_slider = QSlider(Qt.Horizontal)
         self.level_slider.setRange(0, 100)
-        self.level_slider.setValue(20)
+        self.level_slider.setValue(35)
         self.level_slider.valueChanged.connect(self._on_level_changed)
         bottom_row.addWidget(self.level_slider, 1)
 
@@ -502,7 +502,7 @@ class NoiseMod(CollapsibleMod):
         row.addWidget(QLabel("Level"))
         self.level_slider = QSlider(Qt.Horizontal)
         self.level_slider.setRange(0, 100)
-        self.level_slider.setValue(20)
+        self.level_slider.setValue(30)
         self.level_slider.valueChanged.connect(
             lambda value: self.level_changed.emit(value / 100.0)
         )

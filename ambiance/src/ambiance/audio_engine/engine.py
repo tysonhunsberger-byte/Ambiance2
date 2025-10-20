@@ -238,6 +238,7 @@ class StreamController(QObject):
         self._noise_type = "white"
         self._noise_level = 0.0
         self._noise_tilt = 0.0
+        self._tone_tables: Dict[str, pyo.PyoObject] = {}
         self._eq_low = 0.0
         self._eq_mid = 0.0
         self._eq_high = 0.0
@@ -592,7 +593,10 @@ class StreamController(QObject):
 
     # Tone -------------------------------------------------------------
     def set_tone_enabled(self, enabled: bool) -> None:
-        self._tone_enabled = bool(enabled)
+        enabled_flag = bool(enabled)
+        self._tone_enabled = enabled_flag
+        if enabled_flag and self._tone_level <= 0.0:
+            self._tone_level = 0.35
         self._rebuild_output()
         self.state_changed.emit()
 
@@ -618,7 +622,10 @@ class StreamController(QObject):
 
     # Noise ------------------------------------------------------------
     def set_noise_enabled(self, enabled: bool) -> None:
-        self._noise_enabled = bool(enabled)
+        enabled_flag = bool(enabled)
+        self._noise_enabled = enabled_flag
+        if enabled_flag and self._noise_level <= 0.0:
+            self._noise_level = 0.3
         self._rebuild_output()
         self.state_changed.emit()
 
@@ -742,6 +749,39 @@ class StreamController(QObject):
         amount = self._muffle_amount
         return 200.0 + (20000.0 - 200.0) * (amount ** 2)
 
+    def _tone_wave_table(self, wave: str) -> pyo.PyoObject:
+        key = wave.lower()
+        table = self._tone_tables.get(key)
+        if table is not None:
+            return table
+        table_map = {
+            "sine": getattr(pyo, "SineTable", None),
+            "square": getattr(pyo, "SquareTable", None),
+            "triangle": getattr(pyo, "TriTable", None),
+            "sawtooth": getattr(pyo, "SawTable", None),
+        }
+        table_cls = table_map.get(key) or getattr(pyo, "SineTable", None)
+        table = None
+        if table_cls is not None:
+            try:
+                table = table_cls()
+            except Exception:
+                table = None
+        if table is None:
+            fallback_cls = getattr(pyo, "SineTable", None)
+            if fallback_cls is not None:
+                try:
+                    table = fallback_cls()
+                except Exception:
+                    table = None
+        if table is None:
+            size = 512
+            table = pyo.DataTable(size=size)
+            waveform = [math.sin((2.0 * math.pi * i) / size) for i in range(size)]
+            table.replace(waveform)
+        self._tone_tables[key] = table
+        return table
+
     def _space_params(self) -> Tuple[float, float]:
         preset_defaults = {
             "none": (0.2, 0.5),
@@ -762,14 +802,11 @@ class StreamController(QObject):
                 max(20.0, self._tone_base - self._tone_beat / 2.0),
                 max(20.0, self._tone_base + self._tone_beat / 2.0),
             ]
-            wave_map = {
-                "sine": 0,
-                "square": 4,
-                "triangle": 3,
-                "sawtooth": 1,
-            }
-            wave_type = wave_map.get(self._tone_wave, 0)
-            tone = pyo.LFO(freq=freqs, type=wave_type, mul=self._tone_level)
+            table = self._tone_wave_table(self._tone_wave)
+            try:
+                tone = pyo.Osc(table=table, freq=freqs, mul=self._tone_level)
+            except Exception:
+                tone = pyo.Sine(freq=freqs, mul=self._tone_level)
             self._register_generator(tone)
             tone_mix = pyo.Mix(tone, voices=2)
             generators.append(tone_mix)

@@ -194,27 +194,30 @@ class BlocksPanel(QFrame):
             QGroupBox#StreamWidget QLabel {
                 color: #f1f1f1;
             }
-            QGroupBox#StreamWidget QCheckBox,
-            QGroupBox#StreamWidget QComboBox,
-            QGroupBox#StreamWidget QDoubleSpinBox {
+            QGroupBox#StreamWidget QCheckBox {
                 color: #f1f1f1;
             }
             QGroupBox#StreamWidget QComboBox,
             QGroupBox#StreamWidget QDoubleSpinBox {
-                background-color: #1c1c1c;
-                border: 1px solid #3a3a3a;
+                color: #000000;
+                background-color: #f3f3f3;
+                border: 1px solid #4a4a4a;
                 border-radius: 4px;
                 padding: 2px 6px;
             }
+            QGroupBox#StreamWidget QComboBox QAbstractItemView {
+                background-color: #ffffff;
+                color: #000000;
+            }
             QGroupBox#StreamWidget QToolButton {
-                background-color: #232323;
-                color: #f1f1f1;
-                border: 1px solid #3a3a3a;
+                background-color: #f0f0f0;
+                color: #000000;
+                border: 1px solid #4a4a4a;
                 border-radius: 6px;
                 padding: 4px 10px;
             }
             QGroupBox#StreamWidget QToolButton:checked {
-                background-color: #2d2d2d;
+                background-color: #d0d7e8;
             }
             QGroupBox#StreamWidget QSlider::groove:horizontal {
                 height: 6px;
@@ -370,12 +373,12 @@ class BlockWidget(QGroupBox):
 
         button_row = QHBoxLayout()
         button_row.addStretch()
-        add_stream_btn = QPushButton("Add Stream")
-        add_stream_btn.clicked.connect(self._on_add_stream)
-        button_row.addWidget(add_stream_btn)
-        remove_btn = QPushButton("Remove Block")
-        remove_btn.clicked.connect(self._on_remove_block)
-        button_row.addWidget(remove_btn)
+        self.add_stream_btn = QPushButton("Add Stream")
+        self.add_stream_btn.clicked.connect(self._on_add_stream)
+        button_row.addWidget(self.add_stream_btn)
+        self.remove_btn = QPushButton("Remove Block")
+        self.remove_btn.clicked.connect(self._on_remove_block)
+        button_row.addWidget(self.remove_btn)
         layout.addLayout(button_row)
 
         self.stream_container = QVBoxLayout()
@@ -383,10 +386,7 @@ class BlockWidget(QGroupBox):
         self.stream_container.setSpacing(20)
         layout.addLayout(self.stream_container)
 
-        self.mods = StreamModsContainer()
-        layout.addWidget(self.mods)
-
-        self._wire_mod_controls()
+        self._pending_removal = False
 
         controller.stream_added.connect(self._on_stream_added)
         controller.stream_removed.connect(self._on_stream_removed)
@@ -425,7 +425,14 @@ class BlockWidget(QGroupBox):
         self.volume_label.setText(f"{int(value * 100)}%")
 
     def _on_add_stream(self) -> None:
-        self.controller.add_stream()
+        if self._pending_removal:
+            return
+        if self.controller not in self.panel.engine.blocks:
+            return
+        try:
+            self.controller.add_stream()
+        except Exception as exc:
+            QMessageBox.critical(self, "Add Stream", f"Failed to add stream:\n{exc}")
 
     def _on_stream_added(self, stream: StreamController) -> None:
         if stream not in self.stream_widgets:
@@ -443,8 +450,32 @@ class BlockWidget(QGroupBox):
             "Remove Block",
             "Are you sure you want to remove this block and all streams?",
         )
-        if confirm == QMessageBox.Yes and self.panel is not None:
-            self.panel.remove_block(self.controller)
+        if confirm == QMessageBox.Yes:
+            self._pending_removal = True
+            self.add_stream_btn.setEnabled(False)
+            self.remove_btn.setEnabled(False)
+            self.setEnabled(False)
+            try:
+                self.panel.remove_block(self.controller)
+            except Exception as exc:
+                QMessageBox.critical(self, "Remove Block", f"Failed to remove block:\n{exc}")
+                self._pending_removal = False
+                self.setEnabled(True)
+                self.add_stream_btn.setEnabled(True)
+                self.remove_btn.setEnabled(True)
+
+    # ------------------------------------------------------------------
+    def _wire_mod_controls(self) -> None:
+        """Legacy no-op retained for backwards compatibility.
+
+        Older versions of the desktop shell used to poke the block widgets
+        directly to wire the per-stream effect controls. The modern widgets
+        handle that work internally (see :class:`StreamWidget`), but we keep
+        the attribute so that stale imports don't crash during startup.
+        """
+
+        # Nothing to do here – the method simply needs to exist.
+        return None
 
     # ------------------------------------------------------------------
     def _wire_mod_controls(self) -> None:
@@ -561,6 +592,8 @@ class StreamWidget(QGroupBox):
         self.mods_spacer = QSpacerItem(0, 6, QSizePolicy.Minimum, QSizePolicy.Fixed)
         layout.addItem(self.mods_spacer)
 
+        self._mods_user_collapse = False
+
         self.mods_toggle = QToolButton()
         self.mods_toggle.setText("Effects Rack")
         self.mods_toggle.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
@@ -572,6 +605,12 @@ class StreamWidget(QGroupBox):
 
         self.mods = StreamModsContainer()
         layout.addWidget(self.mods)
+
+        self.mods_toggle.blockSignals(True)
+        self.mods_toggle.setChecked(False)
+        self.mods_toggle.blockSignals(False)
+        self._on_mods_toggled(False)
+
         self._wire_mod_controls()
 
         controller.file_loaded.connect(self._on_file_loaded)
@@ -620,11 +659,60 @@ class StreamWidget(QGroupBox):
         mods.space.predelay_changed.connect(self.controller.set_space_predelay)
 
     def _on_mods_toggled(self, checked: bool) -> None:
+        if self.sender() is self.mods_toggle:
+            self._mods_user_collapse = not checked
         self.mods.setVisible(checked)
         self.mods_toggle.setArrowType(Qt.DownArrow if checked else Qt.RightArrow)
         if hasattr(self, "mods_spacer"):
             self.mods_spacer.changeSize(0, 6 if checked else 0, QSizePolicy.Minimum, QSizePolicy.Fixed)
             self.layout().invalidate()
+
+    def _mods_should_expand(self, state: Dict[str, Dict[str, object]]) -> bool:
+        if not state:
+            return False
+        time_pitch = state.get("time_pitch", {})
+        if abs(float(time_pitch.get("tempo", 1.0)) - 1.0) > 1e-3:
+            return True
+        if int(time_pitch.get("pitch", 0)) != 0:
+            return True
+        if bool(time_pitch.get("reverse_a", False)) or bool(time_pitch.get("reverse_b", False)):
+            return True
+
+        muffle = state.get("muffle", {})
+        if bool(muffle.get("enabled", False)) and float(muffle.get("amount", 0.0)) > 0.0:
+            return True
+
+        tone = state.get("tone", {})
+        if bool(tone.get("enabled", False)) and float(tone.get("level", 0.0)) > 0.0:
+            return True
+
+        noise = state.get("noise", {})
+        if bool(noise.get("enabled", False)) and float(noise.get("level", 0.0)) > 0.0:
+            return True
+
+        eq = state.get("eq", {})
+        if any(abs(float(eq.get(key, 0.0))) > 1e-3 for key in ("low", "mid", "high")):
+            return True
+
+        fx = state.get("fx", {})
+        if float(fx.get("mix", 0.0)) > 0.0:
+            return True
+        if float(fx.get("delay", 0.0)) > 0.0:
+            return True
+        if float(fx.get("feedback", 0.0)) > 0.0:
+            return True
+        if float(fx.get("dist", 0.0)) > 0.0:
+            return True
+
+        space = state.get("space", {})
+        if space.get("preset") not in (None, "none") and float(space.get("mix", 0.0)) > 0.0:
+            return True
+        if float(space.get("decay", 0.0)) > 0.0:
+            return True
+        if float(space.get("pre", 0.0)) > 0.0:
+            return True
+
+        return False
 
     def _make_slider(self, minimum: int, maximum: int, value: int) -> QSlider:
         slider = QSlider(Qt.Horizontal)
@@ -711,7 +799,18 @@ class StreamWidget(QGroupBox):
         self.mute_btn.setChecked(self.controller.muted)
         self.mute_btn.blockSignals(False)
         self._update_file_labels()
-        self.mods.set_state(self.controller.get_mod_state())
+        mod_state = self.controller.get_mod_state()
+        self.mods.set_state(mod_state)
+
+        should_expand = self._mods_should_expand(mod_state)
+        if not should_expand:
+            self._mods_user_collapse = False
+        elif not self.mods_toggle.isChecked() and not self._mods_user_collapse:
+            self.mods_toggle.blockSignals(True)
+            self.mods_toggle.setChecked(True)
+            self.mods_toggle.blockSignals(False)
+            self._on_mods_toggled(True)
+
         self._refresh_positions()
 
     def _begin_seek(self, layer: str) -> None:

@@ -317,6 +317,8 @@ class CollapsibleSection(QFrame):
         wrapper_layout.addWidget(self.toggle_button)
         wrapper_layout.addWidget(self.content_area)
 
+        self.content_area.setVisible(self.toggle_button.isChecked())
+
     def _on_toggled(self, checked: bool) -> None:
         self.toggle_button.setArrowType(Qt.DownArrow if checked else Qt.RightArrow)
         self.content_area.setVisible(checked)
@@ -784,6 +786,7 @@ class AmbianceQtImproved(QMainWindow):
         self.scroll_area = QScrollArea()
         self.scroll_area.setObjectName("BodyScrollArea")
         self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setFrameShape(QFrame.NoFrame)
         root_layout.addWidget(self.scroll_area)
         
         self.body_widget = QWidget()
@@ -1352,6 +1355,17 @@ class AmbianceQtImproved(QMainWindow):
                 font-family: 'Segoe UI', Arial, sans-serif;
                 font-size: 14px;
             }}
+            QWidget#CentralWidget,
+            QWidget#BodyWidget {
+                background-color: {self.rgba(c['panel'], 1.0)};
+            }
+            QScrollArea#BodyScrollArea {
+                background-color: {self.rgba(c['panel'], 1.0)};
+                border: none;
+            }
+            QScrollArea#BodyScrollArea QWidget {
+                background-color: {self.rgba(c['panel'], 1.0)};
+            }
             QFrame#Toolbar {{
                 background-color: {c['panel']};
                 border: 1px solid {panel_border};
@@ -1380,14 +1394,17 @@ class AmbianceQtImproved(QMainWindow):
                 border: none;
             }}
             QToolButton#SectionToggle {{
-                border: none;
+                border: 1px solid {panel_border};
+                border-radius: 10px;
                 font-weight: 600;
-                padding: 6px 4px;
+                padding: 6px 10px;
                 text-align: left;
-                color: {c['text']};
+                background-color: rgba(240, 240, 240, 0.94);
+                color: #000000;
             }}
             QToolButton#SectionToggle:hover {{
-                color: {c['accent']};
+                background-color: rgba(255, 255, 255, 0.98);
+                color: #000000;
             }}
             QFrame#CollapsibleSectionContent {{
                 background-color: {self.rgba(c['panel'], 0.9)};
