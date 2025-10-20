@@ -23,6 +23,112 @@ from ambiance.audio_engine import AudioEngine, BlockController, StreamController
 from .stream_mods import StreamModsContainer
 
 
+class _LegacySignalProxy:
+    """Minimal proxy for Qt signals referenced by legacy code."""
+
+    def __init__(self) -> None:
+        self._target = None
+        self._slots = []
+
+    def set_target(self, signal) -> None:  # type: ignore[no-untyped-def]
+        self._target = signal
+        if signal is None:
+            return
+        for slot in self._slots:
+            try:
+                signal.connect(slot)
+            except Exception:
+                pass
+
+    def connect(self, slot) -> None:  # type: ignore[no-untyped-def]
+        if slot not in self._slots:
+            self._slots.append(slot)
+        if self._target is not None:
+            try:
+                self._target.connect(slot)
+            except Exception:
+                pass
+
+
+class _LegacySliderProxy:
+    """Proxy that mimics a QSlider for compatibility consumers."""
+
+    def __init__(self) -> None:
+        self._target = None
+        self.sliderMoved = _LegacySignalProxy()
+        self.sliderPressed = _LegacySignalProxy()
+        self.sliderReleased = _LegacySignalProxy()
+        self.valueChanged = _LegacySignalProxy()
+
+    def set_target(self, slider) -> None:  # type: ignore[no-untyped-def]
+        self._target = slider
+        for name, proxy in (
+            ("sliderMoved", self.sliderMoved),
+            ("sliderPressed", self.sliderPressed),
+            ("sliderReleased", self.sliderReleased),
+            ("valueChanged", self.valueChanged),
+        ):
+            target_signal = getattr(slider, name) if slider is not None else None
+            proxy.set_target(target_signal)
+
+    # Basic API surface used by the old desktop code -----------------
+    def setValue(self, value: int) -> None:
+        if self._target is not None:
+            self._target.setValue(value)
+
+    def setRange(self, minimum: int, maximum: int) -> None:
+        if self._target is not None:
+            self._target.setRange(minimum, maximum)
+
+    def setEnabled(self, enabled: bool) -> None:
+        if self._target is not None:
+            self._target.setEnabled(enabled)
+
+    def blockSignals(self, block: bool) -> None:
+        if self._target is not None:
+            self._target.blockSignals(block)
+
+    def value(self) -> int:
+        if self._target is not None:
+            return int(self._target.value())
+        return 0
+
+    def __getattr__(self, item):
+        if self._target is None:
+            def _noop(*_args, **_kwargs):
+                return None
+
+            return _noop
+        return getattr(self._target, item)
+
+
+class _LegacyLabelProxy:
+    """Proxy that mimics a QLabel for compatibility consumers."""
+
+    def __init__(self) -> None:
+        self._target = None
+
+    def set_target(self, label) -> None:  # type: ignore[no-untyped-def]
+        self._target = label
+
+    def setText(self, text: str) -> None:
+        if self._target is not None:
+            self._target.setText(text)
+
+    def text(self) -> str:
+        if self._target is not None:
+            return str(self._target.text())
+        return ""
+
+    def __getattr__(self, item):
+        if self._target is None:
+            def _noop(*_args, **_kwargs):
+                return None
+
+            return _noop
+        return getattr(self._target, item)
+
+
 class BlocksPanel(QFrame):
     """Panel hosting user audio blocks/streams."""
 
@@ -31,6 +137,13 @@ class BlocksPanel(QFrame):
         self.engine = engine
         self._block_widgets: Dict[BlockController, BlockWidget] = {}
         self.setObjectName("BlocksPanel")
+
+        # Legacy compatibility handles for the desktop shell which still
+        # references panel-level seeker and label attributes.
+        self.seekerA = _LegacySliderProxy()
+        self.seekerB = _LegacySliderProxy()
+        self.progressLabelA = _LegacyLabelProxy()
+        self.progressLabelB = _LegacyLabelProxy()
 
         root_layout = QVBoxLayout(self)
         root_layout.setContentsMargins(18, 18, 18, 18)
@@ -61,6 +174,35 @@ class BlocksPanel(QFrame):
         engine.block_removed.connect(self._on_block_removed)
 
     # ------------------------------------------------------------------
+    def _ordered_block_widgets(self) -> list["BlockWidget"]:
+        return sorted(self._block_widgets.values(), key=lambda widget: widget.controller.index)
+
+    def _first_stream_widget(self) -> "StreamWidget | None":
+        for block_widget in self._ordered_block_widgets():
+            for stream_widget in block_widget.ordered_stream_widgets:
+                return stream_widget
+        return None
+
+    def _refresh_legacy_seekers(self) -> None:
+        widget = self._first_stream_widget()
+        if widget is None:
+            self.seekerA.set_target(None)
+            self.seekerB.set_target(None)
+            self.progressLabelA.set_target(None)
+            self.progressLabelB.set_target(None)
+            return
+        self.seekerA.set_target(widget.progress_a_slider)
+        self.seekerB.set_target(widget.progress_b_slider)
+        self.progressLabelA.set_target(widget.progress_a_time)
+        self.progressLabelB.set_target(widget.progress_b_time)
+
+    def _on_stream_widget_added(self, widget: "StreamWidget") -> None:
+        self._refresh_legacy_seekers()
+
+    def _on_stream_widget_removed(self, widget: "StreamWidget") -> None:
+        self._refresh_legacy_seekers()
+
+    # ------------------------------------------------------------------
     def create_block(self) -> BlockController | None:
         try:
             self.engine.ensure_running()
@@ -79,11 +221,13 @@ class BlocksPanel(QFrame):
         self._block_widgets[block] = widget
         insert_index = max(0, self.list_layout.count() - 1)
         self.list_layout.insertWidget(insert_index, widget)
+        self._refresh_legacy_seekers()
 
     def _on_block_removed(self, block: BlockController) -> None:
         widget = self._block_widgets.pop(block, None)
         if widget:
             widget.deleteLater()
+        self._refresh_legacy_seekers()
 
     def remove_block(self, block: BlockController) -> None:
         self.engine.remove_block(block)
@@ -154,10 +298,18 @@ class BlockWidget(QGroupBox):
             self._add_stream_widget(stream)
 
     # ------------------------------------------------------------------
+    @property
+    def ordered_stream_widgets(self) -> list["StreamWidget"]:
+        return [
+            self.stream_widgets[stream]
+            for stream in sorted(self.stream_widgets.keys(), key=lambda item: item.index)
+        ]
+
     def _add_stream_widget(self, stream: StreamController) -> None:
         widget = StreamWidget(stream)
         self.stream_widgets[stream] = widget
         self.stream_container.addWidget(widget)
+        self.panel._on_stream_widget_added(widget)
 
     # ------------------------------------------------------------------
     def _on_volume_changed(self, value: int) -> None:
@@ -186,6 +338,7 @@ class BlockWidget(QGroupBox):
         widget = self.stream_widgets.pop(stream, None)
         if widget:
             widget.deleteLater()
+            self.panel._on_stream_widget_removed(widget)
 
     def _on_remove_block(self) -> None:
         confirm = QMessageBox.question(
@@ -248,6 +401,12 @@ class StreamWidget(QGroupBox):
         self.progress_b_slider.sliderReleased.connect(lambda: self._commit_seek("B"))
         self.progress_b_slider.sliderMoved.connect(lambda value: self._preview_seek("B", value))
         self.progress_b_time = QLabel("0:00 / 0:00")
+
+        # Legacy attribute names expected by parts of the desktop shell.
+        self.seekerA = self.progress_a_slider
+        self.seekerB = self.progress_b_slider
+        self.progressLabelA = self.progress_a_time
+        self.progressLabelB = self.progress_b_time
 
         layout.addLayout(self._progress_row("File A", self.progress_a_slider, self.progress_a_time))
         layout.addLayout(self._progress_row("File B", self.progress_b_slider, self.progress_b_time))
