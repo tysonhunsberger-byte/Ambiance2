@@ -12,13 +12,31 @@ import atexit
 from dataclasses import dataclass
 import importlib.util
 import os
+import shutil
 import sys
 import struct
 import threading
 import time
+import tempfile
+import zipfile
 from pathlib import Path
 from types import ModuleType
 from typing import Any, Sequence
+
+from urllib.request import urlopen
+
+
+CARLA_WIN_RELEASES: tuple[dict[str, Any], ...] = (
+    {
+        "name": "Carla-2.5.10-win64",
+        "url": "https://github.com/falkTX/Carla/releases/download/v2.5.10/Carla-2.5.10-win64.zip",
+        "required": (
+            "carla-bridge-win32.exe",
+            "carla-bridge-win64.exe",
+            "carla-discovery-win32.exe",
+        ),
+    },
+)
 
 if os.name == "nt":
     import ctypes
@@ -400,6 +418,7 @@ class CarlaBackend:
             return
 
         self._harvest_release_directories()
+        self._ensure_required_bridges()
 
         try:
             self.library_path = self._locate_library(self.root)
@@ -843,53 +862,40 @@ class CarlaBackend:
                     candidates.append(path)
         return candidates
 
+    def _record_release_directory(self, directory: Path) -> Path | None:
+        """Add a Carla binary release directory to discovery hints."""
+
+        try:
+            resolved = directory.resolve(strict=False)
+        except OSError:
+            resolved = directory
+        if not resolved.exists():
+            return None
+        if resolved not in self._release_binary_dirs:
+            self._release_binary_dirs.add(resolved)
+        self._binary_hints.add(resolved)
+        parent_dir = resolved.parent
+        if parent_dir.exists():
+            self._binary_hints.add(parent_dir)
+        return resolved
+
     def _harvest_release_directories(self) -> None:
         """Record bundled Carla binary releases for bridge discovery."""
 
         search_roots: set[Path] = {self.base_dir}
-
-        # Walk a few ancestors of the base directory so repositories that keep
-        # Carla releases in sibling folders (e.g. ``Ambiance2/Carla``) are
-        # discovered even when the integration code lives inside
-        # ``ambiance/src``.  This mirrors how the Windows bundle is laid out on
-        # the user's machine.
-        for ancestor in list(self.base_dir.parents)[:4]:
-            search_roots.add(ancestor)
-
+        parent = self.base_dir.parent
+        if parent != self.base_dir:
+            search_roots.add(parent)
         if self.root:
             search_roots.add(self.root)
             root_parent = self.root.parent
             if root_parent != self.root:
                 search_roots.add(root_parent)
-            # Some distributions store additional runtime bundles alongside the
-            # root (e.g. ``Carla-main`` next to an extracted ``Carla`` release).
-            for ancestor in list(root_parent.parents)[:2]:
-                search_roots.add(ancestor)
-
-        # If any of the discovered roots have a ``Carla`` subdirectory, include
-        # that folder explicitly so patterns like ``Carla/Carla-*/Carla`` are
-        # evaluated during release harvesting.
-        for root in list(search_roots):
-            try:
-                candidate = (root / "Carla").resolve(strict=False)
-            except (AttributeError, OSError):
-                continue
-            if candidate.exists():
-                search_roots.add(candidate)
 
         def register_release(directory: Path) -> None:
-            try:
-                resolved = directory.resolve(strict=False)
-            except OSError:
-                resolved = directory
-            if not resolved.exists():
+            resolved = self._record_release_directory(directory)
+            if not resolved:
                 return
-            if resolved not in self._release_binary_dirs:
-                self._release_binary_dirs.add(resolved)
-            self._binary_hints.add(resolved)
-            parent_dir = resolved.parent
-            if parent_dir.exists():
-                self._binary_hints.add(parent_dir)
 
             # Windows archives often contain an extra nested "Carla" folder that
             # actually hosts the bridge executables (e.g.
@@ -899,8 +905,7 @@ class CarlaBackend:
             name_lower = resolved.name.lower()
             if name_lower.startswith("carla-") and name_lower != "carla":
                 nested = resolved / "Carla"
-                if nested.exists() and nested not in self._release_binary_dirs:
-                    register_release(nested)
+                register_release(nested)
 
         patterns = ("Carla*/Carla", "Carla-*/Carla")
         for root in list(search_roots):
@@ -966,29 +971,6 @@ class CarlaBackend:
                     self._binary_hints.add(container)
                     self._release_binary_dirs.add(container)
 
-        # Finally, explicitly scan for bridge executables under the collected
-        # search roots.  This catches cases where the Win32 runtime is unpacked
-        # in ``deps`` or ``Carla/Carla-*/Carla`` without matching our glob
-        # patterns above.
-        bridge_names = (
-            "carla-bridge-win32.exe",
-            "carla-bridge-win64.exe",
-            "carla-bridge-native.exe",
-        )
-        for root in list(search_roots):
-            try:
-                iterator = root.rglob
-            except AttributeError:
-                continue
-            for bridge_name in bridge_names:
-                try:
-                    for binary in iterator(bridge_name):
-                        container = binary.parent
-                        if container not in self._release_binary_dirs:
-                            register_release(container)
-                except OSError:
-                    continue
-
     def _locate_release_library(self) -> Path | None:
         """Search bundled Carla binary releases for the standalone library."""
 
@@ -998,6 +980,77 @@ class CarlaBackend:
             except FileNotFoundError:
                 continue
         return None
+
+    def _ensure_required_bridges(self) -> None:
+        """Download official Carla releases when bridge binaries are missing."""
+
+        if not sys.platform.startswith("win"):
+            return
+
+        def has_bridge(name: str) -> bool:
+            for release_dir in list(self._release_binary_dirs):
+                if (release_dir / name).exists():
+                    return True
+                if (release_dir / "bin" / name).exists():
+                    return True
+            return False
+
+        required_names = sorted({name for release in CARLA_WIN_RELEASES for name in release.get("required", ())})
+        missing = [name for name in required_names if not has_bridge(name)]
+        if not missing:
+            return
+
+        download_root = (self.base_dir / "deps" / "carla_binaries").resolve(strict=False)
+        download_root.mkdir(parents=True, exist_ok=True)
+
+        for release in CARLA_WIN_RELEASES:
+            release_dir = download_root / release["name"]
+            target = release_dir / "Carla"
+            try:
+                if not target.exists() or any(not (target / name).exists() for name in release["required"]):
+                    self._download_carla_release(release["url"], release_dir)
+            except Exception as exc:  # pragma: no cover - network failures
+                self.warnings.append(f"Failed to fetch {release['name']}: {exc}")
+                continue
+
+            self._record_release_directory(release_dir)
+            if target.exists():
+                resolved = self._record_release_directory(target)
+                if resolved:
+                    for extra in ("Carla.vst", "Carla.lv2", "resources", "resources/windows"):
+                        extra_dir = release_dir / extra
+                        if extra_dir.exists():
+                            self._record_release_directory(extra_dir)
+
+        if any(not has_bridge(name) for name in missing):
+            self.warnings.append(
+                "32-bit Carla bridge binaries were not found even after downloading the official release."
+            )
+
+    def _download_carla_release(self, url: str, destination: Path) -> None:
+        """Download and extract a Carla release archive into ``destination``."""
+
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            archive_path = tmp_path / "carla-release.zip"
+            with urlopen(url) as response, archive_path.open("wb") as handle:
+                shutil.copyfileobj(response, handle)
+            with zipfile.ZipFile(archive_path) as archive:
+                archive.extractall(tmp_path)
+
+            extracted_root: Path | None = None
+            for child in tmp_path.iterdir():
+                if child.is_dir():
+                    extracted_root = child
+                    if child.name == destination.name:
+                        break
+            if extracted_root is None:
+                raise FileNotFoundError("Downloaded Carla archive did not contain a release folder")
+
+            if destination.exists():
+                shutil.rmtree(destination)
+            shutil.move(str(extracted_root), str(destination))
 
     def _find_pe_image(self, path: Path) -> Path | None:
         """Locate a Windows PE binary for the given plugin path."""
