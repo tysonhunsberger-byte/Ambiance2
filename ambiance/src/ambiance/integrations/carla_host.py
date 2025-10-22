@@ -879,6 +879,34 @@ class CarlaBackend:
             self._binary_hints.add(parent_dir)
         return resolved
 
+    def _download_root_candidates(self) -> list[Path]:
+        """Return preferred directories for downloaded Carla releases."""
+
+        deps_dir = (self.base_dir / "deps").resolve(strict=False)
+        candidates: list[Path] = []
+
+        # Honour existing installations first so we reuse user-provided paths
+        for name in ("carla-binaries", "carla_binaries"):
+            candidate = deps_dir / name
+            if candidate.exists():
+                candidates.append(candidate)
+
+        # Fall back to our historical ``carla_binaries`` directory when none
+        # exist yet.  Include the dashed variant as a secondary option so we
+        # keep checking both spellings elsewhere in the discovery pipeline.
+        if not candidates:
+            candidates.extend([deps_dir / "carla_binaries", deps_dir / "carla-binaries"])
+
+        # De-duplicate while preserving order.
+        unique: list[Path] = []
+        seen: set[Path] = set()
+        for candidate in candidates:
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            unique.append(candidate)
+        return unique
+
     def _harvest_release_directories(self) -> None:
         """Record bundled Carla binary releases for bridge discovery."""
 
@@ -891,6 +919,12 @@ class CarlaBackend:
             root_parent = self.root.parent
             if root_parent != self.root:
                 search_roots.add(root_parent)
+
+        for download_root in self._download_root_candidates():
+            search_roots.add(download_root)
+            parent_dir = download_root.parent
+            if parent_dir != download_root:
+                search_roots.add(parent_dir)
 
         def register_release(directory: Path) -> None:
             resolved = self._record_release_directory(directory)
@@ -921,6 +955,41 @@ class CarlaBackend:
                         register_release(directory)
             except OSError:
                 continue
+
+        def contains_bridge(directory: Path) -> bool:
+            for bridge_name in (
+                "carla-bridge-win32.exe",
+                "carla-bridge-win64.exe",
+                "carla-bridge-native.exe",
+                "carla-discovery-win32.exe",
+            ):
+                if (directory / bridge_name).exists():
+                    return True
+                if (directory / "bin" / bridge_name).exists():
+                    return True
+            return False
+
+        extra_roots: set[Path] = set()
+        for root in list(search_roots):
+            if not root:
+                continue
+            try:
+                resolved_root = root.resolve(strict=False)
+            except OSError:
+                resolved_root = root
+            if not resolved_root.exists():
+                continue
+            extra_roots.add(resolved_root)
+            try:
+                for child in resolved_root.iterdir():
+                    if child.is_dir() and "carla" in child.name.lower():
+                        extra_roots.add(child)
+            except OSError:
+                continue
+
+        for directory in sorted(extra_roots):
+            if contains_bridge(directory):
+                register_release(directory)
 
         # Some source trees ship pre-built archives inside the Carla folder
         # (e.g. Carla/Carla-2.5.10-win32/Carla). Walk those nested directories
@@ -1000,7 +1069,18 @@ class CarlaBackend:
         if not missing:
             return
 
-        download_root = (self.base_dir / "deps" / "carla_binaries").resolve(strict=False)
+        download_roots = self._download_root_candidates()
+        download_root: Path | None = None
+        for candidate in download_roots:
+            try:
+                resolved = candidate.resolve(strict=False)
+            except OSError:
+                resolved = candidate
+            if resolved.exists():
+                download_root = resolved
+                break
+        if download_root is None:
+            download_root = download_roots[0]
         download_root.mkdir(parents=True, exist_ok=True)
 
         for release in CARLA_WIN_RELEASES:
