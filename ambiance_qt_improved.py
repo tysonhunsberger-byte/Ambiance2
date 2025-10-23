@@ -1,9 +1,11 @@
 ﻿"""Ambiance - Improved Qt application with plugin chaining and UI fixes."""
 
 import sys
+import json
 import logging
 from pathlib import Path
-from typing import Optional, List, Dict, Any, Tuple, cast
+from collections import deque
+from typing import Optional, List, Dict, Any, Tuple, Deque, cast
 from dataclasses import dataclass, field
 from datetime import datetime
 import threading
@@ -21,7 +23,7 @@ from PyQt5.QtWidgets import (
     QSlider, QFrame, QMessageBox, QComboBox, QTabWidget, QCheckBox,
     QPlainTextEdit, QToolButton, QSizePolicy, QStackedWidget
 )
-from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal, QObject, QEvent, QUrl, QSize
+from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal, pyqtSlot, QObject, QEvent, QUrl, QSize
 from PyQt5.QtGui import (
     QPainter,
     QColor,
@@ -39,8 +41,10 @@ from PyQt5.QtGui import (
 
 try:
     from PyQt5.QtWebEngineWidgets import QWebEngineView
+    from PyQt5.QtWebChannel import QWebChannel
 except ImportError:  # pragma: no cover - optional dependency
     QWebEngineView = None  # type: ignore
+    QWebChannel = None  # type: ignore
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -113,7 +117,7 @@ THEME_PRESETS = {
     }
 }
 
-STRUDEL_WEB_URL = "https://strudel.tidalcycles.org/"
+STRUDEL_REMOTE_URL = "https://strudel.tidalcycles.org/"
 
 
 @dataclass(eq=False)
@@ -128,6 +132,26 @@ class PluginChainSlot:
     lock: threading.RLock = field(default_factory=threading.RLock, repr=False, compare=False)
     supports_midi: bool = False
 
+
+
+class StrudelPatternBridge(QObject):
+    """Bridge object exposed to Strudel via QWebChannel."""
+
+    patternReceived = pyqtSignal(dict)
+
+    def __init__(self, window: "AmbianceQtImproved") -> None:
+        super().__init__()
+        self._window = window
+        self.patternReceived.connect(window.on_strudel_pattern)
+
+    @pyqtSlot(str)
+    def receivePattern(self, payload: str) -> None:
+        try:
+            data = json.loads(payload)
+        except json.JSONDecodeError:
+            logging.getLogger(__name__).warning("Invalid Strudel bridge payload: %s", payload)
+            return
+        self.patternReceived.emit(data)
 
 
 class PianoKeyboard(QWidget):
@@ -969,6 +993,12 @@ class AmbianceQtImproved(QMainWindow):
         self.strudel_container: Optional[QWidget] = None
         self.strudel_view: Optional["QWebEngineView"] = None
         self.strudel_mode_btn: Optional[QPushButton] = None
+        self._strudel_channel: Optional["QWebChannel"] = None
+        self._strudel_module_hint: Optional[str] = None
+        self._strudel_local_index: Optional[Path] = None
+        self._strudel_using_local = False
+        self._strudel_event_queue: Deque[Dict[str, Any]] = deque(maxlen=512)
+        self.strudel_bridge = StrudelPatternBridge(self)
         self.default_status_message = "Ready - pick a plugin from the library."
 
         self.audio_engine: Optional[AudioEngine] = None
@@ -1115,7 +1145,10 @@ class AmbianceQtImproved(QMainWindow):
 
         self.strudel_mode_btn = QPushButton("Strudel Mode: OFF")
         self.strudel_mode_btn.setCheckable(True)
-        self.strudel_mode_btn.setEnabled(self.strudel_available)
+        if not self.strudel_available:
+            self.strudel_mode_btn.setToolTip(
+                "Install the 'PyQtWebEngine' package to enable the embedded Strudel playground."
+            )
         self.strudel_mode_btn.toggled.connect(self.on_strudel_mode_toggled)
         layout.addWidget(self.strudel_mode_btn)
 
@@ -1176,17 +1209,64 @@ class AmbianceQtImproved(QMainWindow):
                 pass
             else:
                 self._strudel_signals_connected = True
+        target_url, module_hint, using_local = self._determine_strudel_target()
+        self._strudel_module_hint = module_hint
+        self._strudel_using_local = using_local
+        message = (
+            "Strudel Mode active – loading local playground…"
+            if using_local
+            else "Strudel Mode active – loading web playground…"
+        )
         try:
-            self.strudel_view.setUrl(QUrl(STRUDEL_WEB_URL))
-            self.statusBar().showMessage("Strudel Mode active – loading web playground…")
+            self.strudel_view.setUrl(target_url)
+            self._ensure_strudel_channel()
+            self.statusBar().showMessage(message)
         except Exception as exc:
             self.append_log(f"Failed to load Strudel playground: {exc}")
             return
         self.strudel_loaded = True
 
+    def _determine_strudel_target(self) -> Tuple[QUrl, Optional[str], bool]:
+        base_dir = Path(__file__).resolve().parent / "resources" / "strudel" / "dist"
+        index_path = base_dir / "index.html"
+        if index_path.exists():
+            self._strudel_local_index = index_path
+            module_hint = self._discover_strudel_module(base_dir)
+            return QUrl.fromLocalFile(str(index_path)), module_hint, True
+        self._strudel_local_index = None
+        return QUrl(STRUDEL_REMOTE_URL), None, False
+
+    def _discover_strudel_module(self, dist_dir: Path) -> Optional[str]:
+        astro_dir = dist_dir / "_astro"
+        if not astro_dir.exists():
+            return None
+        for candidate in sorted(astro_dir.glob("index*.js")):
+            return str(Path("_astro") / candidate.name)
+        return None
+
+    def _ensure_strudel_channel(self) -> None:
+        if not self.strudel_view or QWebChannel is None:
+            return
+        page = self.strudel_view.page()
+        if not page:
+            return
+        if self._strudel_channel is None:
+            self._strudel_channel = QWebChannel(page)
+            try:
+                self._strudel_channel.registerObject("qt_pattern_bridge", self.strudel_bridge)
+            except Exception as exc:
+                self.logger.debug("Failed to register Strudel bridge: %s", exc)
+        try:
+            page.setWebChannel(self._strudel_channel)
+        except Exception as exc:
+            self.logger.debug("Unable to attach web channel: %s", exc)
+
     def on_strudel_load_started(self) -> None:
         try:
-            self.statusBar().showMessage("Strudel Mode – contacting playground…")
+            if self._strudel_using_local:
+                self.statusBar().showMessage("Strudel Mode – preparing local playground…")
+            else:
+                self.statusBar().showMessage("Strudel Mode – contacting playground…")
         except Exception:
             pass
 
@@ -1202,6 +1282,8 @@ class AmbianceQtImproved(QMainWindow):
                 self.statusBar().showMessage("Strudel Mode active – ready to jam.")
             except Exception:
                 pass
+            self._ensure_strudel_channel()
+            self._inject_strudel_bridge()
             return
 
         self.strudel_loaded = False
@@ -1227,6 +1309,220 @@ class AmbianceQtImproved(QMainWindow):
                 self.strudel_view.setHtml(html)  # type: ignore[attr-defined]
             except Exception:
                 pass
+
+    def _build_strudel_bridge_script(self) -> str:
+        module_hint_js = json.dumps(self._strudel_module_hint)
+        script = rf"""
+            (function() {{
+                if (window.__ambianceStrudelBridgeInstalled) {{
+                    return;
+                }}
+                window.__ambianceStrudelBridgeInstalled = true;
+                const moduleHint = {module_hint_js};
+                function log(message) {{
+                    console.info('[AmbianceBridge]', message);
+                }}
+                function locateModulePath() {{
+                    const candidates = [];
+                    document.querySelectorAll('script[type="module"]').forEach((el) => {{
+                        if (el.src && el.src.includes('_astro/') && el.src.includes('index')) {{
+                            candidates.push(el.src);
+                        }}
+                    }});
+                    document.querySelectorAll('link[rel="modulepreload"]').forEach((el) => {{
+                        if (el.href && el.href.includes('_astro/') && el.href.includes('index')) {{
+                            candidates.push(el.href);
+                        }}
+                    }});
+                    if (moduleHint) {{
+                        if (moduleHint.startsWith('http')) {{
+                            return moduleHint;
+                        }}
+                        if (moduleHint.startsWith('./') || moduleHint.startsWith('../')) {{
+                            try {{
+                                return new URL(moduleHint, window.location.href).toString();
+                            }} catch (err) {{
+                                console.warn('[AmbianceBridge] Failed to resolve module hint', moduleHint, err);
+                            }}
+                        }}
+                        return window.location.origin + '/' + moduleHint.replace(/^\//, '');
+                    }}
+                    if (candidates.length > 0) {{
+                        return candidates[0];
+                    }}
+                    return null;
+                }}
+                function ensureChannel(callback) {{
+                    const start = () => {{
+                        if (window.qt && window.qt.webChannelTransport) {{
+                            const onReady = () => {{
+                                new QWebChannel(window.qt.webChannelTransport, function(channel) {{
+                                    window.ambianceQtBridge = channel.objects.qt_pattern_bridge;
+                                    callback();
+                                }});
+                            }};
+                            if (typeof QWebChannel === 'undefined') {{
+                                const script = document.createElement('script');
+                                script.src = 'qrc:///qtwebchannel/qwebchannel.js';
+                                script.onload = () => onReady();
+                                script.onerror = () => console.error('[AmbianceBridge] Unable to load qwebchannel.js');
+                                document.head.appendChild(script);
+                            }} else {{
+                                onReady();
+                            }}
+                            return;
+                        }}
+                        setTimeout(start, 100);
+                    }};
+                    start();
+                }}
+                function sendToQt(payload) {{
+                    try {{
+                        if (window.ambianceQtBridge && window.ambianceQtBridge.receivePattern) {{
+                            window.ambianceQtBridge.receivePattern(JSON.stringify(payload));
+                        }}
+                    }} catch (err) {{
+                        console.error('[AmbianceBridge] Forward error', err, payload);
+                    }}
+                }}
+                function serialiseHap(hap) {{
+                    if (!hap) {{
+                        return null;
+                    }}
+                    const safe = {{
+                        value: hap.value ?? null,
+                        context: hap.context ?? null,
+                        whole: hap.whole ?? null
+                    }};
+                    try {{
+                        if (hap.duration && typeof hap.duration.valueOf === 'function') {{
+                            safe.duration = hap.duration.valueOf();
+                        }} else if (typeof hap.duration !== 'undefined') {{
+                            safe.duration = hap.duration;
+                        }}
+                    }} catch (err) {{
+                        safe.duration = null;
+                    }}
+                    return safe;
+                }}
+                function installHooksOnRepl(repl) {{
+                    if (!repl || repl.__ambianceHooked) {{
+                        return;
+                    }}
+                    const originalSetPattern = repl.setPattern;
+                    if (typeof originalSetPattern === 'function') {{
+                        repl.setPattern = async function(pat, autostart) {{
+                            let patched = pat;
+                            if (patched && typeof patched.onTrigger === 'function' && !patched.__ambianceForwarded) {{
+                                try {{
+                                    patched = patched.onTrigger((hap, currentTime, cps, targetTime) => {{
+                                        sendToQt({{
+                                            kind: 'pattern-trigger',
+                                            hap: serialiseHap(hap),
+                                            currentTime,
+                                            cps,
+                                            targetTime,
+                                            receivedAt: Date.now()
+                                        }});
+                                    }}, false);
+                                    patched.__ambianceForwarded = true;
+                                }} catch (err) {{
+                                    console.error('[AmbianceBridge] Failed to wrap pattern', err);
+                                }}
+                            }}
+                            return originalSetPattern.call(this, patched, autostart);
+                        }};
+                    }}
+                    if (typeof repl.evaluate === 'function' && !repl.evaluate.__ambianceWrapped) {{
+                        const originalEval = repl.evaluate;
+                        repl.evaluate = async function(code, autoplay = true) {{
+                            return originalEval.call(this, code, autoplay);
+                        }};
+                        repl.evaluate.__ambianceWrapped = true;
+                    }}
+                    repl.__ambianceHooked = true;
+                    log('Bridge attached to Strudel repl');
+                }}
+                function scanForRepl() {{
+                    const visited = new Set();
+                    const attempt = () => {{
+                        let found = false;
+                        for (const key of Object.getOwnPropertyNames(window)) {{
+                            if (visited.has(key)) {{
+                                continue;
+                            }}
+                            visited.add(key);
+                            try {{
+                                const candidate = window[key];
+                                if (candidate && typeof candidate === 'object' && typeof candidate.setPattern === 'function' && typeof candidate.evaluate === 'function') {{
+                                    installHooksOnRepl(candidate);
+                                    found = true;
+                                }}
+                            }} catch (err) {{}}
+                        }}
+                        if (!found) {{
+                            setTimeout(attempt, 1000);
+                        }}
+                    }};
+                    attempt();
+                }}
+                function bootstrapModule() {{
+                    const modulePath = locateModulePath();
+                    if (!modulePath) {{
+                        console.warn('[AmbianceBridge] Module path unresolved, relying on runtime detection');
+                        scanForRepl();
+                        return;
+                    }}
+                    import(modulePath).then((mod) => {{
+                        if (mod && mod.W && typeof mod.W === 'function' && !mod.W.__ambianceWrapped) {{
+                            const originalFactory = mod.W;
+                            mod.W = function(options) {{
+                                const repl = originalFactory.apply(this, arguments);
+                                installHooksOnRepl(repl);
+                                return repl;
+                            }};
+                            mod.W.__ambianceWrapped = true;
+                            log('Repl factory patched');
+                        }}
+                        scanForRepl();
+                    }}).catch((err) => {{
+                        console.error('[AmbianceBridge] Failed to import Strudel module', err);
+                        scanForRepl();
+                    }});
+                }}
+                ensureChannel(() => {{
+                    bootstrapModule();
+                }});
+            }})();
+        """
+        return dedent(script)
+
+    def _inject_strudel_bridge(self) -> None:
+        if not self.strudel_view or QWebChannel is None:
+            return
+        page = self.strudel_view.page()
+        if not page:
+            return
+        script = self._build_strudel_bridge_script()
+        try:
+            page.runJavaScript(script)
+        except Exception as exc:
+            self.logger.warning("Failed to inject Strudel bridge: %s", exc)
+
+    def on_strudel_pattern(self, payload: Dict[str, Any]) -> None:
+        self._strudel_event_queue.append(payload)
+        if self.audio_engine is not None:
+            try:
+                self.audio_engine.ensure_running()
+            except Exception as exc:
+                self.logger.debug("Audio engine ensure_running failed: %s", exc)
+        kind = payload.get("kind", "event")
+        hap = payload.get("hap")
+        try:
+            hap_text = json.dumps(hap) if isinstance(hap, dict) else str(hap)
+        except Exception:
+            hap_text = str(hap)
+        self.append_log(f"Strudel {kind}: {hap_text}")
 
     def on_strudel_mode_toggled(self, checked: bool) -> None:
         if not self.strudel_mode_btn:
