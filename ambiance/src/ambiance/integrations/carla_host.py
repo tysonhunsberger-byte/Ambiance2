@@ -1188,6 +1188,68 @@ class CarlaBackend:
             return getattr(self.module, "BINARY_WIN64", binary_type)
         return binary_type
 
+    def _candidate_binary_types(
+        self,
+        path: Path,
+        plugin_type: int,
+        *,
+        image_path: Path | None = None,
+        arch_bits: int | None = None,
+    ) -> list[int]:
+        """Return binary types to try when loading a plugin, preferring 64-bit."""
+
+        if self.module is None:
+            return [0]
+
+        native = getattr(self.module, "BINARY_NATIVE", 0)
+        preferred = self._binary_type_for(
+            path,
+            plugin_type,
+            image_path=image_path,
+            arch_bits=arch_bits,
+        )
+        win64 = getattr(self.module, "BINARY_WIN64", native)
+        win32 = getattr(self.module, "BINARY_WIN32", native)
+
+        ordered: list[int] = []
+
+        def push(value: int | None) -> None:
+            if value is None:
+                return
+            if value not in ordered:
+                ordered.append(value)
+
+        if sys.platform.startswith("win"):
+            # Always try 64-bit bridge first for maximum compatibility, then fall back.
+            push(win64)
+            push(preferred)
+            push(win32)
+        else:
+            push(preferred)
+
+        push(native)
+
+        if not ordered:
+            ordered.append(0)
+
+        return ordered
+
+    def _describe_binary_type(self, binary_type: int) -> str:
+        """Return a human-friendly label for a Carla binary constant."""
+
+        if not self.module:
+            return f"binary {binary_type}"
+
+        mapping: list[tuple[int | None, str]] = [
+            (getattr(self.module, "BINARY_WIN64", None), "Win64 bridge"),
+            (getattr(self.module, "BINARY_WIN32", None), "Win32 bridge"),
+            (getattr(self.module, "BINARY_NATIVE", None), "Native"),
+        ]
+        for value, label in mapping:
+            if value is not None and binary_type == value:
+                return label
+        return f"binary {binary_type}"
+
     def configure_audio(
         self,
         *,
@@ -2007,28 +2069,36 @@ class CarlaBackend:
                 self._register_plugin_path(plugin_type, path)
             image_path = self._find_pe_image(path) if sys.platform.startswith("win") else None
             arch_bits = self._detect_pe_architecture(image_path) if sys.platform.startswith("win") else None
-            binary_type = (
-                self._binary_type_for(path, plugin_type, image_path=image_path, arch_bits=arch_bits)
-                if self.module
-                else 0
-            )
             options = getattr(self.module, "PLUGIN_OPTIONS_NULL", 0) if self.module else 0
-            added = self.host.add_plugin(
-                binary_type,
+            load_errors: list[str] = []
+            chosen_binary_type: int | None = None
+
+            for binary_type in self._candidate_binary_types(
+                path,
                 plugin_type,
-                str(path),
-                None,
-                path.stem,
-                0,
-                None,
-                options,
-            )
-            
-            # Wait for plugin to fully initialize with longer timeout
-            self._wait_for_engine_idle(timeout=2.0)
-            
-            if not added:
+                image_path=image_path,
+                arch_bits=arch_bits,
+            ):
+                added = self.host.add_plugin(
+                    binary_type,
+                    plugin_type,
+                    str(path),
+                    None,
+                    path.stem,
+                    0,
+                    None,
+                    options,
+                )
+
+                # Wait for plugin to fully initialize with longer timeout
+                self._wait_for_engine_idle(timeout=2.0)
+
+                if added:
+                    chosen_binary_type = binary_type
+                    break
+
                 message = self.host.get_last_error() if hasattr(self.host, "get_last_error") else "unknown"
+                descriptor = self._describe_binary_type(binary_type)
                 if isinstance(message, str) and "cannot handle this binary" in message.lower():
                     hints: list[str] = []
                     if arch_bits:
@@ -2040,7 +2110,25 @@ class CarlaBackend:
                         hints.append(f"Bridge search path: {os.pathsep.join(bridge_dirs)}")
                     hints.append("Install the matching architecture of the plugin or ensure Carla bridge executables are available.")
                     message = f"{message} ({'; '.join(hints)})"
-                raise CarlaHostError(f"Failed to load plugin: {message}")
+                load_errors.append(f"{descriptor}: {message}")
+
+                try:
+                    self.host.remove_all_plugins()
+                    self._wait_for_engine_idle(timeout=1.0)
+                except Exception as exc:
+                    self.warnings.append(
+                        "Failed to clear Carla engine after unsuccessful load attempt: "
+                        f"{exc}"
+                    )
+
+            if chosen_binary_type is None:
+                combined = "; ".join(load_errors) if load_errors else "no binary type succeeded"
+                raise CarlaHostError(f"Failed to load plugin: {combined}")
+
+            if load_errors:
+                self.warnings.append(
+                    "Plugin required fallback binary type. Attempts: " + "; ".join(load_errors)
+                )
             self._plugin_id = 0
             self._plugin_path = path
             self._parameters = self._collect_parameters()
