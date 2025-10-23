@@ -26,15 +26,23 @@ from typing import Any, Sequence
 from urllib.request import urlopen
 
 
+CARLA_REQUIRED_WINDOWS_BINARIES: tuple[str, ...] = (
+    "carla-bridge-win32.exe",
+    "carla-bridge-win64.exe",
+    "carla-discovery-win32.exe",
+)
+
+
 CARLA_WIN_RELEASES: tuple[dict[str, Any], ...] = (
+    {
+        "name": "Carla-2.5.10-win32",
+        "url": "https://github.com/falkTX/Carla/releases/download/v2.5.10/Carla-2.5.10-win32.zip",
+        "required": CARLA_REQUIRED_WINDOWS_BINARIES,
+    },
     {
         "name": "Carla-2.5.10-win64",
         "url": "https://github.com/falkTX/Carla/releases/download/v2.5.10/Carla-2.5.10-win64.zip",
-        "required": (
-            "carla-bridge-win32.exe",
-            "carla-bridge-win64.exe",
-            "carla-discovery-win32.exe",
-        ),
+        "required": CARLA_REQUIRED_WINDOWS_BINARIES,
     },
 )
 
@@ -1086,21 +1094,49 @@ class CarlaBackend:
         for release in CARLA_WIN_RELEASES:
             release_dir = download_root / release["name"]
             target = release_dir / "Carla"
+
+            def _has_required_binaries(path: Path) -> bool:
+                if not path.exists():
+                    return False
+                for binary in release.get("required", ()):  # pragma: no branch - small tuple
+                    if (path / binary).exists():
+                        continue
+                    if (path / "bin" / binary).exists():
+                        continue
+                    return False
+                return True
+
             try:
-                if not target.exists() or any(not (target / name).exists() for name in release["required"]):
+                if not release_dir.exists() or not any(
+                    _has_required_binaries(candidate)
+                    for candidate in (release_dir, target)
+                ):
                     self._download_carla_release(release["url"], release_dir)
             except Exception as exc:  # pragma: no cover - network failures
                 self.warnings.append(f"Failed to fetch {release['name']}: {exc}")
                 continue
 
-            self._record_release_directory(release_dir)
-            if target.exists():
-                resolved = self._record_release_directory(target)
-                if resolved:
-                    for extra in ("Carla.vst", "Carla.lv2", "resources", "resources/windows"):
-                        extra_dir = release_dir / extra
-                        if extra_dir.exists():
-                            self._record_release_directory(extra_dir)
+            recorded_dirs: set[Path] = set()
+            for candidate in (release_dir, target, target / "bin"):
+                if candidate.exists():
+                    resolved = self._record_release_directory(candidate)
+                    if resolved:
+                        recorded_dirs.add(resolved)
+
+            for extra in ("Carla.vst", "Carla.lv2", "resources", "resources/windows"):
+                extra_dir = release_dir / extra
+                if extra_dir.exists():
+                    self._record_release_directory(extra_dir)
+
+            for binary in release.get("required", ()):  # pragma: no branch - small tuple
+                for recorded in recorded_dirs:
+                    for candidate in (recorded / binary, recorded / "bin" / binary):
+                        if candidate.exists():
+                            self._binary_hints.add(candidate.parent)
+                            break
+                    else:
+                        continue
+                    break
 
         if any(not has_bridge(name) for name in missing):
             self.warnings.append(
