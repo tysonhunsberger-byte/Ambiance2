@@ -1,3 +1,0 @@
-[submodule "source/native-plugins/external"]
-	path = source/native-plugins/external
-	url = https://github.com/falkTX/Carla-Plugins
