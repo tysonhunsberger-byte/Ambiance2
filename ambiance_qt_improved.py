@@ -1145,7 +1145,10 @@ class AmbianceQtImproved(QMainWindow):
 
         self.strudel_mode_btn = QPushButton("Strudel Mode: OFF")
         self.strudel_mode_btn.setCheckable(True)
-        self.strudel_mode_btn.setEnabled(self.strudel_available)
+        if not self.strudel_available:
+            self.strudel_mode_btn.setToolTip(
+                "Install the 'PyQtWebEngine' package to enable the embedded Strudel playground."
+            )
         self.strudel_mode_btn.toggled.connect(self.on_strudel_mode_toggled)
         layout.addWidget(self.strudel_mode_btn)
 
