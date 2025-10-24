@@ -185,17 +185,20 @@ class StrudelStaticServer:
 
             def guess_type(self, path):
                 # Override guess_type to ensure correct MIME types for JavaScript modules
+                # guess_type must return a tuple (type, encoding)
                 base, ext = os.path.splitext(path)
                 if ext in ('.js', '.mjs'):
-                    return 'application/javascript'
+                    return ('application/javascript', None)
                 elif ext == '.json':
-                    return 'application/json'
+                    return ('application/json', None)
                 elif ext == '.css':
-                    return 'text/css'
+                    return ('text/css', None)
                 elif ext == '.html':
-                    return 'text/html'
+                    return ('text/html', None)
                 elif ext == '.svg':
-                    return 'image/svg+xml'
+                    return ('image/svg+xml', None)
+                elif ext == '.wasm':
+                    return ('application/wasm', None)
                 else:
                     return super().guess_type(path)
 
@@ -1362,9 +1365,12 @@ class AmbianceQtImproved(QMainWindow):
         index_path = base_dir / "index.html"
         if index_path.exists():
             self._strudel_local_index = index_path
-            module_hint = self._discover_strudel_module(base_dir)
             server_url = self._ensure_strudel_server(base_dir)
             if server_url:
+                # Build full HTTP URL for module hint
+                module_hint_path = self._discover_strudel_module(base_dir)
+                module_hint = f"{server_url}/{module_hint_path}" if module_hint_path else None
+                self.logger.info(f"Strudel server started at {server_url}, module hint: {module_hint}")
                 return QUrl(f"{server_url}/index.html"), module_hint, True
             self.logger.warning("Local Strudel bundle present but static server failed; falling back to remote site.")
         else:
