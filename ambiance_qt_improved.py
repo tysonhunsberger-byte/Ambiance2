@@ -40,10 +40,11 @@ from PyQt5.QtGui import (
 )
 
 try:
-    from PyQt5.QtWebEngineWidgets import QWebEngineView
+    from PyQt5.QtWebEngineWidgets import QWebEngineView, QWebEngineSettings
     from PyQt5.QtWebChannel import QWebChannel
 except ImportError:  # pragma: no cover - optional dependency
     QWebEngineView = None  # type: ignore
+    QWebEngineSettings = None  # type: ignore
     QWebChannel = None  # type: ignore
 
 # Configure logging
@@ -197,6 +198,12 @@ class PianoKeyboard(QWidget):
     def set_callbacks(self, note_on, note_off):
         self.note_on_callback = note_on
         self.note_off_callback = note_off
+
+    def release_all_keys(self) -> None:
+        """Clear any pressed key state without emitting callbacks."""
+        self.pressed_keys.clear()
+        self.mouse_down_note = None
+        self.update()
 
     def _compute_key_rects(self) -> Tuple[Dict[int, Tuple[int, int, int, int]], Dict[int, Tuple[int, int, int, int]]]:
         """Compute the rectangles for white and black keys."""
@@ -967,6 +974,7 @@ class AmbianceQtImproved(QMainWindow):
         self.setFocusPolicy(Qt.StrongFocus)
         self.keyboard_active_notes: Dict[int, int] = {}
         self._qt_app = QApplication.instance()
+        self._keyboard_suspended = False
 
         
         # Logging
@@ -1087,6 +1095,13 @@ class AmbianceQtImproved(QMainWindow):
             self.strudel_view = QWebEngineView(self.strudel_container)
             self.strudel_view.setObjectName("StrudelView")
             self.strudel_view.setContextMenuPolicy(Qt.NoContextMenu)
+            if QWebEngineSettings is not None:
+                try:
+                    settings = self.strudel_view.settings()
+                    settings.setAttribute(QWebEngineSettings.LocalContentCanAccessFileUrls, True)
+                    settings.setAttribute(QWebEngineSettings.LocalContentCanAccessRemoteUrls, True)
+                except Exception:
+                    pass
             strudel_layout.addWidget(self.strudel_view)
         else:
             fallback_label = QLabel(
@@ -1338,17 +1353,19 @@ class AmbianceQtImproved(QMainWindow):
                         if (moduleHint.startsWith('http')) {{
                             return moduleHint;
                         }}
-                        if (moduleHint.startsWith('./') || moduleHint.startsWith('../')) {{
-                            try {{
-                                return new URL(moduleHint, window.location.href).toString();
-                            }} catch (err) {{
-                                console.warn('[AmbianceBridge] Failed to resolve module hint', moduleHint, err);
-                            }}
+                        try {{
+                            return new URL(moduleHint, window.location.href).toString();
+                        }} catch (err) {{
+                            console.warn('[AmbianceBridge] Failed to resolve module hint', moduleHint, err);
                         }}
-                        return window.location.origin + '/' + moduleHint.replace(/^\//, '');
                     }}
                     if (candidates.length > 0) {{
-                        return candidates[0];
+                        try {{
+                            return new URL(candidates[0], window.location.href).toString();
+                        }} catch (err) {{
+                            console.warn('[AmbianceBridge] Unable to normalise candidate module path', candidates[0], err);
+                            return candidates[0];
+                        }}
                     }}
                     return null;
                 }}
@@ -1539,6 +1556,7 @@ class AmbianceQtImproved(QMainWindow):
                 self.strudel_mode_btn.blockSignals(True)
                 self.strudel_mode_btn.setChecked(False)
                 self.strudel_mode_btn.blockSignals(False)
+            self._set_keyboard_suspended(False)
             return
 
         if not self.body_stack or not self.strudel_container:
@@ -1552,6 +1570,8 @@ class AmbianceQtImproved(QMainWindow):
         else:
             self.body_stack.setCurrentWidget(self.scroll_area)
             self.statusBar().showMessage(self.default_status_message)
+
+        self._set_keyboard_suspended(self.strudel_mode_btn.isChecked())
 
     def on_start_audio_clicked(self) -> None:
         if not self.audio_engine:
@@ -1832,6 +1852,7 @@ class AmbianceQtImproved(QMainWindow):
         # MIDI: C4 (middle C) = note 60 = 12 * (4 + 1)
         self.piano.start_note = 12 * (self.instrument_octave + 1)
         layout.addWidget(self.piano)
+        self._apply_keyboard_enabled_state()
 
         footer = QHBoxLayout()
         footer.setSpacing(12)
@@ -1934,11 +1955,46 @@ class AmbianceQtImproved(QMainWindow):
                 return True
         return super().eventFilter(watched, event)
 
+    def _set_keyboard_suspended(self, suspended: bool) -> None:
+        if self._keyboard_suspended == suspended:
+            return
+        self._keyboard_suspended = suspended
+        if suspended:
+            self._release_all_keyboard_notes()
+        self._apply_keyboard_enabled_state()
+
+    def _apply_keyboard_enabled_state(self) -> None:
+        piano = getattr(self, "piano", None)
+        if not piano:
+            return
+        enabled = not self._keyboard_suspended
+        piano.setEnabled(enabled)
+        if enabled:
+            piano.setToolTip("")
+        else:
+            piano.setToolTip("Disable Strudel Mode to play the built-in keyboard.")
+
+    def _release_all_keyboard_notes(self) -> None:
+        piano = getattr(self, "piano", None)
+        if piano is None:
+            return
+        pending = set(piano.pressed_keys)
+        pending.update(self.keyboard_active_notes.values())
+        for note in sorted(pending):
+            try:
+                self.on_note_off(note)
+            except Exception:
+                pass
+        self.keyboard_active_notes.clear()
+        piano.release_all_keys()
+
     def _handle_key_press(self, event: QKeyEvent) -> bool:
         try:
             if event.isAutoRepeat() or not self.isActiveWindow():
                 return False
             if not getattr(self, "piano", None):
+                return False
+            if self._keyboard_suspended:
                 return False
             if not getattr(self, "chain_widget", None):
                 return False
