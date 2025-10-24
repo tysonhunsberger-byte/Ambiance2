@@ -173,6 +173,20 @@ class StrudelStaticServer:
         root = self.root
 
         class Handler(SimpleHTTPRequestHandler):  # type: ignore[misc, valid-type]
+            # Set MIME types for JavaScript modules and other assets
+            # This is the correct way to configure MIME types in SimpleHTTPRequestHandler
+            extensions_map = {
+                **SimpleHTTPRequestHandler.extensions_map,
+                '.js': 'application/javascript',
+                '.mjs': 'application/javascript',
+                '.json': 'application/json',
+                '.css': 'text/css',
+                '.html': 'text/html',
+                '.svg': 'image/svg+xml',
+                '.wasm': 'application/wasm',
+                '': 'application/octet-stream',
+            }
+
             def __init__(self, *args, **kwargs):
                 super().__init__(*args, directory=str(root), **kwargs)  # type: ignore[arg-type]
 
@@ -182,25 +196,6 @@ class StrudelStaticServer:
                 self.send_header('Access-Control-Allow-Methods', 'GET, OPTIONS')
                 self.send_header('Access-Control-Allow-Headers', '*')
                 super().end_headers()
-
-            def guess_type(self, path):
-                # Override guess_type to ensure correct MIME types for JavaScript modules
-                # guess_type must return a tuple (type, encoding)
-                base, ext = os.path.splitext(path)
-                if ext in ('.js', '.mjs'):
-                    return ('application/javascript', None)
-                elif ext == '.json':
-                    return ('application/json', None)
-                elif ext == '.css':
-                    return ('text/css', None)
-                elif ext == '.html':
-                    return ('text/html', None)
-                elif ext == '.svg':
-                    return ('image/svg+xml', None)
-                elif ext == '.wasm':
-                    return ('application/wasm', None)
-                else:
-                    return super().guess_type(path)
 
             def log_message(self, format: str, *args: Any) -> None:  # pragma: no cover - reduces console noise
                 logging.getLogger(__name__).debug("Strudel static server: " + format, *args)
