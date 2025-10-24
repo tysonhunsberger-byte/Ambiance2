@@ -140,21 +140,24 @@ class AmbianceRequestHandler(SimpleHTTPRequestHandler):
         logger.info(format % args)
 
     def guess_type(self, path):
-        """Override guess_type to ensure correct MIME types for JavaScript modules."""
+        """Override guess_type to ensure correct MIME types for JavaScript modules.
+
+        Returns a tuple (type, encoding) as required by SimpleHTTPRequestHandler.
+        """
         import os
         base, ext = os.path.splitext(path)
         if ext in ('.js', '.mjs'):
-            return 'application/javascript'
+            return ('application/javascript', None)
         elif ext == '.json':
-            return 'application/json'
+            return ('application/json', None)
         elif ext == '.css':
-            return 'text/css'
+            return ('text/css', None)
         elif ext == '.html':
-            return 'text/html'
+            return ('text/html', None)
         elif ext == '.svg':
-            return 'image/svg+xml'
+            return ('image/svg+xml', None)
         elif ext == '.wasm':
-            return 'application/wasm'
+            return ('application/wasm', None)
         else:
             return super().guess_type(path)
 
