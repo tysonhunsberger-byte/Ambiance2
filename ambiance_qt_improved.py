@@ -171,6 +171,7 @@ class StrudelStaticServer:
             return
 
         root = self.root
+        server_instance = self  # Capture reference for use in Handler
 
         class Handler(SimpleHTTPRequestHandler):  # type: ignore[misc, valid-type]
             # Set MIME types for JavaScript modules and other assets
@@ -189,6 +190,30 @@ class StrudelStaticServer:
 
             def __init__(self, *args, **kwargs):
                 super().__init__(*args, directory=str(root), **kwargs)  # type: ignore[arg-type]
+
+            def do_GET(self):
+                # Intercept index.html to fix base href
+                if self.path == '/index.html' or self.path == '/':
+                    try:
+                        index_path = root / "index.html"
+                        if index_path.exists():
+                            content = index_path.read_text(encoding='utf-8')
+                            # Fix the empty base href to use the server's URL
+                            base_url = server_instance.base_url or "/"
+                            content = content.replace('<base href="">', f'<base href="{base_url}/">')
+
+                            # Send the modified content
+                            content_bytes = content.encode('utf-8')
+                            self.send_response(200)
+                            self.send_header('Content-Type', 'text/html; charset=utf-8')
+                            self.send_header('Content-Length', str(len(content_bytes)))
+                            self.end_headers()
+                            self.wfile.write(content_bytes)
+                            return
+                    except Exception as e:
+                        logging.getLogger(__name__).warning(f"Failed to modify index.html: {e}")
+                # Fall back to default behavior for all other files
+                super().do_GET()
 
             def end_headers(self):
                 # Add CORS headers to allow cross-origin requests
@@ -1378,7 +1403,8 @@ class AmbianceQtImproved(QMainWindow):
         if not astro_dir.exists():
             return None
         for candidate in sorted(astro_dir.glob("index*.js")):
-            return str(Path("_astro") / candidate.name)
+            # Use forward slashes for URLs (not OS-specific path separators)
+            return f"_astro/{candidate.name}"
         return None
 
     def _ensure_strudel_channel(self) -> None:
