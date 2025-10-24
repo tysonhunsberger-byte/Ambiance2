@@ -192,15 +192,48 @@ class StrudelStaticServer:
                 super().__init__(*args, directory=str(root), **kwargs)  # type: ignore[arg-type]
 
             def do_GET(self):
-                # Intercept index.html to fix base href
+                # Intercept index.html to fix base href and module URLs
                 if self.path == '/index.html' or self.path == '/':
                     try:
                         index_path = root / "index.html"
                         if index_path.exists():
                             content = index_path.read_text(encoding='utf-8')
-                            # Fix the empty base href to use the server's URL
                             base_url = server_instance.base_url or "/"
+
+                            # Fix the empty base href to use the server's URL
                             content = content.replace('<base href="">', f'<base href="{base_url}/">')
+
+                            # Fix all relative script module URLs to be absolute
+                            # This is critical for dynamic imports in astro-island
+                            import re
+
+                            # Fix <script type="module" src="_astro/...">
+                            content = re.sub(
+                                r'<script type="module" src="(_astro/[^"]+)"',
+                                rf'<script type="module" src="{base_url}/\1"',
+                                content
+                            )
+
+                            # Fix astro-island component-url and renderer-url attributes
+                            content = re.sub(
+                                r'component-url="(_astro/[^"]+)"',
+                                rf'component-url="{base_url}/\1"',
+                                content
+                            )
+                            content = re.sub(
+                                r'renderer-url="(_astro/[^"]+)"',
+                                rf'renderer-url="{base_url}/\1"',
+                                content
+                            )
+
+                            # Fix other relative URLs (CSS, etc)
+                            content = re.sub(
+                                r'href="(_astro/[^"]+)"',
+                                rf'href="{base_url}/\1"',
+                                content
+                            )
+
+                            logging.getLogger(__name__).info(f"Modified index.html with base URL: {base_url}")
 
                             # Send the modified content
                             content_bytes = content.encode('utf-8')
