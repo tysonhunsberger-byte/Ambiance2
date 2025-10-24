@@ -9,6 +9,7 @@ from typing import Optional, List, Dict, Any, Tuple, Deque, cast
 from dataclasses import dataclass, field
 from datetime import datetime
 import threading
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from string import Template
 from textwrap import dedent
 
@@ -40,10 +41,11 @@ from PyQt5.QtGui import (
 )
 
 try:
-    from PyQt5.QtWebEngineWidgets import QWebEngineView
+    from PyQt5.QtWebEngineWidgets import QWebEngineView, QWebEngineSettings
     from PyQt5.QtWebChannel import QWebChannel
 except ImportError:  # pragma: no cover - optional dependency
     QWebEngineView = None  # type: ignore
+    QWebEngineSettings = None  # type: ignore
     QWebChannel = None  # type: ignore
 
 # Configure logging
@@ -154,6 +156,78 @@ class StrudelPatternBridge(QObject):
         self.patternReceived.emit(data)
 
 
+class StrudelStaticServer:
+    """Minimal HTTP server that serves the bundled Strudel assets with proper MIME types."""
+
+    def __init__(self, root: Path) -> None:
+        self.root = root
+        self._httpd: Optional[ThreadingHTTPServer] = None
+        self._thread: Optional[threading.Thread] = None
+        self.port: Optional[int] = None
+
+    def start(self) -> None:
+        if self._httpd is not None:
+            return
+
+        root = self.root
+
+        class Handler(SimpleHTTPRequestHandler):  # type: ignore[misc, valid-type]
+            extensions_map = {
+                **SimpleHTTPRequestHandler.extensions_map,
+                ".js": "text/javascript",
+                ".mjs": "text/javascript",
+                ".json": "application/json",
+                "": "application/octet-stream",
+            }
+
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, directory=str(root), **kwargs)  # type: ignore[arg-type]
+
+            def log_message(self, format: str, *args: Any) -> None:  # pragma: no cover - reduces console noise
+                logging.getLogger(__name__).debug("Strudel static server: " + format, *args)
+
+        try:
+            self._httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        except Exception:
+            self._httpd = None
+            raise
+
+        self.port = self._httpd.server_address[1]
+        self._thread = threading.Thread(
+            target=self._httpd.serve_forever,
+            name="StrudelStaticServer",
+            daemon=True,
+        )
+        self._thread.start()
+
+    def stop(self) -> None:
+        if self._httpd is None:
+            return
+        try:
+            self._httpd.shutdown()
+        except Exception:
+            pass
+        try:
+            self._httpd.server_close()
+        except Exception:
+            pass
+        thread = self._thread
+        self._httpd = None
+        self.port = None
+        self._thread = None
+        if thread and thread.is_alive():
+            try:
+                thread.join(timeout=0.5)
+            except Exception:
+                pass
+
+    @property
+    def base_url(self) -> Optional[str]:
+        if self.port is None:
+            return None
+        return f"http://127.0.0.1:{self.port}"
+
+
 class PianoKeyboard(QWidget):
     """Enhanced virtual piano keyboard with extended range."""
     
@@ -197,6 +271,12 @@ class PianoKeyboard(QWidget):
     def set_callbacks(self, note_on, note_off):
         self.note_on_callback = note_on
         self.note_off_callback = note_off
+
+    def release_all_keys(self) -> None:
+        """Clear any pressed key state without emitting callbacks."""
+        self.pressed_keys.clear()
+        self.mouse_down_note = None
+        self.update()
 
     def _compute_key_rects(self) -> Tuple[Dict[int, Tuple[int, int, int, int]], Dict[int, Tuple[int, int, int, int]]]:
         """Compute the rectangles for white and black keys."""
@@ -967,6 +1047,7 @@ class AmbianceQtImproved(QMainWindow):
         self.setFocusPolicy(Qt.StrongFocus)
         self.keyboard_active_notes: Dict[int, int] = {}
         self._qt_app = QApplication.instance()
+        self._keyboard_suspended = False
 
         
         # Logging
@@ -997,6 +1078,7 @@ class AmbianceQtImproved(QMainWindow):
         self._strudel_module_hint: Optional[str] = None
         self._strudel_local_index: Optional[Path] = None
         self._strudel_using_local = False
+        self._strudel_static_server: Optional[StrudelStaticServer] = None
         self._strudel_event_queue: Deque[Dict[str, Any]] = deque(maxlen=512)
         self.strudel_bridge = StrudelPatternBridge(self)
         self.default_status_message = "Ready - pick a plugin from the library."
@@ -1087,6 +1169,13 @@ class AmbianceQtImproved(QMainWindow):
             self.strudel_view = QWebEngineView(self.strudel_container)
             self.strudel_view.setObjectName("StrudelView")
             self.strudel_view.setContextMenuPolicy(Qt.NoContextMenu)
+            if QWebEngineSettings is not None:
+                try:
+                    settings = self.strudel_view.settings()
+                    settings.setAttribute(QWebEngineSettings.LocalContentCanAccessFileUrls, True)
+                    settings.setAttribute(QWebEngineSettings.LocalContentCanAccessRemoteUrls, True)
+                except Exception:
+                    pass
             strudel_layout.addWidget(self.strudel_view)
         else:
             fallback_label = QLabel(
@@ -1226,13 +1315,44 @@ class AmbianceQtImproved(QMainWindow):
             return
         self.strudel_loaded = True
 
+    def _ensure_strudel_server(self, dist_dir: Path) -> Optional[str]:
+        if self._strudel_static_server and self._strudel_static_server.base_url:
+            if self._strudel_static_server.root == dist_dir:
+                return self._strudel_static_server.base_url
+            self._strudel_static_server.stop()
+            self._strudel_static_server = None
+
+        server = StrudelStaticServer(dist_dir)
+        try:
+            server.start()
+        except Exception as exc:
+            self.logger.warning("Failed to start Strudel asset server: %s", exc)
+            return None
+        self._strudel_static_server = server
+        return server.base_url
+
+    def _teardown_strudel_server(self) -> None:
+        if self._strudel_static_server is None:
+            return
+        try:
+            self._strudel_static_server.stop()
+        except Exception:
+            pass
+        finally:
+            self._strudel_static_server = None
+
     def _determine_strudel_target(self) -> Tuple[QUrl, Optional[str], bool]:
         base_dir = Path(__file__).resolve().parent / "resources" / "strudel" / "dist"
         index_path = base_dir / "index.html"
         if index_path.exists():
             self._strudel_local_index = index_path
             module_hint = self._discover_strudel_module(base_dir)
-            return QUrl.fromLocalFile(str(index_path)), module_hint, True
+            server_url = self._ensure_strudel_server(base_dir)
+            if server_url:
+                return QUrl(f"{server_url}/index.html"), module_hint, True
+            self.logger.warning("Local Strudel bundle present but static server failed; falling back to remote site.")
+        else:
+            self._teardown_strudel_server()
         self._strudel_local_index = None
         return QUrl(STRUDEL_REMOTE_URL), None, False
 
@@ -1338,17 +1458,19 @@ class AmbianceQtImproved(QMainWindow):
                         if (moduleHint.startsWith('http')) {{
                             return moduleHint;
                         }}
-                        if (moduleHint.startsWith('./') || moduleHint.startsWith('../')) {{
-                            try {{
-                                return new URL(moduleHint, window.location.href).toString();
-                            }} catch (err) {{
-                                console.warn('[AmbianceBridge] Failed to resolve module hint', moduleHint, err);
-                            }}
+                        try {{
+                            return new URL(moduleHint, window.location.href).toString();
+                        }} catch (err) {{
+                            console.warn('[AmbianceBridge] Failed to resolve module hint', moduleHint, err);
                         }}
-                        return window.location.origin + '/' + moduleHint.replace(/^\//, '');
                     }}
                     if (candidates.length > 0) {{
-                        return candidates[0];
+                        try {{
+                            return new URL(candidates[0], window.location.href).toString();
+                        }} catch (err) {{
+                            console.warn('[AmbianceBridge] Unable to normalise candidate module path', candidates[0], err);
+                            return candidates[0];
+                        }}
                     }}
                     return null;
                 }}
@@ -1539,6 +1661,7 @@ class AmbianceQtImproved(QMainWindow):
                 self.strudel_mode_btn.blockSignals(True)
                 self.strudel_mode_btn.setChecked(False)
                 self.strudel_mode_btn.blockSignals(False)
+            self._set_keyboard_suspended(False)
             return
 
         if not self.body_stack or not self.strudel_container:
@@ -1552,6 +1675,8 @@ class AmbianceQtImproved(QMainWindow):
         else:
             self.body_stack.setCurrentWidget(self.scroll_area)
             self.statusBar().showMessage(self.default_status_message)
+
+        self._set_keyboard_suspended(self.strudel_mode_btn.isChecked())
 
     def on_start_audio_clicked(self) -> None:
         if not self.audio_engine:
@@ -1832,6 +1957,7 @@ class AmbianceQtImproved(QMainWindow):
         # MIDI: C4 (middle C) = note 60 = 12 * (4 + 1)
         self.piano.start_note = 12 * (self.instrument_octave + 1)
         layout.addWidget(self.piano)
+        self._apply_keyboard_enabled_state()
 
         footer = QHBoxLayout()
         footer.setSpacing(12)
@@ -1934,11 +2060,46 @@ class AmbianceQtImproved(QMainWindow):
                 return True
         return super().eventFilter(watched, event)
 
+    def _set_keyboard_suspended(self, suspended: bool) -> None:
+        if self._keyboard_suspended == suspended:
+            return
+        self._keyboard_suspended = suspended
+        if suspended:
+            self._release_all_keyboard_notes()
+        self._apply_keyboard_enabled_state()
+
+    def _apply_keyboard_enabled_state(self) -> None:
+        piano = getattr(self, "piano", None)
+        if not piano:
+            return
+        enabled = not self._keyboard_suspended
+        piano.setEnabled(enabled)
+        if enabled:
+            piano.setToolTip("")
+        else:
+            piano.setToolTip("Disable Strudel Mode to play the built-in keyboard.")
+
+    def _release_all_keyboard_notes(self) -> None:
+        piano = getattr(self, "piano", None)
+        if piano is None:
+            return
+        pending = set(piano.pressed_keys)
+        pending.update(self.keyboard_active_notes.values())
+        for note in sorted(pending):
+            try:
+                self.on_note_off(note)
+            except Exception:
+                pass
+        self.keyboard_active_notes.clear()
+        piano.release_all_keys()
+
     def _handle_key_press(self, event: QKeyEvent) -> bool:
         try:
             if event.isAutoRepeat() or not self.isActiveWindow():
                 return False
             if not getattr(self, "piano", None):
+                return False
+            if self._keyboard_suspended:
                 return False
             if not getattr(self, "chain_widget", None):
                 return False
@@ -2848,7 +3009,9 @@ class AmbianceQtImproved(QMainWindow):
         """Clean shutdown."""
         self.poll_timer.stop()
         self.process_timer.stop()
-        
+
+        self._teardown_strudel_server()
+
         # Shutdown all plugin hosts
         for slot in self.chain_widget.slots:
             if slot.host:
