@@ -3,6 +3,7 @@
 import sys
 import json
 import logging
+import os
 from pathlib import Path
 from collections import deque
 from typing import Optional, List, Dict, Any, Tuple, Deque, cast
@@ -172,16 +173,31 @@ class StrudelStaticServer:
         root = self.root
 
         class Handler(SimpleHTTPRequestHandler):  # type: ignore[misc, valid-type]
-            extensions_map = {
-                **SimpleHTTPRequestHandler.extensions_map,
-                ".js": "text/javascript",
-                ".mjs": "text/javascript",
-                ".json": "application/json",
-                "": "application/octet-stream",
-            }
-
             def __init__(self, *args, **kwargs):
                 super().__init__(*args, directory=str(root), **kwargs)  # type: ignore[arg-type]
+
+            def end_headers(self):
+                # Add CORS headers to allow cross-origin requests
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.send_header('Access-Control-Allow-Methods', 'GET, OPTIONS')
+                self.send_header('Access-Control-Allow-Headers', '*')
+                super().end_headers()
+
+            def guess_type(self, path):
+                # Override guess_type to ensure correct MIME types for JavaScript modules
+                base, ext = os.path.splitext(path)
+                if ext in ('.js', '.mjs'):
+                    return 'application/javascript'
+                elif ext == '.json':
+                    return 'application/json'
+                elif ext == '.css':
+                    return 'text/css'
+                elif ext == '.html':
+                    return 'text/html'
+                elif ext == '.svg':
+                    return 'image/svg+xml'
+                else:
+                    return super().guess_type(path)
 
             def log_message(self, format: str, *args: Any) -> None:  # pragma: no cover - reduces console noise
                 logging.getLogger(__name__).debug("Strudel static server: " + format, *args)
