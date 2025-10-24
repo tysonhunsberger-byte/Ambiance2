@@ -139,6 +139,32 @@ class AmbianceRequestHandler(SimpleHTTPRequestHandler):
         """Override to use our logger."""
         logger.info(format % args)
 
+    def guess_type(self, path):
+        """Override guess_type to ensure correct MIME types for JavaScript modules."""
+        import os
+        base, ext = os.path.splitext(path)
+        if ext in ('.js', '.mjs'):
+            return 'application/javascript'
+        elif ext == '.json':
+            return 'application/json'
+        elif ext == '.css':
+            return 'text/css'
+        elif ext == '.html':
+            return 'text/html'
+        elif ext == '.svg':
+            return 'image/svg+xml'
+        elif ext == '.wasm':
+            return 'application/wasm'
+        else:
+            return super().guess_type(path)
+
+    def end_headers(self):
+        """Add CORS headers for better cross-origin support."""
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', '*')
+        super().end_headers()
+
     # --- Response helpers -------------------------------------------
     def _send_json(self, payload: dict[str, Any], status: HTTPStatus = HTTPStatus.OK) -> None:
         data = json.dumps(payload).encode("utf-8")
