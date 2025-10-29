@@ -4,9 +4,10 @@ import sys
 import json
 import logging
 import os
+import re
 from pathlib import Path
 from collections import deque
-from typing import Optional, List, Dict, Any, Tuple, Deque, cast
+from typing import Optional, List, Dict, Any, Tuple, Deque, Set, cast
 from dataclasses import dataclass, field
 from datetime import datetime
 import threading
@@ -122,7 +123,11 @@ THEME_PRESETS = {
     }
 }
 
-STRUDEL_REMOTE_URL = "https://strudel.tidalcycles.org/"
+STRUDEL_REMOTE_BASES: Tuple[str, ...] = (
+    "https://strudel.cc/",
+    "https://strudel.tidalcycles.org/",
+)
+STRUDEL_REMOTE_URL = STRUDEL_REMOTE_BASES[0]
 STRUDEL_REMOTE_FALLBACK_PREFIXES: Tuple[str, ...] = (
     "/_astro/",
     "/fonts/",
@@ -176,6 +181,123 @@ class StrudelStaticServer:
         self._httpd: Optional[ThreadingHTTPServer] = None
         self._thread: Optional[threading.Thread] = None
         self.port: Optional[int] = None
+        self._remote_index_cache: Optional[str] = None
+        self._remote_index_source: Optional[str] = None
+        self._remote_index_lock = threading.Lock()
+
+    def _extract_missing_assets(self, html: str) -> Set[str]:
+        pattern = re.compile(r"[\"'](/?_astro/[^\"']+)")
+        assets = {match.group(1) for match in pattern.finditer(html)}
+        missing: Set[str] = set()
+        for asset in assets:
+            candidate = self.root / asset.lstrip('/')
+            if not candidate.exists():
+                missing.add(asset)
+        return missing
+
+    def _fetch_remote_index(self) -> Optional[str]:
+        with self._remote_index_lock:
+            if self._remote_index_cache is not None:
+                return self._remote_index_cache
+            logger = logging.getLogger(__name__)
+            for base in STRUDEL_REMOTE_BASES:
+                index_url = urljoin(base.rstrip('/') + '/', 'index.html')
+                try:
+                    with urlopen(index_url) as response:
+                        encoding = response.headers.get_content_charset('utf-8')
+                        html = response.read().decode(encoding, errors='replace')
+                except Exception as exc:
+                    logger.debug("Failed to fetch remote Strudel index from %s: %s", index_url, exc)
+                    continue
+                self._remote_index_cache = html
+                self._remote_index_source = index_url
+                logger.info("Fetched remote Strudel index from %s", index_url)
+                return html
+            return None
+
+    def _attempt_local_asset_remap(self, html: str, missing: Set[str]) -> Tuple[str, Dict[str, str], Set[str]]:
+        """Attempt to rewrite missing hashed asset references to files that exist locally."""
+
+        replacements: Dict[str, str] = {}
+        unresolved: Set[str] = set()
+
+        for asset in sorted(missing):
+            relative = asset.lstrip('/')
+            target = self.root / relative
+            parent = target.parent
+            name = target.name
+
+            suffix = Path(name).suffix
+            if not suffix:
+                unresolved.add(asset)
+                continue
+
+            stem = name[: -len(suffix)]
+            hash_separator = stem.rfind('.')
+            if hash_separator == -1:
+                unresolved.add(asset)
+                continue
+
+            prefix = stem[:hash_separator]
+            pattern = f"{prefix}.*{suffix}"
+
+            if not parent.exists():
+                unresolved.add(asset)
+                continue
+
+            matches = sorted(path for path in parent.glob(pattern) if path.is_file())
+            if not matches:
+                unresolved.add(asset)
+                continue
+
+            replacement_path = matches[0]
+            replacement = '/' + replacement_path.relative_to(self.root).as_posix()
+            replacements[asset] = replacement
+
+        for old, new in replacements.items():
+            html = html.replace(old, new)
+
+        return html, replacements, unresolved
+
+    def _get_index_content(self) -> Tuple[Optional[str], bool, Set[str]]:
+        index_path = self.root / "index.html"
+        if not index_path.exists():
+            return None, False, set()
+        try:
+            content = index_path.read_text(encoding='utf-8')
+        except Exception as exc:
+            logging.getLogger(__name__).warning("Unable to read Strudel index: %s", exc)
+            return None, False, set()
+        missing = self._extract_missing_assets(content)
+        if missing:
+            logger = logging.getLogger(__name__)
+            logger.warning(
+                "Local Strudel index is missing %d asset(s): %s", len(missing), ", ".join(sorted(missing))
+            )
+
+            content, remapped, unresolved = self._attempt_local_asset_remap(content, missing)
+            if remapped:
+                summary = ", ".join(f"{old} → {new}" for old, new in remapped.items())
+                logger.info("Rewrote Strudel asset references to available bundle files: %s", summary)
+
+            missing_after = self._extract_missing_assets(content)
+            if not missing_after:
+                return content, False, set()
+
+            if unresolved:
+                logger.info(
+                    "Unable to locate local replacements for %d Strudel asset(s): %s",
+                    len(unresolved),
+                    ", ".join(sorted(unresolved)),
+                )
+
+            remote = self._fetch_remote_index()
+            if remote:
+                return remote, True, missing_after
+            logger.warning("Remote Strudel index unavailable; continuing with bundled copy")
+            return content, False, missing_after
+
+        return content, False, missing
 
     def start(self) -> None:
         if self._httpd is not None:
@@ -206,17 +328,14 @@ class StrudelStaticServer:
                 # Intercept index.html to fix base href and module URLs
                 if self.path == '/index.html' or self.path == '/':
                     try:
-                        index_path = root / "index.html"
-                        if index_path.exists():
-                            content = index_path.read_text(encoding='utf-8')
+                        content, used_remote, missing_assets = server_instance._get_index_content()
+                        if content is not None:
                             raw_base = server_instance.base_url or "/"
                             base_url = raw_base.rstrip('/')
                             if not base_url:
                                 base_url = "/"
                             base_href = f"{base_url}/" if base_url != "/" else "/"
                             astro_prefix = "" if base_url == "/" else base_url
-
-                            import re
 
                             # Normalise the <base> tag so relative imports resolve to the server origin.
                             base_pattern = re.compile(r'<base\s+href="[^"]*"\s*>', re.IGNORECASE)
@@ -281,13 +400,18 @@ class StrudelStaticServer:
                                 if "</head>" in content:
                                     content = content.replace("</head>", f"{polyfill_comment}{polyfill_script}</head>")
 
-                            if base_subs or total_rewrites:
+                            if base_subs or total_rewrites or used_remote:
                                 logging.getLogger(__name__).info(
-                                    "Modified index.html with base URL %s (base=%s, astro_rewrites=%s)",
+                                    "Modified index.html with base URL %s (base=%s, astro_rewrites=%s, remote_index=%s)",
                                     base_href,
                                     base_subs,
                                     total_rewrites,
+                                    used_remote,
                                 )
+                                if used_remote and missing_assets:
+                                    logging.getLogger(__name__).info(
+                                        "Bundled Strudel assets missing locally: %s", ", ".join(sorted(missing_assets))
+                                    )
 
                             # Send the modified content
                             content_bytes = content.encode('utf-8')
@@ -332,17 +456,38 @@ class StrudelStaticServer:
                 super().do_GET()
 
             def _proxy_remote_asset(self, cache_target: Path, rel_path: str, query: str) -> bool:
-                remote_base = STRUDEL_REMOTE_URL.rstrip('/') + '/'
-                remote_url = urljoin(remote_base, rel_path.lstrip('/'))
-                if query:
-                    remote_url = f"{remote_url}?{query}"
                 logger = logging.getLogger(__name__)
-                try:
-                    with urlopen(remote_url) as response:
-                        data = response.read()
-                        content_type = response.headers.get('Content-Type') or self.guess_type(rel_path)
-                except Exception as exc:
-                    logger.warning("Failed to proxy Strudel asset %s: %s", rel_path, exc)
+                data: Optional[bytes] = None
+                content_type = self.guess_type(rel_path)
+                last_error: Optional[Tuple[str, Exception]] = None
+                for base in STRUDEL_REMOTE_BASES:
+                    remote_base = base.rstrip('/') + '/'
+                    remote_url = urljoin(remote_base, rel_path.lstrip('/'))
+                    candidate_url = f"{remote_url}?{query}" if query else remote_url
+                    try:
+                        with urlopen(candidate_url) as response:
+                            data = response.read()
+                            content_type = response.headers.get('Content-Type') or self.guess_type(rel_path)
+                    except Exception as exc:
+                        last_error = (candidate_url, exc)
+                        logger.debug("Failed to fetch Strudel asset from %s: %s", candidate_url, exc)
+                        continue
+                    logger.info(
+                        "Proxied missing Strudel asset %s from %s (%d bytes)",
+                        rel_path,
+                        candidate_url,
+                        len(data),
+                    )
+                    break
+
+                if data is None:
+                    if last_error:
+                        logger.warning(
+                            "Failed to proxy Strudel asset %s after trying %s: %s",
+                            rel_path,
+                            ", ".join(STRUDEL_REMOTE_BASES),
+                            last_error[1],
+                        )
                     self.send_error(502, f"Unable to load Strudel asset: {rel_path}")
                     return True
 
@@ -361,12 +506,6 @@ class StrudelStaticServer:
                     self.wfile.write(data)
                 except Exception:
                     return True
-                logger.info(
-                    "Proxied missing Strudel asset %s from %s (%d bytes)",
-                    rel_path,
-                    remote_url,
-                    len(data),
-                )
                 return True
 
             def end_headers(self):
