@@ -13,6 +13,8 @@ import threading
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from string import Template
 from textwrap import dedent
+from urllib.parse import urljoin, urlsplit
+from urllib.request import urlopen
 
 try:
     import winsound  # Windows-only fallback tone generator
@@ -121,6 +123,15 @@ THEME_PRESETS = {
 }
 
 STRUDEL_REMOTE_URL = "https://strudel.tidalcycles.org/"
+STRUDEL_REMOTE_FALLBACK_PREFIXES: Tuple[str, ...] = (
+    "/_astro/",
+    "/fonts/",
+    "/icons/",
+    "/images/",
+    "/audio/",
+    "/sounds/",
+    "/media/",
+)
 
 
 @dataclass(eq=False)
@@ -238,6 +249,38 @@ class StrudelStaticServer:
                                 content, count = _rewrite_attr(attr, content)
                                 total_rewrites += count
 
+                            polyfill_comment = "<!-- Strudel compatibility polyfill -->"
+                            if polyfill_comment not in content:
+                                polyfill_script = (
+                                    "<script>"  # pragma: no cover - executed in browser
+                                    "(function(){"
+                                    "if(!('webkitStorageInfo' in window) && typeof navigator !== 'undefined'){"
+                                    "var temp=navigator.webkitTemporaryStorage;"
+                                    "var persistent=navigator.webkitPersistentStorage;"
+                                    "if(temp || persistent){"
+                                    "window.webkitStorageInfo={"
+                                    "TEMPORARY:0,PERSISTENT:1,"
+                                    "requestQuota:function(type,size,success,error){"
+                                    "var target=type===1?persistent:temp;"
+                                    "if(target && typeof target.requestQuota==='function'){"
+                                    "target.requestQuota(size,function(granted){if(typeof success==='function'){success(granted);}},function(err){if(typeof error==='function'){error(err);}});"
+                                    "}else if(typeof success==='function'){success(size);}"
+                                    "},"
+                                    "queryUsageAndQuota:function(type,success,error){"
+                                    "var target=type===1?persistent:temp;"
+                                    "if(target && typeof target.queryUsageAndQuota==='function'){"
+                                    "target.queryUsageAndQuota(function(used,granted){if(typeof success==='function'){success(used,granted);}},function(err){if(typeof error==='function'){error(err);}});"
+                                    "}else if(typeof success==='function'){success(0,0);}"
+                                    "}"
+                                    "};"
+                                    "}"
+                                    "}"
+                                    "})();"
+                                    "</script>"
+                                )
+                                if "</head>" in content:
+                                    content = content.replace("</head>", f"{polyfill_comment}{polyfill_script}</head>")
+
                             if base_subs or total_rewrites:
                                 logging.getLogger(__name__).info(
                                     "Modified index.html with base URL %s (base=%s, astro_rewrites=%s)",
@@ -256,8 +299,75 @@ class StrudelStaticServer:
                             return
                     except Exception as e:
                         logging.getLogger(__name__).warning(f"Failed to modify index.html: {e}")
+                path_info = urlsplit(self.path)
+                normalised_path = path_info.path
+                if normalised_path not in ('', '/'):
+                    candidate = (root / normalised_path.lstrip('/'))
+                    try:
+                        resolved_candidate = candidate.resolve()
+                        root_path = root.resolve()
+                        resolved_candidate.relative_to(root_path)
+                    except Exception:
+                        self.send_error(403, "Forbidden")
+                        return
+
+                    if normalised_path.endswith('/'):
+                        super().do_GET()
+                        return
+
+                    if resolved_candidate.is_file():
+                        super().do_GET()
+                        return
+
+                    proxy_handled = False
+                    if any(normalised_path.startswith(prefix) for prefix in STRUDEL_REMOTE_FALLBACK_PREFIXES):
+                        proxy_handled = self._proxy_remote_asset(
+                            resolved_candidate,
+                            normalised_path,
+                            path_info.query,
+                        )
+                    if proxy_handled:
+                        return
                 # Fall back to default behavior for all other files
                 super().do_GET()
+
+            def _proxy_remote_asset(self, cache_target: Path, rel_path: str, query: str) -> bool:
+                remote_base = STRUDEL_REMOTE_URL.rstrip('/') + '/'
+                remote_url = urljoin(remote_base, rel_path.lstrip('/'))
+                if query:
+                    remote_url = f"{remote_url}?{query}"
+                logger = logging.getLogger(__name__)
+                try:
+                    with urlopen(remote_url) as response:
+                        data = response.read()
+                        content_type = response.headers.get('Content-Type') or self.guess_type(rel_path)
+                except Exception as exc:
+                    logger.warning("Failed to proxy Strudel asset %s: %s", rel_path, exc)
+                    self.send_error(502, f"Unable to load Strudel asset: {rel_path}")
+                    return True
+
+                try:
+                    cache_target.parent.mkdir(parents=True, exist_ok=True)
+                    with cache_target.open('wb') as handle:
+                        handle.write(data)
+                except Exception as exc:
+                    logger.debug("Could not cache proxied Strudel asset %s: %s", rel_path, exc)
+
+                self.send_response(200)
+                self.send_header('Content-Type', content_type)
+                self.send_header('Content-Length', str(len(data)))
+                self.end_headers()
+                try:
+                    self.wfile.write(data)
+                except Exception:
+                    return True
+                logger.info(
+                    "Proxied missing Strudel asset %s from %s (%d bytes)",
+                    rel_path,
+                    remote_url,
+                    len(data),
+                )
+                return True
 
             def end_headers(self):
                 # Add CORS headers to allow cross-origin requests
