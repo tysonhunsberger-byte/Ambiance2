@@ -198,42 +198,53 @@ class StrudelStaticServer:
                         index_path = root / "index.html"
                         if index_path.exists():
                             content = index_path.read_text(encoding='utf-8')
-                            base_url = server_instance.base_url or "/"
+                            raw_base = server_instance.base_url or "/"
+                            base_url = raw_base.rstrip('/')
+                            if not base_url:
+                                base_url = "/"
+                            base_href = f"{base_url}/" if base_url != "/" else "/"
+                            astro_prefix = "" if base_url == "/" else base_url
 
-                            # Fix the empty base href to use the server's URL
-                            content = content.replace('<base href="">', f'<base href="{base_url}/">')
-
-                            # Fix all relative script module URLs to be absolute
-                            # This is critical for dynamic imports in astro-island
                             import re
 
-                            # Fix <script type="module" src="_astro/...">
-                            content = re.sub(
-                                r'<script type="module" src="(_astro/[^"]+)"',
-                                rf'<script type="module" src="{base_url}/\1"',
-                                content
-                            )
+                            # Normalise the <base> tag so relative imports resolve to the server origin.
+                            base_pattern = re.compile(r'<base\s+href="[^"]*"\s*>', re.IGNORECASE)
+                            replacement_base = f'<base href="{base_href}">'
+                            if base_pattern.search(content):
+                                content, base_subs = base_pattern.subn(replacement_base, content, count=1)
+                            else:
+                                base_subs = 0
 
-                            # Fix astro-island component-url and renderer-url attributes
-                            content = re.sub(
-                                r'component-url="(_astro/[^"]+)"',
-                                rf'component-url="{base_url}/\1"',
-                                content
-                            )
-                            content = re.sub(
-                                r'renderer-url="(_astro/[^"]+)"',
-                                rf'renderer-url="{base_url}/\1"',
-                                content
-                            )
+                            # Ensure all Astro-generated asset URLs point at the HTTP server rather than relative paths.
+                            def _rewrite_attr(attr: str, html: str) -> Tuple[str, int]:
+                                replacements = 0
+                                for quote in ('"', "'"):
+                                    absolute = f"{attr}={quote}{astro_prefix}/_astro/"
+                                    needle_slash = f"{attr}={quote}/_astro/"
+                                    needle_plain = f"{attr}={quote}_astro/"
+                                    if needle_slash in html:
+                                        occurrences = html.count(needle_slash)
+                                        html = html.replace(needle_slash, absolute)
+                                        replacements += occurrences
+                                    if needle_plain in html:
+                                        occurrences = html.count(needle_plain)
+                                        html = html.replace(needle_plain, absolute)
+                                        replacements += occurrences
+                                return html, replacements
 
-                            # Fix other relative URLs (CSS, etc)
-                            content = re.sub(
-                                r'href="(_astro/[^"]+)"',
-                                rf'href="{base_url}/\1"',
-                                content
-                            )
+                            astro_attrs = ("src", "href", "component-url", "renderer-url")
+                            total_rewrites = 0
+                            for attr in astro_attrs:
+                                content, count = _rewrite_attr(attr, content)
+                                total_rewrites += count
 
-                            logging.getLogger(__name__).info(f"Modified index.html with base URL: {base_url}")
+                            if base_subs or total_rewrites:
+                                logging.getLogger(__name__).info(
+                                    "Modified index.html with base URL %s (base=%s, astro_rewrites=%s)",
+                                    base_href,
+                                    base_subs,
+                                    total_rewrites,
+                                )
 
                             # Send the modified content
                             content_bytes = content.encode('utf-8')
