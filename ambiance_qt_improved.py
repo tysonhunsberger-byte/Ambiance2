@@ -215,6 +215,50 @@ class StrudelStaticServer:
                 return html
             return None
 
+    def _attempt_local_asset_remap(self, html: str, missing: Set[str]) -> Tuple[str, Dict[str, str], Set[str]]:
+        """Attempt to rewrite missing hashed asset references to files that exist locally."""
+
+        replacements: Dict[str, str] = {}
+        unresolved: Set[str] = set()
+
+        for asset in sorted(missing):
+            relative = asset.lstrip('/')
+            target = self.root / relative
+            parent = target.parent
+            name = target.name
+
+            suffix = Path(name).suffix
+            if not suffix:
+                unresolved.add(asset)
+                continue
+
+            stem = name[: -len(suffix)]
+            hash_separator = stem.rfind('.')
+            if hash_separator == -1:
+                unresolved.add(asset)
+                continue
+
+            prefix = stem[:hash_separator]
+            pattern = f"{prefix}.*{suffix}"
+
+            if not parent.exists():
+                unresolved.add(asset)
+                continue
+
+            matches = sorted(path for path in parent.glob(pattern) if path.is_file())
+            if not matches:
+                unresolved.add(asset)
+                continue
+
+            replacement_path = matches[0]
+            replacement = '/' + replacement_path.relative_to(self.root).as_posix()
+            replacements[asset] = replacement
+
+        for old, new in replacements.items():
+            html = html.replace(old, new)
+
+        return html, replacements, unresolved
+
     def _get_index_content(self) -> Tuple[Optional[str], bool, Set[str]]:
         index_path = self.root / "index.html"
         if not index_path.exists():
@@ -230,10 +274,29 @@ class StrudelStaticServer:
             logger.warning(
                 "Local Strudel index is missing %d asset(s): %s", len(missing), ", ".join(sorted(missing))
             )
+
+            content, remapped, unresolved = self._attempt_local_asset_remap(content, missing)
+            if remapped:
+                summary = ", ".join(f"{old} → {new}" for old, new in remapped.items())
+                logger.info("Rewrote Strudel asset references to available bundle files: %s", summary)
+
+            missing_after = self._extract_missing_assets(content)
+            if not missing_after:
+                return content, False, set()
+
+            if unresolved:
+                logger.info(
+                    "Unable to locate local replacements for %d Strudel asset(s): %s",
+                    len(unresolved),
+                    ", ".join(sorted(unresolved)),
+                )
+
             remote = self._fetch_remote_index()
             if remote:
-                return remote, True, missing
+                return remote, True, missing_after
             logger.warning("Remote Strudel index unavailable; continuing with bundled copy")
+            return content, False, missing_after
+
         return content, False, missing
 
     def start(self) -> None:
