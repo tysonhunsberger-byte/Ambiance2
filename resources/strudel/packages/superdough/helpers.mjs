@@ -1,7 +1,6 @@
-import { getAudioContext } from './audioContext.mjs';
-import { clamp, nanFallback, midiToFreq, noteToMidi } from './util.mjs';
+import { getAudioContext } from './superdough.mjs';
+import { clamp, nanFallback } from './util.mjs';
 import { getNoiseBuffer } from './noise.mjs';
-import { logger } from './logger.mjs';
 
 export const noises = ['pink', 'white', 'brown', 'crackle'];
 
@@ -9,13 +8,6 @@ export function gainNode(value) {
   const node = getAudioContext().createGain();
   node.gain.value = value;
   return node;
-}
-
-export function effectSend(input, effect, wet) {
-  const send = gainNode(wet);
-  input.connect(send);
-  send.connect(effect);
-  return send;
 }
 
 const getSlope = (y1, y2, x1, x2) => {
@@ -29,9 +21,7 @@ const getSlope = (y1, y2, x1, x2) => {
 export function getWorklet(ac, processor, params, config) {
   const node = new AudioWorkletNode(ac, processor, config);
   Object.entries(params).forEach(([key, value]) => {
-    if (value !== undefined) {
-      node.parameters.get(key).value = value;
-    }
+    node.parameters.get(key).value = value;
   });
   return node;
 }
@@ -98,35 +88,6 @@ export const getParamADSR = (
   param[ramp](min, end + release);
 };
 
-function getModulationShapeInput(val) {
-  if (typeof val === 'number') {
-    return val % 5;
-  }
-  return { tri: 0, triangle: 0, sine: 1, ramp: 2, saw: 3, square: 4 }[val] ?? 0;
-}
-
-export function getLfo(audioContext, begin, end, properties = {}) {
-  const { shape = 0, ...props } = properties;
-  const { dcoffset = -0.5, depth = 1 } = properties;
-  const lfoprops = {
-    frequency: 1,
-    depth,
-    skew: 0.5,
-    phaseoffset: 0,
-    time: begin,
-    begin,
-    end,
-    shape: getModulationShapeInput(shape),
-    dcoffset,
-    min: dcoffset * depth,
-    max: dcoffset * depth + depth,
-    curve: 1,
-    ...props,
-  };
-
-  return getWorklet(audioContext, 'lfo-processor', lfoprops);
-}
-
 export function getCompressor(ac, threshold, ratio, knee, attack, release) {
   const options = {
     threshold: threshold ?? -3,
@@ -153,41 +114,6 @@ export const getADSRValues = (params, curve = 'linear', defaultValues) => {
   const sustain = s != null ? s : (a != null && d == null) || (a == null && d == null) ? envmax : envmin;
   return [Math.max(a ?? 0, envmin), Math.max(d ?? 0, envmin), Math.min(sustain, envmax), Math.max(r ?? 0, releaseMin)];
 };
-
-// helper utility for applying standard modulators to a parameter
-export function applyParameterModulators(audioContext, param, start, end, envelopeValues, lfoValues) {
-  let { amount, offset, defaultAmount = 1, curve = 'linear', values, holdEnd, defaultValues } = envelopeValues;
-
-  if (amount == null) {
-    const hasADSRParams = values.some((p) => p != null);
-    amount = hasADSRParams ? defaultAmount : 0;
-  }
-
-  const min = offset ?? 0;
-  const max = amount + min;
-  const diff = Math.abs(max - min);
-  if (diff) {
-    const [attack, decay, sustain, release] = getADSRValues(values, curve, defaultValues);
-    getParamADSR(param, attack, decay, sustain, release, min, max, start, holdEnd, curve);
-  }
-  let lfo;
-  let { defaultDepth = 1, depth, dcoffset, ...getLfoInputs } = lfoValues;
-
-  if (depth == null) {
-    const hasLFOParams = Object.values(getLfoInputs).some((v) => v != null);
-    depth = hasLFOParams ? defaultDepth : 0;
-  }
-  if (depth) {
-    lfo = getLfo(audioContext, start, end, {
-      depth,
-      dcoffset,
-      ...getLfoInputs,
-    });
-    lfo.connect(param);
-  }
-
-  return { lfo, disconnect: () => lfo?.disconnect() };
-}
 
 export function createFilter(context, type, frequency, Q, att, dec, sus, rel, fenv, start, end, fanchor, model, drive) {
   const curve = 'exponential';
@@ -248,7 +174,7 @@ let curves = ['linear', 'exponential'];
 export function getPitchEnvelope(param, value, t, holdEnd) {
   // envelope is active when any of these values is set
   const hasEnvelope = value.pattack ?? value.pdecay ?? value.psustain ?? value.prelease ?? value.penv;
-  if (hasEnvelope === undefined) {
+  if (!hasEnvelope) {
     return;
   }
   const penv = nanFallback(value.penv, 1, true);
@@ -381,121 +307,3 @@ export function applyFM(param, value, begin) {
   }
   return { stop };
 }
-
-// Saturation curves
-
-const __squash = (x) => x / (1 + x); // [0, inf) to [0, 1)
-const _mod = (n, m) => ((n % m) + m) % m;
-
-const _scurve = (x, k) => ((1 + k) * x) / (1 + k * Math.abs(x));
-const _soft = (x, k) => Math.tanh(x * (1 + k));
-const _hard = (x, k) => clamp((1 + k) * x, -1, 1);
-
-const _fold = (x, k) => {
-  // Closed form folding for audio rate
-  let y = (1 + 0.5 * k) * x;
-  const window = _mod(y + 1, 4);
-  return 1 - Math.abs(window - 2);
-};
-
-const _sineFold = (x, k) => Math.sin((Math.PI / 2) * _fold(x, k));
-
-const _cubic = (x, k) => {
-  const t = __squash(Math.log1p(k));
-  const cubic = (x - (t / 3) * x * x * x) / (1 - t / 3); // normalized to go from (-1, 1)
-  return _soft(cubic, k);
-};
-
-const _diode = (x, k, asym = false) => {
-  const g = 1 + 2 * k; // gain
-  const t = __squash(Math.log1p(k));
-  const bias = 0.07 * t;
-  const pos = _soft(x + bias, 2 * k);
-  const neg = _soft(asym ? bias : -x + bias, 2 * k);
-  const y = pos - neg;
-  // We divide by the derivative at 0 so that the distortion is roughly
-  // the identity map near 0 => small values are preserved and undistorted
-  const sech = 1 / Math.cosh(g * bias);
-  const sech2 = sech * sech; // derivative of soft (i.e. tanh) is sech^2
-  const denom = Math.max(1e-8, (asym ? 1 : 2) * g * sech2); // g from chain rule; 2 if both pos/neg have x
-  return _soft(y / denom, k);
-};
-
-const _asym = (x, k) => _diode(x, k, true);
-
-const _chebyshev = (x, k) => {
-  const kl = 10 * Math.log1p(k);
-  let tnm1 = 1;
-  let tnm2 = x;
-  let tn;
-  let y = 0;
-  for (let i = 1; i < 64; i++) {
-    if (i < 2) {
-      // Already set inital conditions
-      y += i == 0 ? tnm1 : tnm2;
-      continue;
-    }
-    tn = 2 * x * tnm1 - tnm2; // https://en.wikipedia.org/wiki/Chebyshev_polynomials#Recurrence_definition
-    tnm2 = tnm1;
-    tnm1 = tn;
-    if (i % 2 === 0) {
-      y += Math.min((1.3 * kl) / i, 2) * tn;
-    }
-  }
-  // Soft clip
-  return _soft(y, kl / 20);
-};
-
-export const distortionAlgorithms = {
-  scurve: _scurve,
-  soft: _soft,
-  hard: _hard,
-  cubic: _cubic,
-  diode: _diode,
-  asym: _asym,
-  fold: _fold,
-  sinefold: _sineFold,
-  chebyshev: _chebyshev,
-};
-const _algoNames = Object.freeze(Object.keys(distortionAlgorithms));
-
-export const getDistortionAlgorithm = (algo) => {
-  let index = algo;
-  if (typeof algo === 'string') {
-    index = _algoNames.indexOf(algo);
-    if (index === -1) {
-      logger(`[superdough] Could not find waveshaping algorithm ${algo}.
-        Available options are ${_algoNames.join(', ')}.
-        Defaulting to ${_algoNames[0]}.`);
-      index = 0;
-    }
-  }
-  const name = _algoNames[index % _algoNames.length]; // allow for wrapping if algo was a number
-  return distortionAlgorithms[name];
-};
-
-export const getDistortion = (distort, postgain, algorithm) => {
-  return getWorklet(getAudioContext(), 'distort-processor', { distort, postgain }, { processorOptions: { algorithm } });
-};
-
-export const getFrequencyFromValue = (value, defaultNote = 36) => {
-  let { note, freq } = value;
-  note = note || defaultNote;
-  if (typeof note === 'string') {
-    note = noteToMidi(note); // e.g. c3 => 48
-  }
-  // get frequency
-  if (!freq && typeof note === 'number') {
-    freq = midiToFreq(note); // + 48);
-  }
-
-  return Number(freq);
-};
-
-export const destroyAudioWorkletNode = (node) => {
-  if (node == null) {
-    return;
-  }
-  node.disconnect();
-  node.parameters.get('end')?.setValueAtTime(0, 0);
-};

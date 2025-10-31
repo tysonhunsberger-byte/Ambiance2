@@ -32,9 +32,6 @@ export async function prebake() {
       prebake: true,
       tag: 'drum-machines',
     }),
-    samples(`${baseNoTrailing}/uzu-wavetables.json`, undefined, {
-      prebake: true,
-    }),
     samples(`${baseNoTrailing}/mridangam.json`, undefined, { prebake: true, tag: 'drum-machines' }),
     samples(
       {

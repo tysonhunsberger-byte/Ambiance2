@@ -1,8 +1,8 @@
 import { closeBrackets } from '@codemirror/autocomplete';
 export { toggleComment, toggleBlockComment, toggleLineComment, toggleBlockCommentByLine } from '@codemirror/commands';
 // import { search, highlightSelectionMatches } from '@codemirror/search';
-import { indentWithTab } from '@codemirror/commands';
-import { javascript, javascriptLanguage } from '@codemirror/lang-javascript';
+import { history, indentWithTab } from '@codemirror/commands';
+import { javascript } from '@codemirror/lang-javascript';
 import { defaultHighlightStyle, syntaxHighlighting, bracketMatching } from '@codemirror/language';
 import { Compartment, EditorState, Prec } from '@codemirror/state';
 import {
@@ -24,7 +24,6 @@ import { initTheme, activateTheme, theme } from './themes.mjs';
 import { sliderPlugin, updateSliderWidgets } from './slider.mjs';
 import { widgetPlugin, updateWidgets } from './widget.mjs';
 import { persistentAtom } from '@nanostores/persistent';
-import { basicSetup } from './basicSetup.mjs';
 
 const extensions = {
   isLineWrappingEnabled: (on) => (on ? EditorView.lineWrapping : []),
@@ -86,17 +85,13 @@ export function initEditor({ initialCode = '', onChange, onEvaluate, onStop, roo
       /* search(),
       highlightSelectionMatches(), */
       ...initialSettings,
-      basicSetup,
       mondo ? [] : javascript(),
-      javascriptLanguage.data.of({
-        closeBrackets: { brackets: ['(', '[', '{', "'", '"', '<'] },
-        bracketMatching: { brackets: ['(', '[', '{', "'", '"', '<'] },
-      }),
       sliderPlugin,
       widgetPlugin,
       // indentOnInput(), // works without. already brought with javascript extension?
       // bracketMatching(), // does not do anything
       syntaxHighlighting(defaultHighlightStyle),
+      history(),
       EditorView.updateListener.of((v) => onChange(v)),
       drawSelection({ cursorBlinkRate: 0 }),
       Prec.highest(

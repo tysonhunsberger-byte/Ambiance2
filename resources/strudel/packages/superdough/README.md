@@ -153,7 +153,6 @@ samples('github:tidalcycles/dirt-samples')
 
 The format is `github:<user>/<repo>/<branch>`.
 
-If `<repo>` and `<branch>` are not specified, they will default to `samples` and `main` respectively.
 It expects a `strudel.json` file to be present at the root of the given repository, which declares the sample paths in the repo.
 
 The format is also expected to be the same as explained above.

@@ -4,13 +4,21 @@ OSC output for strudel patterns! Currently only tested with super collider / sup
 
 ## Usage
 
-Assuming you have [node.js](https://nodejs.org/) installed, you can run the osc bridge server via:
+OSC will only work if you run the REPL locally + the OSC server besides it:
 
-```sh
-npx @strudel/osc
+From the project root:
+
+```js
+npm run repl
 ```
 
-You should see something like:
+and in a seperate shell:
+
+```js
+npm run osc
+```
+
+This should give you
 
 ```log
 osc client running on port 57120
@@ -18,32 +26,14 @@ osc server running on port 57121
 websocket server running on port 8080
 ```
 
-### --port
+Now open Supercollider (with the super dirt startup file)
 
-By default it will use port 57120 for the osc client, which is what [superdirt](https://github.com/musikinformatik/SuperDirt) uses. You can change it via the `--port` option:
-
-```sh
-npx @strudel/osc --port 7771 # classic dirt
-```
-
-### --debug
-
-To log all incoming osc messages, add the `--debug` flag:
-
-```sh
-npx @strudel/osc --debug
-```
-
-## Usage in Strudel
-
-To test it in strudel, you have can use `all(osc)` to send all events through osc:
+Now open the REPL and type:
 
 ```js
-$: s("bd*4")
-
-all(osc)
+s("<bd sd> hh").osc()
 ```
 
-[open in repl](https://strudel.cc/#JDogcygiYmQqNCIpCgphbGwob3NjKQ%3D%3D)
+or just [click here](https://strudel.cc/#cygiPGJkIHNkPiBoaCIpLm9zYygp)...
 
 You can read more about [how to use Superdirt with Strudel the Tutorial](https://strudel.cc/learn/input-output/#superdirt-api)

@@ -1,4 +1,4 @@
-import { registerSampleSource } from '@strudel/webaudio';
+import { registerSound, onTriggerSample } from '@strudel/webaudio';
 import { isAudioFile } from './files.mjs';
 import { logger } from '@strudel/core';
 
@@ -76,7 +76,13 @@ export function registerSamplesFromDB(config = userSamplesDBConfig, onComplete =
               })
               .map((title) => titlePathMap.get(title));
 
-            registerSampleSource(key, value, { prebake: false });
+            registerSound(key, (t, hapValue, onended) => onTriggerSample(t, hapValue, onended, value), {
+              type: 'sample',
+              samples: value,
+              baseUrl: undefined,
+              prebake: false,
+              tag: undefined,
+            });
           });
 
           logger('imported sounds registered!', 'success');

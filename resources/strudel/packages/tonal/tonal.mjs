@@ -6,28 +6,19 @@ This program is free software: you can redistribute it and/or modify it under th
 
 import { Note, Interval, Scale } from '@tonaljs/tonal';
 import { register, _mod, silence, logger, pure, isNote } from '@strudel/core';
-import { stepInNamedScale, nearestNumberIndex } from './tonleiter.mjs';
-import { noteToMidi } from '../core/util.mjs';
+import { stepInNamedScale } from './tonleiter.mjs';
 
 const octavesInterval = (octaves) => (octaves <= 0 ? -1 : 1) + octaves * 7 + 'P';
 
-function getScale(scaleName) {
-  scaleName = scaleName.replaceAll(':', ' ');
-  const scale = Scale.get(scaleName);
-  const { tonic, empty } = scale;
-  if ((empty && isNote(scaleName)) || (empty && !tonic)) {
-    throw new Error(
-      `Scale name ${scaleName} is incomplete. Make sure to use ":" instead of spaces, example: .scale("C:major")`,
-    );
-  } else if (empty) {
-    throw new Error(`Invalid scale name "${scaleName}"`);
-  }
-  return scale;
-}
-
 function scaleStep(step, scale) {
+  scale = scale.replaceAll(':', ' ');
   step = Math.ceil(step);
-  let { intervals, tonic } = getScale(scale);
+  let { intervals, tonic, empty } = Scale.get(scale);
+  if ((empty && isNote(scale)) || (empty && !tonic)) {
+    throw new Error(`incomplete scale. Make sure to use ":" instead of spaces, example: .scale("C:major")`);
+  } else if (empty) {
+    throw new Error(`invalid scale "${scale}"`);
+  }
   tonic = tonic || 'C';
   const { pc, oct = 3 } = Note.get(tonic);
   const octaveOffset = Math.floor(step / intervals.length);
@@ -39,7 +30,8 @@ function scaleStep(step, scale) {
 // transpose note inside scale by offset steps
 // function scaleOffset(scale: string, offset: number, note: string) {
 function scaleOffset(scale, offset, note) {
-  let { notes } = getScale(scale);
+  let [tonic, scaleName] = Scale.tokenize(scale);
+  let { notes } = Scale.get(`${tonic} ${scaleName}`);
   notes = notes.map((note) => Note.get(note).pc); // use only pc!
   offset = Number(offset);
   if (isNaN(offset)) {
@@ -128,7 +120,10 @@ export const { transpose, trans } = register(['transpose', 'trans'], function tr
     const interval = !isNaN(Number(intervalOrSemitones))
       ? Interval.fromSemitones(intervalOrSemitones)
       : String(intervalOrSemitones);
-    const targetNote = Note.transpose(note, interval);
+    // TODO: move simplify to player to preserve enharmonics
+    // tone.js doesn't understand multiple sharps flats e.g. F##3 has to be turned into G3
+    // TODO: check if this is still relevant..
+    const targetNote = Note.simplify(Note.transpose(note, interval));
     if (typeof hap.value === 'object') {
       return hap.withValue(() => ({ ...hap.value, note: targetNote }));
     }
@@ -176,59 +171,8 @@ export const { scaleTranspose, scaleTrans, strans } = register(
   },
 );
 
-// Converts a step value, which is a number optionally decorated with sharps and flats,
-// to a number and an `offset` number of semitones
-function _convertStepToNumberAndOffset(step) {
-  let asNumber = Number(step);
-  let offset = 0;
-  if (isNaN(asNumber)) {
-    step = String(step);
-    // Check to see if the step matches the expected format:
-    // - A number (possibly negative)
-    // - Some number of sharps or flats (but not both)
-    const match = /^(-?\d+)(#+|b+)?$/.exec(step);
-
-    if (!match) {
-      throw new Error(`invalid scale step "${step}", expected number or integer with optional # b suffixes`);
-    }
-    asNumber = Number(match[1]);
-    // These decorations will determine the semitone offset based on the number of
-    // sharps or flats
-    const decorations = match[2] || '';
-    offset = decorations[0] === '#' ? decorations.length : -decorations.length;
-  }
-  return [asNumber, offset];
-}
-
-let scaleToMidisAndNotes = {};
-// Finds the nearest scale note to `note`
-function _getNearestScaleNote(scaleName, note, preferHigher = true) {
-  let noteMidi = typeof note === 'string' ? noteToMidi(note) : note;
-  if (scaleToMidisAndNotes[scaleName] === undefined) {
-    const { intervals, tonic } = getScale(scaleName);
-    const { pc } = Note.get(tonic);
-    const expandedIntervals = intervals.concat('8P'); // add the octave for wrapping
-    const sNotes = expandedIntervals.map((interval) => Note.transpose(pc + '0', interval));
-    const sMidi = sNotes.map(noteToMidi);
-    // Cache
-    scaleToMidisAndNotes[scaleName] = [sMidi, sNotes];
-  }
-  const [scaleMidis, scaleNotes] = scaleToMidisAndNotes[scaleName];
-  const rootMidi = scaleMidis[0];
-  const octaveDiff = Math.floor((noteMidi - rootMidi) / 12);
-  const alignedMidis = scaleMidis.map((m) => m + 12 * octaveDiff);
-  const noteIdx = nearestNumberIndex(noteMidi, alignedMidis, preferHigher);
-  const noteMatch = scaleNotes[noteIdx];
-  return Note.transpose(noteMatch, Interval.fromSemitones(12 * octaveDiff));
-}
-
 /**
- * Turns numbers into notes in the scale (zero indexed) or quantizes notes to a scale.
- *
- * When describing notes via numbers, note that negative numbers can be used to wrap backwards
- * in the scale as well as sharps or flats (but not both) to produce notes outside of the scale.
- *
- * Also sets scale for other scale operations, like {@link Pattern#scaleTranspose}.
+ * Turns numbers into notes in the scale (zero indexed). Also sets scale for other scale operations, like {@link Pattern#scaleTranspose}.
  *
  * A scale consists of a root note (e.g. `c4`, `c`, `f#`, `bb4`) followed by semicolon (':') and then a [scale type](https://github.com/tonaljs/tonal/blob/main/packages/scale-type/data.ts).
  *
@@ -247,12 +191,6 @@ function _getNearestScaleNote(scaleName, note, preferHigher = true) {
  * n(rand.range(0,12).segment(8))
  * .scale("C:ritusen")
  * .s("piano")
- * @example
- * n("<[0,7b] [-4# -4] [-2,7##] 4 [0,7] [-4# -4b] [-2,7###] 4b>*4")
- * .scale("C:<major minor>/2")
- * .s("piano")
- * @example
- * note("C1*16").transpose(irand(36)).scale('Cb2 major').scaleTranspose(3)
  */
 
 export const scale = register(
@@ -266,35 +204,49 @@ export const scale = register(
       pat
         .fmap((value) => {
           const isObject = typeof value === 'object';
-          // The case where the note has been defined via `n` or `pure`
-          if (!isObject || (isObject && ('n' in value || 'value' in value))) {
-            const step = isObject ? (value.n ?? value.value) : value;
+          let step = isObject ? value.n : value;
+          if (isObject) {
             delete value.n; // remove n so it won't cause trouble
-            if (isNote(step)) {
-              // legacy..
-              return pure(step);
-            }
-            try {
-              const [number, offset] = _convertStepToNumberAndOffset(step);
-              let note;
-              if (isObject && value.anchor) {
-                note = stepInNamedScale(number, scale, value.anchor);
-              } else {
-                note = scaleStep(number, scale);
-              }
-              if (offset != 0) note = Note.transpose(note, Interval.fromSemitones(offset));
-              value = pure(isObject ? { ...value, note } : note);
-            } catch (err) {
-              logger(`[tonal] ${err.message}`, 'error');
+          }
+          if (isNote(step)) {
+            // legacy..
+            return pure(step);
+          }
+          let asNumber = Number(step);
+          let semitones = 0;
+          if (isNaN(asNumber)) {
+            step = String(step);
+            if (!/^[-+]?\d+(#*|b*){1}$/.test(step)) {
+              logger(
+                `[tonal] invalid scale step "${step}", expected number or integer with optional # b suffixes`,
+                'error',
+              );
               return silence;
             }
-            return value;
+            const isharp = step.indexOf('#');
+            if (isharp >= 0) {
+              asNumber = Number(step.substring(0, isharp));
+              semitones = step.length - isharp;
+            } else {
+              const iflat = step.indexOf('b');
+              asNumber = Number(step.substring(0, iflat));
+              semitones = iflat - step.length;
+            }
           }
-          // The case where the note has been defined via `note`
-          else {
-            const note = _getNearestScaleNote(scale, value.note);
-            return pure(isObject ? { ...value, note } : note);
+          try {
+            let note;
+            if (isObject && value.anchor) {
+              note = stepInNamedScale(asNumber, scale, value.anchor);
+            } else {
+              note = scaleStep(asNumber, scale);
+            }
+            if (semitones != 0) note = Note.transpose(note, Interval.fromSemitones(semitones));
+            value = pure(isObject ? { ...value, note } : note);
+          } catch (err) {
+            logger(`[tonal] ${err.message}`, 'error');
+            value = silence;
           }
+          return value;
         })
         .outerJoin()
         // legacy:

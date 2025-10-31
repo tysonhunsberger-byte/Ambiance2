@@ -262,13 +262,13 @@ It is quite common that there are many ways to express the same idea.
 
 **selecting sample numbers separately**
 
-Instead of selecting sample numbers one by one:
-
-<MiniRepl client:visible tune={`sound("jazz:0 jazz:1 [jazz:4 jazz:2] jazz:3*2")`} punchcard />
-
-We can also use the `n` function to make it shorter and more readable:
+Instead of using ":", we can also use the `n` function to select sample numbers:
 
 <MiniRepl client:visible tune={`n("0 1 [4 2] 3*2").sound("jazz")`} punchcard />
+
+This is shorter and more readable than:
+
+<MiniRepl client:visible tune={`sound("jazz:0 jazz:1 [jazz:4 jazz:2] jazz:3*2")`} punchcard />
 
 ## Recap
 

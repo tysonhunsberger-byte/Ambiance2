@@ -126,8 +126,6 @@ export const lcm = (...fractions) => {
   );
 };
 
-export const isFraction = (x) => x instanceof Fraction;
-
 fraction._original = Fraction;
 
 export default fraction;

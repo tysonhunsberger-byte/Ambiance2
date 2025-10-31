@@ -4,8 +4,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Optional
 
-from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtWidgets import (
+from qtpy.QtCore import Qt, Signal
+from qtpy.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
@@ -57,7 +57,7 @@ def _mix_with_white(color: str, amount: float) -> str:
 class CollapsibleMod(QWidget):
     """Collapsible module with a themed toggle header."""
 
-    toggled = pyqtSignal(bool)
+    toggled = Signal(bool)
 
     def __init__(self, title: str, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -109,11 +109,11 @@ class CollapsibleMod(QWidget):
 class TimePitchMod(CollapsibleMod):
     """Time & Pitch modification module."""
 
-    tempo_changed = pyqtSignal(float)
-    pitch_changed = pyqtSignal(int)
-    reverse_a_changed = pyqtSignal(bool)
-    reverse_b_changed = pyqtSignal(bool)
-    loop_changed = pyqtSignal(bool)
+    tempo_changed = Signal(float)
+    pitch_changed = Signal(int)
+    reverse_a_changed = Signal(bool)
+    reverse_b_changed = Signal(bool)
+    loop_changed = Signal(bool)
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__("Time & Pitch", parent)
@@ -234,8 +234,8 @@ class TimePitchMod(CollapsibleMod):
 class MuffleMod(CollapsibleMod):
     """Low-pass filter control."""
 
-    enabled_changed = pyqtSignal(bool)
-    amount_changed = pyqtSignal(float)
+    enabled_changed = Signal(bool)
+    amount_changed = Signal(float)
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__("Muffle", parent)
@@ -292,11 +292,11 @@ class MuffleMod(CollapsibleMod):
 class ToneMod(CollapsibleMod):
     """Binaural tone generator controls."""
 
-    enabled_changed = pyqtSignal(bool)
-    wave_changed = pyqtSignal(str)
-    base_changed = pyqtSignal(float)
-    beat_changed = pyqtSignal(float)
-    level_changed = pyqtSignal(float)
+    enabled_changed = Signal(bool)
+    wave_changed = Signal(str)
+    base_changed = Signal(float)
+    beat_changed = Signal(float)
+    level_changed = Signal(float)
 
     PRESET_MAP: Dict[str, float] = {
         "custom": None,
@@ -434,10 +434,10 @@ class ToneMod(CollapsibleMod):
 class NoiseMod(CollapsibleMod):
     """Noise generator controls."""
 
-    enabled_changed = pyqtSignal(bool)
-    type_changed = pyqtSignal(str)
-    level_changed = pyqtSignal(float)
-    tilt_changed = pyqtSignal(float)
+    enabled_changed = Signal(bool)
+    type_changed = Signal(str)
+    level_changed = Signal(float)
+    tilt_changed = Signal(float)
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__("Noise", parent)
@@ -513,9 +513,9 @@ class NoiseMod(CollapsibleMod):
 class EQMod(CollapsibleMod):
     """Three band equaliser."""
 
-    low_changed = pyqtSignal(float)
-    mid_changed = pyqtSignal(float)
-    high_changed = pyqtSignal(float)
+    low_changed = Signal(float)
+    mid_changed = Signal(float)
+    high_changed = Signal(float)
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__("EQ", parent)
@@ -576,10 +576,10 @@ class EQMod(CollapsibleMod):
 class FXMod(CollapsibleMod):
     """Delay / distortion FX chain."""
 
-    mix_changed = pyqtSignal(float)
-    delay_changed = pyqtSignal(float)
-    feedback_changed = pyqtSignal(float)
-    dist_changed = pyqtSignal(float)
+    mix_changed = Signal(float)
+    delay_changed = Signal(float)
+    feedback_changed = Signal(float)
+    dist_changed = Signal(float)
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__("FX Chain", parent)
@@ -653,10 +653,10 @@ class FXMod(CollapsibleMod):
 class SpaceMod(CollapsibleMod):
     """Reverb / space controls."""
 
-    preset_changed = pyqtSignal(str)
-    mix_changed = pyqtSignal(float)
-    decay_changed = pyqtSignal(float)
-    predelay_changed = pyqtSignal(float)
+    preset_changed = Signal(str)
+    mix_changed = Signal(float)
+    decay_changed = Signal(float)
+    predelay_changed = Signal(float)
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__("Spaces", parent)

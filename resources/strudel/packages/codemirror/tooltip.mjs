@@ -1,6 +1,6 @@
 import { hoverTooltip } from '@codemirror/view';
 import jsdoc from '../../doc.json';
-import { Autocomplete, getSynonymDoc } from './autocomplete.mjs';
+import { Autocomplete } from './autocomplete.mjs';
 
 const getDocLabel = (doc) => doc.name || doc.longname;
 
@@ -52,11 +52,10 @@ export const strudelTooltip = hoverTooltip(
     let entry = jsdoc.docs.filter((doc) => getDocLabel(doc) === word)[0];
     if (!entry) {
       // Try for synonyms
-      const doc = jsdoc.docs.filter((doc) => doc.synonyms && doc.synonyms.includes(word))[0];
-      if (!doc) {
+      entry = jsdoc.docs.filter((doc) => doc.synonyms && doc.synonyms.includes(word))[0];
+      if (!entry) {
         return null;
       }
-      entry = getSynonymDoc(doc, word);
     }
 
     return {
@@ -67,7 +66,7 @@ export const strudelTooltip = hoverTooltip(
       create(view) {
         let dom = document.createElement('div');
         dom.className = 'strudel-tooltip';
-        const ac = Autocomplete(entry);
+        const ac = Autocomplete({ doc: entry, label: word });
         dom.appendChild(ac);
         return { dom };
       },

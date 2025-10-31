@@ -19,9 +19,9 @@ export class State {
     return this.setSpan(func(this.span));
   }
 
-  // Returns new State with added controls.
+  // Returns new State with different controls
   setControls(controls) {
-    return new State(this.span, { ...this.controls, ...controls });
+    return new State(this.span, controls);
   }
 }
 

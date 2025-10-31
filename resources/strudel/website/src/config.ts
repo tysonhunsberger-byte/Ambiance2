@@ -103,7 +103,6 @@ export const SIDEBAR: Sidebar = {
     Understand: [
       { text: 'Coding syntax', link: 'learn/code' },
       { text: 'Pitch', link: 'understand/pitch' },
-      { text: 'Xen Harmonic Functions', link: 'learn/xen' },
       { text: 'Cycles', link: 'understand/cycles' },
       { text: 'Voicings', link: 'understand/voicings' },
       { text: 'Pattern Alignment', link: 'technical-manual/alignment' },

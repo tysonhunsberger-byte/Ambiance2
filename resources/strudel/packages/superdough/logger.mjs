@@ -1,9 +1,8 @@
 let log = (msg) => console.log(msg);
 
-export function errorLogger(e, origin = 'superdough') {
-  if (process.env.NODE_ENV === 'development') {
-    console.error(e);
-  }
+export function errorLogger(e, origin = 'cyclist') {
+  //TODO: add some kind of debug flag that enables this  while in dev mode
+  // console.error(e);
   logger(`[${origin}] error: ${e.message}`);
 }
 

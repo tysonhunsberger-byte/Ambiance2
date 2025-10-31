@@ -139,10 +139,10 @@ Tune.prototype.MIDI = function(stepIn,octaveIn) {
 
 /* Load a new scale */
 
-Tune.prototype.loadScale = function(scale){
+Tune.prototype.loadScale = function(name){
 
 	/* load the scale */
-	var freqs = isArrayOfNumbers(scale) ? scale : TuningList[scale].frequencies
+	var freqs = TuningList[name].frequencies
 	this.scale = []
 	for (var i=0;i<freqs.length-1;i++) {
 		this.scale.push(freqs[i]/freqs[0])
@@ -207,13 +207,8 @@ Tune.prototype.search = function(letters) {
 	return possible
 }
 
-function isArrayOfNumbers(arg) {
-    return Array.isArray(arg) && arg.length > 0 && arg.every(item => typeof item === 'number' && !isNaN(item));
-}
-
-/* allow an array of values too */
-Tune.prototype.isValidScale = function(scale) {
-  return !!TuningList[scale] || isArrayOfNumbers(scale) ;
+Tune.prototype.isValidScale = function(name) {
+  return !!TuningList[name];
 }
 
 /* Return a collection of notes as an array */

@@ -5,9 +5,8 @@ let debounce = 1000,
   lastTime;
 
 export function errorLogger(e, origin = 'cyclist') {
-  if (process.env.NODE_ENV === 'development') {
-    console.error(e);
-  }
+  //TODO: add some kind of debug flag that enables this  while in dev mode
+  // console.error(e);
   logger(`[${origin}] error: ${e.message}`);
 }
 

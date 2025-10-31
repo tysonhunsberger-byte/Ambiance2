@@ -8,7 +8,21 @@
       "Bash(python ambiance_standalone.py)",
       "Bash(pip install PyQtWebEngine)",
       "Bash(pip install -e . --force-reinstall --no-deps)",
-      "Bash(where jackd)"
+      "Bash(where jackd)",
+      "Bash(for file in Repl.Chi1q_6u.js jsx-runtime.CLpGMVip.js util.DewOGBzb.js codemirror.n0GVBVLu.js wavetable.8CrHgb9P.js index.DoHDH-Ux.js _commonjsHelpers.BosuxZz1.js spectrum.Z32Oq9FH.js preload-helper.CLcXU_4U.js index.B9mnsnPE.js PatternsTab.g1Sc7l8h.js useEvent.CgYsmZOj.js hydra.2a--K2fF.js osc.B-q2Khx5.js)",
+      "Bash(do if [ -f \"$file\" ])",
+      "Bash(then echo \"✓ $file\")",
+      "Bash(else echo \"✗ MISSING: $file\")",
+      "Bash(fi)",
+      "Bash(done)",
+      "Bash(test -d \"resources/strudel/dist/workshop/getting-started\")",
+      "Bash(python -m py_compile ambiance_qt_improved.py)",
+      "Bash(py -3.10 ambiance_qt_improved.py)",
+      "Bash(tee startup_error.log)",
+      "Bash(nul)",
+      "Bash(dir:*)",
+      "Bash(python:*)",
+      "Bash(git checkout:*)"
     ],
     "deny": [],
     "ask": []

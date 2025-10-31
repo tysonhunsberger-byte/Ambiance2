@@ -80,8 +80,6 @@
   min-width: 300px !important;
   max-height: 400px !important;
   background-color: var(--lineHighlight) !important;
-  overflow: auto;
-  background: var(--background) !important;
 }
 
 /* Main tooltip container */
@@ -93,7 +91,7 @@
   font-size: var(--font-size, 13px);
   line-height: 1.4;
   max-width: 600px;
-  height: 100%;
+  max-height: 400px;
   min-width: 400px;
   white-space: normal !important;
   overflow-y: auto !important;
@@ -112,13 +110,6 @@
   font-weight: 600;
   color: var(--foreground);
   margin: 0 0 8px 0;
-}
-
-.autocomplete-info-function-synonyms {
-  margin: 0 0 12px 0;
-  color: var(--foreground);
-  line-height: 1.5;
-  opacity: 0.8;
 }
 
 .autocomplete-info-function-description {

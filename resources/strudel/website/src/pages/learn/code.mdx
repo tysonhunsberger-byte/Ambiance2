@@ -44,7 +44,7 @@ xxx("foo").yyy("bar")
 
 Generally, `xxx` and `yyy` are called [_functions_](<https://en.wikipedia.org/wiki/Function_(computer_programming)>), while `foo` and `bar` are called function [_arguments_ or _parameters_](<https://en.wikipedia.org/wiki/Parameter_(computer_programming)>).
 So far, we've used the functions to declare which aspect of the sound we want to control, and their arguments for the actual data.
-The `yyy` function is called a [_chained_ function](https://en.wikipedia.org/wiki/Method_chaining), because it is preceded with a dot (`.`).
+The `yyy` function is called a [_chained_ function](https://en.wikipedia.org/wiki/Method_chaining), because it is appended with a dot (`.`).
 
 Generally, the idea with chaining is that code such as `a("this").b("that").c("other")` allows `a`, `b` and `c` functions to happen in a specified order, without needing to write them as three separate lines of code.
 You can think of this as being similar to chaining audio effects together using guitar pedals or digital audio effects.
@@ -59,23 +59,6 @@ Strudel makes heavy use of chained functions. Here is a more sophisticated examp
 //.delay(0.5)
 .room(0.5)`}
 />
-
-## Write your own chained function
-
-You can write your own chained function using `register`. Here's the above chain but registered as a reusable, chained function.
-
-<MiniRepl
-  client:idle
-  tune={`const effectChain = register('effectChain', (pat) => pat
-    .s("sawtooth")
-    .cutoff(500)
-    //.delay(0.5)
-    .room(0.5)
-  )
-note("a3 c#4 e4 a4").effectChain()`}
-/>
-
-Try adding `.rev()` after `effectChain()` to hear further effects added.
 
 # Comments
 

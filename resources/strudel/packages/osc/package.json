@@ -1,9 +1,8 @@
 {
   "name": "@strudel/osc",
-  "version": "1.2.10",
+  "version": "1.2.4",
   "description": "OSC messaging for strudel",
   "main": "osc.mjs",
-  "bin": "./server.js",
   "type": "module",
   "publishConfig": {
     "main": "dist/index.mjs"
@@ -38,8 +37,7 @@
   "homepage": "https://codeberg.org/uzu/strudel#readme",
   "dependencies": {
     "@strudel/core": "workspace:*",
-    "osc": "^2.4.5",
-    "ws": "^8.18.3"
+    "osc-js": "^2.4.1"
   },
   "devDependencies": {
     "pkg": "^5.8.1",

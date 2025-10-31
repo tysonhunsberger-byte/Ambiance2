@@ -82,7 +82,7 @@ Pattern.prototype.mqtt = function (
     cx.connect(props);
   }
   return this.withHap((hap) => {
-    const onTrigger = (hap, currentTime, cps, targetTime) => {
+    const onTrigger = (t_deprecate, hap, currentTime, cps, targetTime) => {
       let msg_topic = topic;
       if (!cx || !cx.isConnected()) {
         return;

@@ -1,6 +1,5 @@
-import { getCommonSampleInfo } from './util.mjs';
-import { registerSound, registerWaveTable } from './index.mjs';
-import { getAudioContext } from './audioContext.mjs';
+import { noteToMidi, valueToMidi, getSoundIndex } from './util.mjs';
+import { getAudioContext, registerSound } from './index.mjs';
 import { getADSRValues, getParamADSR, getPitchEnvelope, getVibratoOscillator } from './helpers.mjs';
 import { logger } from './logger.mjs';
 
@@ -23,16 +22,39 @@ function humanFileSize(bytes, si) {
   return bytes.toFixed(1) + ' ' + units[u];
 }
 
+// deduces relevant info for sample loading from hap.value and sample definition
+// it encapsulates the core sampler logic into a pure and synchronous function
+// hapValue: Hap.value, bank: sample bank definition for sound "s" (values in strudel.json format)
 export function getSampleInfo(hapValue, bank) {
-  const { speed = 1.0 } = hapValue;
-  const { transpose, url, index, midi, label } = getCommonSampleInfo(hapValue, bank);
+  const { s, n = 0, speed = 1.0 } = hapValue;
+  let midi = valueToMidi(hapValue, 36);
+  let transpose = midi - 36; // C3 is middle C;
+  let sampleUrl;
+  let index = 0;
+  if (Array.isArray(bank)) {
+    index = getSoundIndex(n, bank.length);
+    sampleUrl = bank[index];
+  } else {
+    const midiDiff = (noteA) => noteToMidi(noteA) - midi;
+    // object format will expect keys as notes
+    const closest = Object.keys(bank)
+      .filter((k) => !k.startsWith('_'))
+      .reduce(
+        (closest, key, j) => (!closest || Math.abs(midiDiff(key)) < Math.abs(midiDiff(closest)) ? key : closest),
+        null,
+      );
+    transpose = -midiDiff(closest); // semitones to repitch
+    index = getSoundIndex(n, bank[closest].length);
+    sampleUrl = bank[closest][index];
+  }
+  const label = `${s}:${index}`;
   let playbackRate = Math.abs(speed) * Math.pow(2, transpose / 12);
-  return { transpose, url, index, midi, label, playbackRate };
+  return { transpose, sampleUrl, index, midi, label, playbackRate };
 }
 
 // takes hapValue and returns buffer + playbackRate.
 export const getSampleBuffer = async (hapValue, bank, resolveUrl) => {
-  let { url: sampleUrl, label, playbackRate } = getSampleInfo(hapValue, bank);
+  let { sampleUrl, label, playbackRate } = getSampleInfo(hapValue, bank);
   if (resolveUrl) {
     sampleUrl = await resolveUrl(sampleUrl);
   }
@@ -57,14 +79,14 @@ export const getSampleBufferSource = async (hapValue, bank, resolveUrl) => {
   bufferSource.buffer = buffer;
   bufferSource.playbackRate.value = playbackRate;
 
-  const { loopBegin = 0, loopEnd = 1, begin = 0, end = 1 } = hapValue;
+  const { s, loopBegin = 0, loopEnd = 1, begin = 0, end = 1 } = hapValue;
 
   // "The computation of the offset into the sound is performed using the sound buffer's natural sample rate,
   // rather than the current playback rate, so even if the sound is playing at twice its normal speed,
   // the midway point through a 10-second audio buffer is still 5."
   const offset = begin * bufferSource.buffer.duration;
 
-  const loop = hapValue.loop;
+  const loop = s.startsWith('wt_') ? 1 : hapValue.loop;
   if (loop) {
     bufferSource.loop = true;
     bufferSource.loopStart = loopBegin * bufferSource.buffer.duration - offset;
@@ -121,18 +143,13 @@ function githubPath(base, subpath = '') {
   if (!base.startsWith('github:')) {
     throw new Error('expected "github:" at the start of pseudoUrl');
   }
-  let path = base.slice('github:'.length);
+  let [_, path] = base.split('github:');
   path = path.endsWith('/') ? path.slice(0, -1) : path;
-
-  let components = path.split('/');
-  let user = components[0];
-  let repo = components.length >= 2 ? components[1] : 'samples';
-  let branch = components.length >= 3 ? components[2] : 'main';
-  let other = components.slice(3);
-  other.push(subpath ? subpath : '');
-  other = other.join('/');
-
-  return `https://raw.githubusercontent.com/${user}/${repo}/${branch}/${other}`;
+  if (path.split('/').length === 2) {
+    // assume main as default branch if none set
+    path += '/main';
+  }
+  return `https://raw.githubusercontent.com/${path}/${subpath}`;
 }
 
 export const processSampleMap = (sampleMap, fn, baseUrl = sampleMap._base || '') => {
@@ -179,52 +196,6 @@ function getSamplesPrefixHandler(url) {
   return;
 }
 
-export async function fetchSampleMap(url) {
-  // check if custom prefix handler
-  const handler = getSamplesPrefixHandler(url);
-  if (handler) {
-    return handler(url);
-  }
-  url = resolveSpecialPaths(url);
-  if (url.startsWith('github:')) {
-    url = githubPath(url, 'strudel.json');
-  }
-  if (url.startsWith('local:')) {
-    url = `http://localhost:5432`;
-  }
-  if (url.startsWith('shabda:')) {
-    let [_, path] = url.split('shabda:');
-    url = `https://shabda.ndre.gr/${path}.json?strudel=1`;
-  }
-  if (url.startsWith('shabda/speech')) {
-    let [_, path] = url.split('shabda/speech');
-    path = path.startsWith('/') ? path.substring(1) : path;
-    let [params, words] = path.split(':');
-    let gender = 'f';
-    let language = 'en-GB';
-    if (params) {
-      [language, gender] = params.split('/');
-    }
-    url = `https://shabda.ndre.gr/speech/${words}.json?gender=${gender}&language=${language}&strudel=1'`;
-  }
-  if (typeof fetch !== 'function') {
-    // not a browser
-    return;
-  }
-  const base = url.split('/').slice(0, -1).join('/');
-  if (typeof fetch === 'undefined') {
-    // skip fetch when in node / testing
-    return;
-  }
-  const json = await fetch(url)
-    .then((res) => res.json())
-    .catch((error) => {
-      console.error(error);
-      throw new Error(`error loading "${url}"`);
-    });
-  return [json, json._base || base];
-}
-
 /**
  * Loads a collection of samples to use with `s`
  * @example
@@ -246,16 +217,61 @@ export async function fetchSampleMap(url) {
 
 export const samples = async (sampleMap, baseUrl = sampleMap._base || '', options = {}) => {
   if (typeof sampleMap === 'string') {
-    const [json, base] = await fetchSampleMap(sampleMap);
-    return samples(json, baseUrl || base, options);
+    // check if custom prefix handler
+    const handler = getSamplesPrefixHandler(sampleMap);
+    if (handler) {
+      return handler(sampleMap);
+    }
+    sampleMap = resolveSpecialPaths(sampleMap);
+    if (sampleMap.startsWith('github:')) {
+      sampleMap = githubPath(sampleMap, 'strudel.json');
+    }
+    if (sampleMap.startsWith('local:')) {
+      sampleMap = `http://localhost:5432`;
+    }
+    if (sampleMap.startsWith('shabda:')) {
+      let [_, path] = sampleMap.split('shabda:');
+      sampleMap = `https://shabda.ndre.gr/${path}.json?strudel=1`;
+    }
+    if (sampleMap.startsWith('shabda/speech')) {
+      let [_, path] = sampleMap.split('shabda/speech');
+      path = path.startsWith('/') ? path.substring(1) : path;
+      let [params, words] = path.split(':');
+      let gender = 'f';
+      let language = 'en-GB';
+      if (params) {
+        [language, gender] = params.split('/');
+      }
+      sampleMap = `https://shabda.ndre.gr/speech/${words}.json?gender=${gender}&language=${language}&strudel=1'`;
+    }
+    if (typeof fetch !== 'function') {
+      // not a browser
+      return;
+    }
+    const base = sampleMap.split('/').slice(0, -1).join('/');
+    if (typeof fetch === 'undefined') {
+      // skip fetch when in node / testing
+      return;
+    }
+    return fetch(sampleMap)
+      .then((res) => res.json())
+      .then((json) => samples(json, baseUrl || json._base || base, options))
+      .catch((error) => {
+        console.error(error);
+        throw new Error(`error loading "${sampleMap}"`);
+      });
   }
   const { prebake, tag } = options;
-
   processSampleMap(
     sampleMap,
-    (key, bank) => {
-      registerSampleSource(key, bank, { baseUrl, prebake, tag });
-    },
+    (key, bank) =>
+      registerSound(key, (t, hapValue, onended) => onTriggerSample(t, hapValue, onended, bank), {
+        type: 'sample',
+        samples: bank,
+        baseUrl,
+        prebake,
+        tag,
+      }),
     baseUrl,
   );
 };
@@ -344,21 +360,4 @@ export async function onTriggerSample(t, value, onended, bank, resolveUrl) {
   }
 
   return handle;
-}
-
-function registerSample(key, bank, params) {
-  registerSound(key, (t, hapValue, onended) => onTriggerSample(t, hapValue, onended, bank), {
-    type: 'sample',
-    samples: bank,
-    ...params,
-  });
-}
-
-export function registerSampleSource(key, bank, params) {
-  const isWavetable = key.startsWith('wt_');
-  if (isWavetable) {
-    registerWaveTable(key, bank, params);
-  } else {
-    registerSample(key, bank, params);
-  }
 }

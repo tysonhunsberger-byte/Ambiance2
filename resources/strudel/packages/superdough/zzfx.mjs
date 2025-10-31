@@ -1,7 +1,6 @@
 //import { ZZFX } from 'zzfx';
 import { midiToFreq, noteToMidi } from './util.mjs';
-import { registerSound } from './superdough.mjs';
-import { getAudioContext } from './audioContext.mjs';
+import { registerSound, getAudioContext } from './superdough.mjs';
 import { buildSamples } from './zzfx_fork.mjs';
 
 export const getZZFX = (value, t) => {

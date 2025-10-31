@@ -59,14 +59,6 @@ Furthermore, strudel also loads instrument samples from [VCSL](https://github.co
 
 To see which sample names are available, open the `sounds` tab in the [REPL](https://strudel.cc/).
 
-You can also create custom aliases for existing sounds using the `soundAlias` function:
-
-<MiniRepl
-  client:idle
-  tune={`soundAlias("RolandTR808_bd", "kick")
-s("kick")`}
-/>
-
 Note that only the sample maps (mapping names to URLs) are loaded initially, while the audio samples themselves are not loaded until they are actually played.
 This behaviour of loading things only when they are needed is also called `lazy loading`.
 While it saves resources, it can also lead to sounds not being audible the first time they are triggered, because the sound is still loading.
@@ -381,7 +373,7 @@ Sampler effects are functions that can be used to change the behaviour of sample
 
 ### scrub
 
-<JsDoc client:idle name="Pattern.scrub" h={0} />
+<JsDoc client:idle name="Pattern.scrub" h={0} />{' '}
 
 ### speed
 

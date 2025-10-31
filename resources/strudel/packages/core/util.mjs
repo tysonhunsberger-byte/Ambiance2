@@ -8,12 +8,12 @@ import { logger } from './logger.mjs';
 
 // returns true if the given string is a note
 export const isNoteWithOctave = (name) => /^[a-gA-G][#bs]*[0-9]$/.test(name);
-export const isNote = (name) => /^[a-gA-G][#bsf]*-?[0-9]?$/.test(name);
+export const isNote = (name) => /^[a-gA-G][#bsf]*[0-9]?$/.test(name);
 export const tokenizeNote = (note) => {
   if (typeof note !== 'string') {
     return [];
   }
-  const [pc, acc = '', oct] = note.match(/^([a-gA-G])([#bsf]*)(-?[0-9]*)$/)?.slice(1) || [];
+  const [pc, acc = '', oct] = note.match(/^([a-gA-G])([#bsf]*)([0-9]*)$/)?.slice(1) || [];
   if (!pc) {
     return [];
   }

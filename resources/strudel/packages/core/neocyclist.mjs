@@ -38,7 +38,8 @@ export class NeoCyclist {
       if (this.started === false) {
         return;
       }
-      const haps = this.pattern.queryArc(begin, end, { _cps: this.cps, cyclist: 'neocyclist' });
+
+      const haps = this.pattern.queryArc(begin, end, { _cps: this.cps });
       haps.forEach((hap) => {
         if (hap.hasOnset()) {
           const timeUntilTrigger = cycleToSeconds(hap.whole.begin - this.cycle, this.cps);

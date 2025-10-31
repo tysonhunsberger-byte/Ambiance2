@@ -1,0 +1,50 @@
+    def _send_midi_note(self, note: int, velocity: float) -> None:
+        import logging
+        with self._lock:
+            if self.host is None or self._plugin_id is None:
+                raise CarlaHostError("No plugin hosted")
+            if not self._supports_midi:
+                raise CarlaHostError("Hosted plugin does not accept MIDI input")
+            if not self._midi_routed:
+                logging.info("🎹 MIDI not routed, calling _ensure_midi_routing()")
+                self._ensure_midi_routing()
+            if not self._audio_routed:
+                logging.warning("⚠️ Audio not routed! Calling _ensure_audio_routing()")
+                self._ensure_audio_routing()
+
+            note = int(note)
+            vel = max(0.0, min(1.0, float(velocity)))
+            value = int(round(vel * 127.0))
+            value = max(0, min(127, value))
+
+            logging.info(f"🎹 Sending MIDI: note={note} (C4=60), velocity={value}, audio_routed={self._audio_routed}, midi_routed={self._midi_routed}")
+            self.host.send_midi_note(self._plugin_id, 0, note, value)
+            logging.info(f"✓ MIDI sent successfully for note {note}")
+
+            # Give engine time to process the MIDI action to avoid assertion failures
+            # "pData->nextAction.opcode == kEnginePostActionNull"
+            import time
+            time.sleep(0.002)  # 2ms delay
+            try:
+                self.host.engine_idle()
+            except Exception:
+                pass  # Ignore idle errors
+
+    def note_on(self, note: int, velocity: float = 0.8) -> None:
+        with self._lock:
+            self._cancel_note_timer(note)
+        self._send_midi_note(note, velocity)
+
+    def note_off(self, note: int) -> None:
+        with self._lock:
+            self._cancel_note_timer(note)
+        try:
+            self._send_midi_note(note, 0.0)
+        except CarlaHostError:
+            pass
+
+    def play_note(self, note: int, velocity: float = 0.8, duration: float = 1.0) -> None:
+        self.note_on(note, velocity)
+        if duration <= 0:
+            return
+        timer = threading.Timer(duration, lambda: self.note_off(note))

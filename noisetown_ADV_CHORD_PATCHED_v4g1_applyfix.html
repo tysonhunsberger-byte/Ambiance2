@@ -365,14 +365,21 @@ body.theme-98 .mod-hdr .carat{ color:#fff; opacity:.95; }
 
 /* Buttons */
 body.theme-98 .btn{
-  background:#c0c0c0; color:#000; border-radius:0;
-  border:2px solid; border-color:#fff #7b7b7b #7b7b7b #fff;
-  box-shadow: inset -1px -1px 0 #000, inset 1px 1px 0 #dfdfdf;
-  padding:2px 8px; line-height:1.1;
+  background: #c0c0c0;
+  color: #222222;
+  border-radius: 0;
+  border: 1px solid;
+  border-color: #ffffff #808080 #808080 #ffffff;
+  box-shadow: inset -1px -1px #0a0a0a, inset 1px 1px #ffffff,
+              inset -2px -2px #808080, inset 2px 2px #dfdfdf;
+  padding: 0 12px;
+  min-height: 23px;
+  min-width: 75px;
 }
 body.theme-98 .btn:active{
-  border-color:#7b7b7b #fff #fff #7b7b7b;
-  box-shadow: inset 1px 1px 0 #000, inset -1px -1px 0 #dfdfdf;
+  border-color: #808080 #ffffff #ffffff #808080;
+  box-shadow: inset -1px -1px #ffffff, inset 1px 1px #0a0a0a,
+              inset -2px -2px #dfdfdf, inset 2px 2px #808080;
 }
 
 /* Checkboxes & radios */
@@ -404,16 +411,19 @@ body.theme-98 select, body.theme-98 input[type="number"], body.theme-98 input[ty
 /* Sliders */
 body.theme-98 input[type="range"]{
   -webkit-appearance:none; appearance:none; height:16px; background:#c0c0c0;
-  border:2px solid; border-color:#fff #7b7b7b #7b7b7b #fff;
+  border: 1px solid;
+  border-color: #ffffff #808080 #808080 #ffffff;
 }
 body.theme-98 input[type="range"]::-webkit-slider-runnable-track{
   height:12px; background:#c0c0c0;
 }
 body.theme-98 input[type="range"]::-webkit-slider-thumb{
   -webkit-appearance:none; width:16px; height:16px; margin-top:-2px;
-  background:#c0c0c0; border:2px solid; border-radius:0;
-  border-color:#7b7b7b #fff #fff #7b7b7b;
-  box-shadow: inset -1px -1px 0 #000, inset 1px 1px 0 #dfdfdf;
+  background: #dfdfdf;
+  border: 1px solid;
+  border-radius:0;
+  border-color: #ffffff #808080 #808080 #ffffff;
+  box-shadow: inset -1px -1px #0a0a0a, inset 1px 1px #ffffff;
 }
 
 /* Canvases */
@@ -461,12 +471,21 @@ body.theme-xp .mod-hdr .name,
 body.theme-xp .mod-hdr .carat{ color:#fff; }
 body.theme-xp .mod-body{ background:linear-gradient(#f9fbff,#e7f0ff); }
 body.theme-xp .btn{
-  background: linear-gradient(#f7faff, #d4e3ff); color:#123169; border:1px solid #6e8ed1; border-radius:6px;
-  box-shadow: 0 1px 0 rgba(255,255,255,.85) inset, 0 1px 2px rgba(21,47,120,.18);
-  padding:4px 10px;
+  background: linear-gradient(180deg, #ffffff 0%, #ece9d8 86%, #d8d0c4 100%);
+  color: #000000;
+  border: 1px solid #003c74;
+  border-radius: 3px;
+  padding: 4px 12px;
+  min-height: 23px;
+  min-width: 75px;
 }
-body.theme-xp .btn:hover{ background: linear-gradient(#ffffff, #dcebff); }
-body.theme-xp .btn:active{ background: linear-gradient(#cddfff, #b7d0fb); color:#0a2c66; box-shadow: inset 0 1px 2px rgba(0,0,0,.18); }
+body.theme-xp .btn:hover{
+  box-shadow: inset -1px 1px #fff0cf, inset 1px 2px #fdd889,
+              inset -2px 2px #fbc761, inset 2px -2px #e5a01a;
+}
+body.theme-xp .btn:active{
+  background: linear-gradient(180deg, #cdc2c3 0%, #e3e3db 8%, #e5e5de 94%, #f2f2f1 100%);
+}
 
 /* Checkboxes & radios */
 body.theme-xp input[type="checkbox"], body.theme-xp input[type="radio"]{
@@ -519,28 +538,48 @@ body.theme-xp{ background-image: none !important; }
 </style>
 
 <style id="theme-fixes-v4">
-.style-panel{background:#f6f6f6 !important; color:#111 !important; border:1px solid #8aa8d8 !important;}
-.style-panel input,.style-panel select,.style-panel textarea{background:#fff !important; color:#000 !important; border:1px solid #7b7b7b !important;}
-body.theme-xp, body.theme-xp #app, body.theme-xp #main, body.theme-xp .workspace{
-  background: linear-gradient(#eaf2ff, #d6e6ff) !important;
-  color: var(--text,#000);
+/* Ensure theme colors apply correctly */
+body.theme-98 #app,
+body.theme-98 #main{
+  background: #c0c0c0 !important;
+  color: #000 !important;
 }
-body.theme-98, body.theme-98 #app, body.theme-98 #main, body.theme-98 .workspace{
-  background: #008080 !important; color: var(--text,#000);
+
+body.theme-xp #app,
+body.theme-xp #main{
+  background: #ece9d8 !important;
+  color: #000 !important;
 }
-body:not(.theme-xp):not(.theme-98),
-body:not(.theme-xp):not(.theme-98) #app,
-body:not(.theme-xp):not(.theme-98) #main,
-body:not(.theme-xp):not(.theme-98) .workspace{
-  background: var(--bg, #1b1b1b) !important;
+
+body.theme-98 .mod-body{
+  background: #c0c0c0 !important;
+  color: #000 !important;
 }
-body.theme-xp{--bg:#dfe8f6;--panel:#e9f0fb;--card:#f6f9ff;--text:#000;--muted:#333;--accent:#3a6ea5;--select:#fff;--select-border:#8aa8d8;}
-body.theme-98{--bg:#008080;--panel:#c0c0c0;--card:#dfdfdf;--text:#000;--muted:#111;--accent:#0000aa;--select:#fff;--select-border:#7b7b7b;}
-body.theme-xp  .card, body.theme-xp  .stream, body.theme-xp  .mod-body,
-body.theme-98 .card, body.theme-98 .stream, body.theme-98 .mod-body{
-  background: var(--card,#f6f9ff) !important; color: var(--text,#000) !important;
+
+body.theme-xp .mod-body{
+  background: #ece9d8 !important;
+  color: #000 !important;
 }
-body.theme-98 select, body.theme-xp select{background:#fff; color:#000; border:1px solid var(--select-border,#7b7b7b);}
+
+/* Ensure all text is visible */
+body.theme-98 label, body.theme-98 .title, body.theme-98 span, body.theme-98 div{
+  color: #000 !important;
+}
+
+body.theme-xp label, body.theme-xp .title, body.theme-xp span, body.theme-xp div{
+  color: #000 !important;
+}
+
+/* Fix select dropdowns */
+body.theme-98 select, body.theme-98 select option{
+  background: #fff !important;
+  color: #000 !important;
+}
+
+body.theme-xp select, body.theme-xp select option{
+  background: #fff !important;
+  color: #000 !important;
+}
 </style></head>
 <body>
 <div id="app">

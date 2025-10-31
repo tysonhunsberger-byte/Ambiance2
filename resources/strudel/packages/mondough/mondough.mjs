@@ -5,7 +5,7 @@ import {
   slow,
   seq,
   stepcat,
-  replicate,
+  extend,
   expand,
   pace,
   chooseIn,
@@ -36,7 +36,7 @@ lib.square = (...args) => stepcat(...args).setSteps(1);
 lib.angle = (...args) => stepcat(...args).pace(1);
 lib['*'] = fast;
 lib['/'] = slow;
-lib['!'] = replicate;
+lib['!'] = extend;
 lib['@'] = expand;
 lib['%'] = pace;
 lib['?'] = degradeBy; // todo: default 0.5 not working..
@@ -85,7 +85,7 @@ function evaluator(node, scope) {
   let pat;
   if (type === 'plain' && typeof variable !== 'undefined') {
     // some function names are not patternable, so we skip reification here
-    if (['!', 'extend', '@', 'expand', 'square', 'angle', 'all', 'setcpm', 'setcps'].includes(value)) {
+    if (['!', 'extend', '@', 'expand', 'square', 'angle'].includes(value)) {
       return variable;
     }
     pat = reify(variable);
@@ -108,7 +108,7 @@ export function mondo(code, offset = 0) {
   return pat.markcss('color: var(--caret,--foreground);text-decoration:underline');
 }
 
-export let getLocations = (code, offset) => runner.parser.get_locations(code, offset);
+let getLocations = (code, offset) => runner.parser.get_locations(code, offset);
 
 export const mondi = (str, offset) => {
   const code = `[${str}]`;

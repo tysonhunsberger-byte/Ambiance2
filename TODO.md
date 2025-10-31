@@ -1,3 +1,9 @@
 - Integrate Strudel-style pattern language into audio engine (parser, scheduler, UI).  See `docs/strudel_integration.md` for current build and embedding steps.
 - Prototype SuperCollider bridge so tone/noise controls can drive external synthdefs via OSC.
 - Keep `docs/synthesis_getting_started.md` up to date with beginner-friendly progress notes.
+- Package a `pyo` wheel compatible with Python 3.14 so the desktop engine plays back Strudel patterns.
+- ✅ FIXED: Strudel offline docs navigation now works properly. The StrudelStaticServer now:
+  - Serves local directory routes (e.g., `/learn/`, `/workshop/getting-started/`) without redirecting to remote site
+  - Applies proper base URL and asset path rewriting to all index.html files
+  - Fixed duplicate StrudelWebPage initialization that was causing base URL issues
+  - Updated AGENTS.md to reflect correct directory structure (`resources/strudel/dist`)

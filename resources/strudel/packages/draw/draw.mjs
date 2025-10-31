@@ -84,17 +84,8 @@ Pattern.prototype.onPaint = function (painter) {
       state.controls.painters = [];
     }
     state.controls.painters.push(painter);
-    return state;
   });
 };
-
-// TODO - Why isn't this pure deep copy not working?
-// Pattern.prototype.onPaint = function (painter) {
-//   return this.withState((state) => {
-//     const painters = state.controls.painters ? [...state.controls.painters, painter] : [painter];
-//     return new State(state.span, { ...state.controls, painters });
-//   });
-// };
 
 Pattern.prototype.getPainters = function () {
   let painters = [];

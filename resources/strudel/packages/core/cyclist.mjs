@@ -57,7 +57,7 @@ export class Cyclist {
           }
 
           // query the pattern for events
-          const haps = this.pattern.queryArc(begin, end, { _cps: this.cps, cyclist: 'cyclist' });
+          const haps = this.pattern.queryArc(begin, end, { _cps: this.cps });
 
           haps.forEach((hap) => {
             if (hap.hasOnset()) {

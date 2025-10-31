@@ -27,9 +27,9 @@
 ### HTTP Server (`src/ambiance/server.py`)
 - Serves `noisetown_ADV_CHORD_PATCHED_v4g1_applyfix.html` at `http://127.0.0.1:8000/`
 - Endpoints:
-  - `POST /api/render` – Accepts JSON config, returns base64 WAV data URL
-  - `GET /api/registry` – Lists all registered sources/effects
-  - Plugin rack endpoints for VST management
+- `POST /api/render` – Accepts JSON config, returns base64 WAV data URL
+- `GET /api/registry` – Lists all registered sources/effects
+- Plugin rack endpoints for VST management
 - Uses `ThreadingMixIn` for concurrent requests
 
 ### CLI Renderer (`src/ambiance/cli.py`)
@@ -76,6 +76,31 @@
 - **Live VST Host**: Carla integration with parameter control via `/api/carla_host/...`
 - **A/B Lanes**: Each stream has independent A/B sample slots with crossfade
 
+### Strudel Static Server (Qt)
+- The Qt shell launches `StrudelStaticServer` (see `ambiance_qt_improved.py`) which serves the Strudel site from `resources/strudel/dist`.
+- Hashed asset URLs in `index.html` are automatically rewritten to match locally available bundle files.
+- Missing assets trigger fallback to remote CDN or best-match local alternatives.
+- Directory route handling: The server now properly serves `index.html` for directory routes (e.g., `/learn`, `/tutorial`) to prevent navigation crashes.
+- A lightweight CSS override is injected to keep the interface dark against the desktop chrome; update it if upstream styling changes.
+- When upgrading Strudel, refresh `resources/strudel/dist/index.html` and the `_astro` bundle before relaunching the app.
+
+**PyQtWebEngine Known Issues:**
+- Windows DLL dependency errors: "DLL load failed while importing QtWebEngineWidgets"
+  - Run `fix_pyqtwebengine.bat` to attempt automatic repair
+  - OR use Python 3.10 instead of 3.14 (more stable with PyQt5)
+  - OR install Visual C++ Redistributables: https://aka.ms/vs/17/release/vc_redist.x64.exe
+- If PyQtWebEngine unavailable, Strudel mode shows an error message with the specific import failure
+- The rest of the application works normally without PyQtWebEngine
+
+**Strudel Crash Debugging:**
+- The StrudelWebPage class includes comprehensive crash detection:
+  - `renderProcessTerminated` signal handler logs crash type and exit code
+  - `javaScriptConsoleMessage` captures all JavaScript errors before crash
+  - Detailed lifecycle logging tracks every step of Strudel activation
+- Check `startup_error.log` for crash details including:
+  - Crash status (Normal/Abnormal/Crashed/Killed)
+  - JavaScript errors with source file and line numbers
+  - Qt WebEngine URL being loaded when crash occurred
 ## JUCE Host (`cpp/juce_host/`)
 
 **Build**:

@@ -51,11 +51,6 @@
   size-adjust: 90%;
 }
 @font-face {
-  font-family: 'tic80';
-  src: url('/fonts/tic80/tic-80-wide-font.otf');
-  size-adjust: 60%;
-}
-@font-face {
   font-family: 'mode7';
   src: url('/fonts/mode7/MODE7GX3.TTF');
   size-adjust: 82%;

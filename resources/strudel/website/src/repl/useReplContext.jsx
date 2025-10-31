@@ -37,15 +37,24 @@ import './Repl.css';
 import { setInterval, clearInterval } from 'worker-timers';
 import { getMetadata } from '../metadata_parser';
 
-const { latestCode, maxPolyphony, audioDeviceName, multiChannelOrbits } = settingsMap.get();
-let modulesLoading, presets, drawContext, clearCanvas, audioReady;
+const {
+  latestCode,
+  maxPolyphony,
+  audioDeviceName,
+  multiChannelOrbits,
+  audioEngineTarget: initialAudioTarget,
+} = settingsMap.get();
+let modulesLoading, presets, drawContext, clearCanvas;
+let audioReady = Promise.resolve(true);
 
 if (typeof window !== 'undefined') {
-  audioReady = initAudioOnFirstClick({
-    maxPolyphony,
-    audioDeviceName,
-    multiChannelOrbits: parseBoolean(multiChannelOrbits),
-  });
+  if ((initialAudioTarget ?? audioEngineTargets.webaudio) !== audioEngineTargets.osc) {
+    audioReady = initAudioOnFirstClick({
+      maxPolyphony,
+      audioDeviceName,
+      multiChannelOrbits: parseBoolean(multiChannelOrbits),
+    });
+  }
   modulesLoading = loadModules();
   presets = prebake();
   drawContext = getDrawContext();

@@ -1847,27 +1847,6 @@ exports[`runs examples > example "chop" example index 0 1`] = `
 ]
 `;
 
-exports[`runs examples > example "chorus" example index 0 1`] = `
-[
-  "[ 0/1 → 1/4 | note:d s:sawtooth chorus:0.5 ]",
-  "[ 1/4 → 1/2 | note:d s:sawtooth chorus:0.5 ]",
-  "[ 1/2 → 3/4 | note:a# s:sawtooth chorus:0.5 ]",
-  "[ 3/4 → 1/1 | note:a s:sawtooth chorus:0.5 ]",
-  "[ 1/1 → 5/4 | note:d s:sawtooth chorus:0.5 ]",
-  "[ 5/4 → 3/2 | note:d s:sawtooth chorus:0.5 ]",
-  "[ 3/2 → 7/4 | note:a# s:sawtooth chorus:0.5 ]",
-  "[ 7/4 → 2/1 | note:a s:sawtooth chorus:0.5 ]",
-  "[ 2/1 → 9/4 | note:d s:sawtooth chorus:0.5 ]",
-  "[ 9/4 → 5/2 | note:d s:sawtooth chorus:0.5 ]",
-  "[ 5/2 → 11/4 | note:a# s:sawtooth chorus:0.5 ]",
-  "[ 11/4 → 3/1 | note:a s:sawtooth chorus:0.5 ]",
-  "[ 3/1 → 13/4 | note:d s:sawtooth chorus:0.5 ]",
-  "[ 13/4 → 7/2 | note:d s:sawtooth chorus:0.5 ]",
-  "[ 7/2 → 15/4 | note:a# s:sawtooth chorus:0.5 ]",
-  "[ 15/4 → 4/1 | note:a s:sawtooth chorus:0.5 ]",
-]
-`;
-
 exports[`runs examples > example "chunk" example index 0 1`] = `
 [
   "[ 0/1 → 1/4 | note:A4 ]",
@@ -2606,52 +2585,6 @@ exports[`runs examples > example "delayfeedback" example index 0 1`] = `
 ]
 `;
 
-exports[`runs examples > example "delayfeedback" example index 0 2`] = `
-[
-  "[ 0/1 → 1/1 | s:bd delay:0.25 delayfeedback:0.25 ]",
-  "[ 1/1 → 2/1 | s:bd delay:0.25 delayfeedback:0.5 ]",
-  "[ 2/1 → 3/1 | s:bd delay:0.25 delayfeedback:0.75 ]",
-  "[ 3/1 → 4/1 | s:bd delay:0.25 delayfeedback:1 ]",
-]
-`;
-
-exports[`runs examples > example "delayspeed" example index 0 1`] = `
-[
-  "[ 0/1 → 1/8 | note:d s:sawtooth delay:0.8 delaytime:0.5 delayspeed:2 ]",
-  "[ 1/8 → 1/4 | note:d s:sawtooth delay:0.8 delaytime:0.5 delayspeed:2 ]",
-  "[ 1/4 → 3/8 | note:a# s:sawtooth delay:0.8 delaytime:0.5 delayspeed:2 ]",
-  "[ 3/8 → 1/2 | note:a s:sawtooth delay:0.8 delaytime:0.5 delayspeed:2 ]",
-  "[ 1/2 → 5/8 | note:d s:sawtooth delay:0.8 delaytime:0.5 delayspeed:2 ]",
-  "[ 5/8 → 3/4 | note:d s:sawtooth delay:0.8 delaytime:0.5 delayspeed:2 ]",
-  "[ 3/4 → 7/8 | note:a# s:sawtooth delay:0.8 delaytime:0.5 delayspeed:2 ]",
-  "[ 7/8 → 1/1 | note:a s:sawtooth delay:0.8 delaytime:0.5 delayspeed:2 ]",
-  "[ 1/1 → 9/8 | note:d s:sawtooth delay:0.8 delaytime:0.5 delayspeed:0.5 ]",
-  "[ 9/8 → 5/4 | note:d s:sawtooth delay:0.8 delaytime:0.5 delayspeed:0.5 ]",
-  "[ 5/4 → 11/8 | note:a# s:sawtooth delay:0.8 delaytime:0.5 delayspeed:0.5 ]",
-  "[ 11/8 → 3/2 | note:a s:sawtooth delay:0.8 delaytime:0.5 delayspeed:0.5 ]",
-  "[ 3/2 → 13/8 | note:d s:sawtooth delay:0.8 delaytime:0.5 delayspeed:0.5 ]",
-  "[ 13/8 → 7/4 | note:d s:sawtooth delay:0.8 delaytime:0.5 delayspeed:0.5 ]",
-  "[ 7/4 → 15/8 | note:a# s:sawtooth delay:0.8 delaytime:0.5 delayspeed:0.5 ]",
-  "[ 15/8 → 2/1 | note:a s:sawtooth delay:0.8 delaytime:0.5 delayspeed:0.5 ]",
-  "[ 2/1 → 17/8 | note:d s:sawtooth delay:0.8 delaytime:0.5 delayspeed:-1 ]",
-  "[ 17/8 → 9/4 | note:d s:sawtooth delay:0.8 delaytime:0.5 delayspeed:-1 ]",
-  "[ 9/4 → 19/8 | note:a# s:sawtooth delay:0.8 delaytime:0.5 delayspeed:-1 ]",
-  "[ 19/8 → 5/2 | note:a s:sawtooth delay:0.8 delaytime:0.5 delayspeed:-1 ]",
-  "[ 5/2 → 21/8 | note:d s:sawtooth delay:0.8 delaytime:0.5 delayspeed:-1 ]",
-  "[ 21/8 → 11/4 | note:d s:sawtooth delay:0.8 delaytime:0.5 delayspeed:-1 ]",
-  "[ 11/4 → 23/8 | note:a# s:sawtooth delay:0.8 delaytime:0.5 delayspeed:-1 ]",
-  "[ 23/8 → 3/1 | note:a s:sawtooth delay:0.8 delaytime:0.5 delayspeed:-1 ]",
-  "[ 3/1 → 25/8 | note:d s:sawtooth delay:0.8 delaytime:0.5 delayspeed:-2 ]",
-  "[ 25/8 → 13/4 | note:d s:sawtooth delay:0.8 delaytime:0.5 delayspeed:-2 ]",
-  "[ 13/4 → 27/8 | note:a# s:sawtooth delay:0.8 delaytime:0.5 delayspeed:-2 ]",
-  "[ 27/8 → 7/2 | note:a s:sawtooth delay:0.8 delaytime:0.5 delayspeed:-2 ]",
-  "[ 7/2 → 29/8 | note:d s:sawtooth delay:0.8 delaytime:0.5 delayspeed:-2 ]",
-  "[ 29/8 → 15/4 | note:d s:sawtooth delay:0.8 delaytime:0.5 delayspeed:-2 ]",
-  "[ 15/4 → 31/8 | note:a# s:sawtooth delay:0.8 delaytime:0.5 delayspeed:-2 ]",
-  "[ 31/8 → 4/1 | note:a s:sawtooth delay:0.8 delaytime:0.5 delayspeed:-2 ]",
-]
-`;
-
 exports[`runs examples > example "delaysync" example index 0 1`] = `
 [
   "[ 0/1 → 1/2 | s:bd delay:0.25 delaysync:0.125 ]",
@@ -2662,6 +2595,19 @@ exports[`runs examples > example "delaysync" example index 0 1`] = `
   "[ 5/2 → 3/1 | s:bd delay:0.25 delaysync:0.375 ]",
   "[ 3/1 → 7/2 | s:bd delay:0.25 delaysync:0.625 ]",
   "[ 7/2 → 4/1 | s:bd delay:0.25 delaysync:0.625 ]",
+]
+`;
+
+exports[`runs examples > example "delaytime" example index 0 1`] = `
+[
+  "[ 0/1 → 1/2 | s:bd delay:0.25 delaytime:0.125 ]",
+  "[ 1/2 → 1/1 | s:bd delay:0.25 delaytime:0.125 ]",
+  "[ 1/1 → 3/2 | s:bd delay:0.25 delaytime:0.25 ]",
+  "[ 3/2 → 2/1 | s:bd delay:0.25 delaytime:0.25 ]",
+  "[ 2/1 → 5/2 | s:bd delay:0.25 delaytime:0.5 ]",
+  "[ 5/2 → 3/1 | s:bd delay:0.25 delaytime:0.5 ]",
+  "[ 3/1 → 7/2 | s:bd delay:0.25 delaytime:1 ]",
+  "[ 7/2 → 4/1 | s:bd delay:0.25 delaytime:1 ]",
 ]
 `;
 
@@ -2829,116 +2775,28 @@ exports[`runs examples > example "distort" example index 1 1`] = `
 ]
 `;
 
-exports[`runs examples > example "distort" example index 2 1`] = `
-[
-  "[ 0/1 → 1/4 | s:bd n:4 bank:tr808 distort:3 distortvol:0.5 distorttype:diode ]",
-  "[ 1/4 → 1/2 | s:bd n:4 bank:tr808 distort:3 distortvol:0.5 distorttype:diode ]",
-  "[ 1/2 → 3/4 | s:bd n:4 bank:tr808 distort:3 distortvol:0.5 distorttype:diode ]",
-  "[ 3/4 → 1/1 | s:bd n:4 bank:tr808 distort:3 distortvol:0.5 distorttype:diode ]",
-  "[ 1/1 → 5/4 | s:bd n:4 bank:tr808 distort:3 distortvol:0.5 distorttype:diode ]",
-  "[ 5/4 → 3/2 | s:bd n:4 bank:tr808 distort:3 distortvol:0.5 distorttype:diode ]",
-  "[ 3/2 → 7/4 | s:bd n:4 bank:tr808 distort:3 distortvol:0.5 distorttype:diode ]",
-  "[ 7/4 → 2/1 | s:bd n:4 bank:tr808 distort:3 distortvol:0.5 distorttype:diode ]",
-  "[ 2/1 → 9/4 | s:bd n:4 bank:tr808 distort:3 distortvol:0.5 distorttype:diode ]",
-  "[ 9/4 → 5/2 | s:bd n:4 bank:tr808 distort:3 distortvol:0.5 distorttype:diode ]",
-  "[ 5/2 → 11/4 | s:bd n:4 bank:tr808 distort:3 distortvol:0.5 distorttype:diode ]",
-  "[ 11/4 → 3/1 | s:bd n:4 bank:tr808 distort:3 distortvol:0.5 distorttype:diode ]",
-  "[ 3/1 → 13/4 | s:bd n:4 bank:tr808 distort:3 distortvol:0.5 distorttype:diode ]",
-  "[ 13/4 → 7/2 | s:bd n:4 bank:tr808 distort:3 distortvol:0.5 distorttype:diode ]",
-  "[ 7/2 → 15/4 | s:bd n:4 bank:tr808 distort:3 distortvol:0.5 distorttype:diode ]",
-  "[ 15/4 → 4/1 | s:bd n:4 bank:tr808 distort:3 distortvol:0.5 distorttype:diode ]",
-]
-`;
-
-exports[`runs examples > example "distorttype" example index 0 1`] = `
-[
-  "[ 0/1 → 1/4 | s:bd bank:tr909 distort:2 distorttype:0 ]",
-  "[ 1/4 → 1/2 | s:bd bank:tr909 distort:2 distorttype:0 ]",
-  "[ 1/2 → 3/4 | s:bd bank:tr909 distort:2 distorttype:0 ]",
-  "[ 3/4 → 1/1 | s:bd bank:tr909 distort:2 distorttype:0 ]",
-  "[ 1/1 → 5/4 | s:bd bank:tr909 distort:2 distorttype:1 ]",
-  "[ 5/4 → 3/2 | s:bd bank:tr909 distort:2 distorttype:1 ]",
-  "[ 3/2 → 7/4 | s:bd bank:tr909 distort:2 distorttype:1 ]",
-  "[ 7/4 → 2/1 | s:bd bank:tr909 distort:2 distorttype:1 ]",
-  "[ 2/1 → 9/4 | s:bd bank:tr909 distort:2 distorttype:2 ]",
-  "[ 9/4 → 5/2 | s:bd bank:tr909 distort:2 distorttype:2 ]",
-  "[ 5/2 → 11/4 | s:bd bank:tr909 distort:2 distorttype:2 ]",
-  "[ 11/4 → 3/1 | s:bd bank:tr909 distort:2 distorttype:2 ]",
-  "[ 3/1 → 13/4 | s:bd bank:tr909 distort:2 distorttype:0 ]",
-  "[ 13/4 → 7/2 | s:bd bank:tr909 distort:2 distorttype:0 ]",
-  "[ 7/2 → 15/4 | s:bd bank:tr909 distort:2 distorttype:0 ]",
-  "[ 15/4 → 4/1 | s:bd bank:tr909 distort:2 distorttype:0 ]",
-]
-`;
-
-exports[`runs examples > example "distorttype" example index 1 1`] = `
-[
-  "[ (0/1 → 1/2) ⇝ 1/1 | s:sine note:F1 release:1 penv:24 pdecay:0.05 distort:1 distorttype:fold ]",
-  "[ 0/1 ⇜ (1/2 → 1/1) | s:sine note:F1 release:1 penv:24 pdecay:0.05 distort:1 distorttype:fold ]",
-  "[ (1/1 → 3/2) ⇝ 2/1 | s:sine note:F1 release:1 penv:24 pdecay:0.05 distort:4.6367951557040215 distorttype:chebyshev ]",
-  "[ 1/1 ⇜ (3/2 → 2/1) | s:sine note:F1 release:1 penv:24 pdecay:0.05 distort:4.6367951557040215 distorttype:chebyshev ]",
-  "[ (2/1 → 5/2) ⇝ 3/1 | s:sine note:F1 release:1 penv:24 pdecay:0.05 distort:7.716689839959145 distorttype:scurve ]",
-  "[ 2/1 ⇜ (5/2 → 3/1) | s:sine note:F1 release:1 penv:24 pdecay:0.05 distort:7.716689839959145 distorttype:scurve ]",
-  "[ (3/1 → 7/2) ⇝ 4/1 | s:sine note:F1 release:1 penv:24 pdecay:0.05 distort:2.5210237745195627 distorttype:diode ]",
-  "[ 3/1 ⇜ (7/2 → 4/1) | s:sine note:F1 release:1 penv:24 pdecay:0.05 distort:2.5210237745195627 distorttype:diode ]",
-]
-`;
-
-exports[`runs examples > example "distortvol" example index 0 1`] = `
-[
-  "[ 0/1 → 1/4 | s:bd bank:tr909 distort:2 distortvol:0.8 ]",
-  "[ 1/4 → 1/2 | s:bd bank:tr909 distort:2 distortvol:0.8 ]",
-  "[ 1/2 → 3/4 | s:bd bank:tr909 distort:2 distortvol:0.8 ]",
-  "[ 3/4 → 1/1 | s:bd bank:tr909 distort:2 distortvol:0.8 ]",
-  "[ 1/1 → 5/4 | s:bd bank:tr909 distort:2 distortvol:0.8 ]",
-  "[ 5/4 → 3/2 | s:bd bank:tr909 distort:2 distortvol:0.8 ]",
-  "[ 3/2 → 7/4 | s:bd bank:tr909 distort:2 distortvol:0.8 ]",
-  "[ 7/4 → 2/1 | s:bd bank:tr909 distort:2 distortvol:0.8 ]",
-  "[ 2/1 → 9/4 | s:bd bank:tr909 distort:2 distortvol:0.8 ]",
-  "[ 9/4 → 5/2 | s:bd bank:tr909 distort:2 distortvol:0.8 ]",
-  "[ 5/2 → 11/4 | s:bd bank:tr909 distort:2 distortvol:0.8 ]",
-  "[ 11/4 → 3/1 | s:bd bank:tr909 distort:2 distortvol:0.8 ]",
-  "[ 3/1 → 13/4 | s:bd bank:tr909 distort:2 distortvol:0.8 ]",
-  "[ 13/4 → 7/2 | s:bd bank:tr909 distort:2 distortvol:0.8 ]",
-  "[ 7/2 → 15/4 | s:bd bank:tr909 distort:2 distortvol:0.8 ]",
-  "[ 15/4 → 4/1 | s:bd bank:tr909 distort:2 distortvol:0.8 ]",
-]
-`;
-
 exports[`runs examples > example "djf" example index 0 1`] = `
 [
-  "[ 0/1 → 1/8 | note:D3 s:supersaw djf:0.5 ]",
-  "[ 1/8 → 1/4 | note:G4 s:supersaw djf:0.5 ]",
-  "[ 1/4 → 3/8 | note:Bb3 s:supersaw djf:0.5 ]",
-  "[ 3/8 → 1/2 | note:C4 s:supersaw djf:0.5 ]",
-  "[ 1/2 → 5/8 | note:A3 s:supersaw djf:0.5 ]",
-  "[ 5/8 → 3/4 | note:F3 s:supersaw djf:0.5 ]",
-  "[ 3/4 → 7/8 | note:G3 s:supersaw djf:0.5 ]",
-  "[ 7/8 → 1/1 | note:C4 s:supersaw djf:0.5 ]",
-  "[ 1/1 → 9/8 | note:Eb4 s:supersaw djf:0.3 ]",
-  "[ 9/8 → 5/4 | note:G4 s:supersaw djf:0.3 ]",
-  "[ 5/4 → 11/8 | note:A4 s:supersaw djf:0.3 ]",
-  "[ 11/8 → 3/2 | note:F3 s:supersaw djf:0.3 ]",
-  "[ 3/2 → 13/8 | note:F4 s:supersaw djf:0.3 ]",
-  "[ 13/8 → 7/4 | note:D4 s:supersaw djf:0.3 ]",
-  "[ 7/4 → 15/8 | note:G3 s:supersaw djf:0.3 ]",
-  "[ 15/8 → 2/1 | note:F4 s:supersaw djf:0.3 ]",
-  "[ 2/1 → 17/8 | note:Eb5 s:supersaw djf:0.2 ]",
-  "[ 17/8 → 9/4 | note:D5 s:supersaw djf:0.2 ]",
-  "[ 9/4 → 19/8 | note:Bb3 s:supersaw djf:0.2 ]",
-  "[ 19/8 → 5/2 | note:C5 s:supersaw djf:0.2 ]",
-  "[ 5/2 → 21/8 | note:D4 s:supersaw djf:0.2 ]",
-  "[ 21/8 → 11/4 | note:F3 s:supersaw djf:0.2 ]",
-  "[ 11/4 → 23/8 | note:G4 s:supersaw djf:0.2 ]",
-  "[ 23/8 → 3/1 | note:D3 s:supersaw djf:0.2 ]",
-  "[ 3/1 → 25/8 | note:G3 s:supersaw djf:0.75 ]",
-  "[ 25/8 → 13/4 | note:Bb3 s:supersaw djf:0.75 ]",
-  "[ 13/4 → 27/8 | note:Eb5 s:supersaw djf:0.75 ]",
-  "[ 27/8 → 7/2 | note:C4 s:supersaw djf:0.75 ]",
-  "[ 7/2 → 29/8 | note:C4 s:supersaw djf:0.75 ]",
-  "[ 29/8 → 15/4 | note:Eb5 s:supersaw djf:0.75 ]",
-  "[ 15/4 → 31/8 | note:Bb4 s:supersaw djf:0.75 ]",
-  "[ 31/8 → 4/1 | note:A4 s:supersaw djf:0.75 ]",
+  "[ 0/1 → 1/4 | n:0 s:superzow octave:3 djf:0.5 ]",
+  "[ 1/4 → 1/2 | n:3 s:superzow octave:3 djf:0.5 ]",
+  "[ 1/2 → 3/4 | n:7 s:superzow octave:3 djf:0.5 ]",
+  "[ 3/4 → 1/1 | n:10 s:superzow octave:3 djf:0.5 ]",
+  "[ 3/4 → 1/1 | n:24 s:superzow octave:3 djf:0.5 ]",
+  "[ 1/1 → 5/4 | n:0 s:superzow octave:3 djf:0.25 ]",
+  "[ 5/4 → 3/2 | n:3 s:superzow octave:3 djf:0.25 ]",
+  "[ 3/2 → 7/4 | n:7 s:superzow octave:3 djf:0.25 ]",
+  "[ 7/4 → 2/1 | n:10 s:superzow octave:3 djf:0.25 ]",
+  "[ 7/4 → 2/1 | n:24 s:superzow octave:3 djf:0.25 ]",
+  "[ 2/1 → 9/4 | n:0 s:superzow octave:3 djf:0.5 ]",
+  "[ 9/4 → 5/2 | n:3 s:superzow octave:3 djf:0.5 ]",
+  "[ 5/2 → 11/4 | n:7 s:superzow octave:3 djf:0.5 ]",
+  "[ 11/4 → 3/1 | n:10 s:superzow octave:3 djf:0.5 ]",
+  "[ 11/4 → 3/1 | n:24 s:superzow octave:3 djf:0.5 ]",
+  "[ 3/1 → 13/4 | n:0 s:superzow octave:3 djf:0.75 ]",
+  "[ 13/4 → 7/2 | n:3 s:superzow octave:3 djf:0.75 ]",
+  "[ 7/2 → 15/4 | n:7 s:superzow octave:3 djf:0.75 ]",
+  "[ 15/4 → 4/1 | n:10 s:superzow octave:3 djf:0.75 ]",
+  "[ 15/4 → 4/1 | n:24 s:superzow octave:3 djf:0.75 ]",
 ]
 `;
 
@@ -3181,50 +3039,57 @@ exports[`runs examples > example "dry" example index 0 1`] = `
 exports[`runs examples > example "duckattack" example index 0 1`] = `
 [
   "[ 0/1 → 1/16 | s:bd n:4 duckorbit:2 duckattack:0.2 duckdepth:1 ]",
+  "[ 0/1 → 1/8 | note:C3 s:sawtooth delay:0.7 orbit:2 ]",
+  "[ 1/8 → 1/4 | note:D3 s:sawtooth delay:0.7 orbit:2 ]",
   "[ 1/4 → 5/16 | s:bd n:4 duckorbit:2 duckattack:0.2 duckdepth:1 ]",
+  "[ 1/4 → 3/8 | note:Eb3 s:sawtooth delay:0.7 orbit:2 ]",
+  "[ 3/8 → 1/2 | note:F3 s:sawtooth delay:0.7 orbit:2 ]",
   "[ 1/2 → 9/16 | s:bd n:4 duckorbit:2 duckattack:0.2 duckdepth:1 ]",
+  "[ 1/2 → 5/8 | note:G3 s:sawtooth delay:0.7 orbit:2 ]",
+  "[ 5/8 → 3/4 | note:Ab3 s:sawtooth delay:0.7 orbit:2 ]",
   "[ 11/16 → 3/4 | s:bd n:4 duckorbit:2 duckattack:0.2 duckdepth:1 ]",
+  "[ 3/4 → 7/8 | note:Bb3 s:sawtooth delay:0.7 orbit:2 ]",
   "[ 7/8 → 15/16 | s:bd n:4 duckorbit:2 duckattack:0.2 duckdepth:1 ]",
+  "[ 7/8 → 1/1 | note:C4 s:sawtooth delay:0.7 orbit:2 ]",
   "[ 1/1 → 17/16 | s:bd n:4 duckorbit:2 duckattack:0 duckdepth:1 ]",
+  "[ 1/1 → 9/8 | note:C3 s:sawtooth delay:0.7 orbit:2 ]",
+  "[ 9/8 → 5/4 | note:D3 s:sawtooth delay:0.7 orbit:2 ]",
   "[ 5/4 → 21/16 | s:bd n:4 duckorbit:2 duckattack:0 duckdepth:1 ]",
+  "[ 5/4 → 11/8 | note:Eb3 s:sawtooth delay:0.7 orbit:2 ]",
+  "[ 11/8 → 3/2 | note:F3 s:sawtooth delay:0.7 orbit:2 ]",
   "[ 3/2 → 25/16 | s:bd n:4 duckorbit:2 duckattack:0 duckdepth:1 ]",
+  "[ 3/2 → 13/8 | note:G3 s:sawtooth delay:0.7 orbit:2 ]",
+  "[ 13/8 → 7/4 | note:Ab3 s:sawtooth delay:0.7 orbit:2 ]",
   "[ 27/16 → 7/4 | s:bd n:4 duckorbit:2 duckattack:0 duckdepth:1 ]",
+  "[ 7/4 → 15/8 | note:Bb3 s:sawtooth delay:0.7 orbit:2 ]",
   "[ 15/8 → 31/16 | s:bd n:4 duckorbit:2 duckattack:0 duckdepth:1 ]",
+  "[ 15/8 → 2/1 | note:C4 s:sawtooth delay:0.7 orbit:2 ]",
   "[ 2/1 → 33/16 | s:bd n:4 duckorbit:2 duckattack:0.4 duckdepth:1 ]",
+  "[ 2/1 → 17/8 | note:C3 s:sawtooth delay:0.7 orbit:2 ]",
+  "[ 17/8 → 9/4 | note:D3 s:sawtooth delay:0.7 orbit:2 ]",
   "[ 9/4 → 37/16 | s:bd n:4 duckorbit:2 duckattack:0.4 duckdepth:1 ]",
+  "[ 9/4 → 19/8 | note:Eb3 s:sawtooth delay:0.7 orbit:2 ]",
+  "[ 19/8 → 5/2 | note:F3 s:sawtooth delay:0.7 orbit:2 ]",
   "[ 5/2 → 41/16 | s:bd n:4 duckorbit:2 duckattack:0.4 duckdepth:1 ]",
+  "[ 5/2 → 21/8 | note:G3 s:sawtooth delay:0.7 orbit:2 ]",
+  "[ 21/8 → 11/4 | note:Ab3 s:sawtooth delay:0.7 orbit:2 ]",
   "[ 43/16 → 11/4 | s:bd n:4 duckorbit:2 duckattack:0.4 duckdepth:1 ]",
+  "[ 11/4 → 23/8 | note:Bb3 s:sawtooth delay:0.7 orbit:2 ]",
   "[ 23/8 → 47/16 | s:bd n:4 duckorbit:2 duckattack:0.4 duckdepth:1 ]",
+  "[ 23/8 → 3/1 | note:C4 s:sawtooth delay:0.7 orbit:2 ]",
   "[ 3/1 → 49/16 | s:bd n:4 duckorbit:2 duckattack:0.2 duckdepth:1 ]",
+  "[ 3/1 → 25/8 | note:C3 s:sawtooth delay:0.7 orbit:2 ]",
+  "[ 25/8 → 13/4 | note:D3 s:sawtooth delay:0.7 orbit:2 ]",
   "[ 13/4 → 53/16 | s:bd n:4 duckorbit:2 duckattack:0.2 duckdepth:1 ]",
+  "[ 13/4 → 27/8 | note:Eb3 s:sawtooth delay:0.7 orbit:2 ]",
+  "[ 27/8 → 7/2 | note:F3 s:sawtooth delay:0.7 orbit:2 ]",
   "[ 7/2 → 57/16 | s:bd n:4 duckorbit:2 duckattack:0.2 duckdepth:1 ]",
+  "[ 7/2 → 29/8 | note:G3 s:sawtooth delay:0.7 orbit:2 ]",
+  "[ 29/8 → 15/4 | note:Ab3 s:sawtooth delay:0.7 orbit:2 ]",
   "[ 59/16 → 15/4 | s:bd n:4 duckorbit:2 duckattack:0.2 duckdepth:1 ]",
+  "[ 15/4 → 31/8 | note:Bb3 s:sawtooth delay:0.7 orbit:2 ]",
   "[ 31/8 → 63/16 | s:bd n:4 duckorbit:2 duckattack:0.2 duckdepth:1 ]",
-]
-`;
-
-exports[`runs examples > example "duckattack" example index 1 1`] = `
-[
-  "[ 0/1 → 1/16 | s:bd n:4 duckorbit:[2 5] duckattack:[0.4 0.1] ]",
-  "[ 1/4 → 5/16 | s:bd n:4 duckorbit:[2 5] duckattack:[0.4 0.1] ]",
-  "[ 1/2 → 9/16 | s:bd n:4 duckorbit:[2 5] duckattack:[0.4 0.1] ]",
-  "[ 11/16 → 3/4 | s:bd n:4 duckorbit:[2 5] duckattack:[0.4 0.1] ]",
-  "[ 7/8 → 15/16 | s:bd n:4 duckorbit:[2 5] duckattack:[0.4 0.1] ]",
-  "[ 1/1 → 17/16 | s:bd n:4 duckorbit:[2 5] duckattack:[0.4 0.1] ]",
-  "[ 5/4 → 21/16 | s:bd n:4 duckorbit:[2 5] duckattack:[0.4 0.1] ]",
-  "[ 3/2 → 25/16 | s:bd n:4 duckorbit:[2 5] duckattack:[0.4 0.1] ]",
-  "[ 27/16 → 7/4 | s:bd n:4 duckorbit:[2 5] duckattack:[0.4 0.1] ]",
-  "[ 15/8 → 31/16 | s:bd n:4 duckorbit:[2 5] duckattack:[0.4 0.1] ]",
-  "[ 2/1 → 33/16 | s:bd n:4 duckorbit:[2 5] duckattack:[0.4 0.1] ]",
-  "[ 9/4 → 37/16 | s:bd n:4 duckorbit:[2 5] duckattack:[0.4 0.1] ]",
-  "[ 5/2 → 41/16 | s:bd n:4 duckorbit:[2 5] duckattack:[0.4 0.1] ]",
-  "[ 43/16 → 11/4 | s:bd n:4 duckorbit:[2 5] duckattack:[0.4 0.1] ]",
-  "[ 23/8 → 47/16 | s:bd n:4 duckorbit:[2 5] duckattack:[0.4 0.1] ]",
-  "[ 3/1 → 49/16 | s:bd n:4 duckorbit:[2 5] duckattack:[0.4 0.1] ]",
-  "[ 13/4 → 53/16 | s:bd n:4 duckorbit:[2 5] duckattack:[0.4 0.1] ]",
-  "[ 7/2 → 57/16 | s:bd n:4 duckorbit:[2 5] duckattack:[0.4 0.1] ]",
-  "[ 59/16 → 15/4 | s:bd n:4 duckorbit:[2 5] duckattack:[0.4 0.1] ]",
-  "[ 31/8 → 63/16 | s:bd n:4 duckorbit:[2 5] duckattack:[0.4 0.1] ]",
+  "[ 31/8 → 4/1 | note:C4 s:sawtooth delay:0.7 orbit:2 ]",
 ]
 `;
 
@@ -3285,94 +3150,6 @@ exports[`runs examples > example "duckdepth" example index 0 1`] = `
 ]
 `;
 
-exports[`runs examples > example "duckdepth" example index 1 1`] = `
-[
-  "[ 0/1 → 1/16 | s:bd n:4 duckorbit:[2 3] duckattack:0.2 duckdepth:[1 0.5] ]",
-  "[ 1/4 → 5/16 | s:bd n:4 duckorbit:[2 3] duckattack:0.2 duckdepth:[1 0.5] ]",
-  "[ 1/2 → 9/16 | s:bd n:4 duckorbit:[2 3] duckattack:0.2 duckdepth:[1 0.5] ]",
-  "[ 11/16 → 3/4 | s:bd n:4 duckorbit:[2 3] duckattack:0.2 duckdepth:[1 0.5] ]",
-  "[ 7/8 → 15/16 | s:bd n:4 duckorbit:[2 3] duckattack:0.2 duckdepth:[1 0.5] ]",
-  "[ 1/1 → 17/16 | s:bd n:4 duckorbit:[2 3] duckattack:0.2 duckdepth:[1 0.5] ]",
-  "[ 5/4 → 21/16 | s:bd n:4 duckorbit:[2 3] duckattack:0.2 duckdepth:[1 0.5] ]",
-  "[ 3/2 → 25/16 | s:bd n:4 duckorbit:[2 3] duckattack:0.2 duckdepth:[1 0.5] ]",
-  "[ 27/16 → 7/4 | s:bd n:4 duckorbit:[2 3] duckattack:0.2 duckdepth:[1 0.5] ]",
-  "[ 15/8 → 31/16 | s:bd n:4 duckorbit:[2 3] duckattack:0.2 duckdepth:[1 0.5] ]",
-  "[ 2/1 → 33/16 | s:bd n:4 duckorbit:[2 3] duckattack:0.2 duckdepth:[1 0.5] ]",
-  "[ 9/4 → 37/16 | s:bd n:4 duckorbit:[2 3] duckattack:0.2 duckdepth:[1 0.5] ]",
-  "[ 5/2 → 41/16 | s:bd n:4 duckorbit:[2 3] duckattack:0.2 duckdepth:[1 0.5] ]",
-  "[ 43/16 → 11/4 | s:bd n:4 duckorbit:[2 3] duckattack:0.2 duckdepth:[1 0.5] ]",
-  "[ 23/8 → 47/16 | s:bd n:4 duckorbit:[2 3] duckattack:0.2 duckdepth:[1 0.5] ]",
-  "[ 3/1 → 49/16 | s:bd n:4 duckorbit:[2 3] duckattack:0.2 duckdepth:[1 0.5] ]",
-  "[ 13/4 → 53/16 | s:bd n:4 duckorbit:[2 3] duckattack:0.2 duckdepth:[1 0.5] ]",
-  "[ 7/2 → 57/16 | s:bd n:4 duckorbit:[2 3] duckattack:0.2 duckdepth:[1 0.5] ]",
-  "[ 59/16 → 15/4 | s:bd n:4 duckorbit:[2 3] duckattack:0.2 duckdepth:[1 0.5] ]",
-  "[ 31/8 → 63/16 | s:bd n:4 duckorbit:[2 3] duckattack:0.2 duckdepth:[1 0.5] ]",
-]
-`;
-
-exports[`runs examples > example "duckonset" example index 0 1`] = `
-[
-  "[ 0/1 → 1/4 | s:bd duckorbit:2 duckattack:0.3 duckonset:0 postgain:0 ]",
-  "[ 1/4 → 1/2 | s:bd duckorbit:2 duckattack:0.3 duckonset:0 postgain:0 ]",
-  "[ 1/2 → 3/4 | s:bd duckorbit:2 duckattack:0.3 duckonset:0 postgain:0 ]",
-  "[ 3/4 → 1/1 | s:bd duckorbit:2 duckattack:0.3 duckonset:0 postgain:0 ]",
-  "[ 1/1 → 5/4 | s:bd duckorbit:2 duckattack:0.3 duckonset:0 postgain:0 ]",
-  "[ 5/4 → 3/2 | s:bd duckorbit:2 duckattack:0.3 duckonset:0 postgain:0 ]",
-  "[ 3/2 → 7/4 | s:bd duckorbit:2 duckattack:0.3 duckonset:0 postgain:0 ]",
-  "[ 7/4 → 2/1 | s:bd duckorbit:2 duckattack:0.3 duckonset:0 postgain:0 ]",
-  "[ 2/1 → 9/4 | s:bd duckorbit:2 duckattack:0.3 duckonset:0 postgain:0 ]",
-  "[ 9/4 → 5/2 | s:bd duckorbit:2 duckattack:0.3 duckonset:0 postgain:0 ]",
-  "[ 5/2 → 11/4 | s:bd duckorbit:2 duckattack:0.3 duckonset:0 postgain:0 ]",
-  "[ 11/4 → 3/1 | s:bd duckorbit:2 duckattack:0.3 duckonset:0 postgain:0 ]",
-  "[ 3/1 → 13/4 | s:bd duckorbit:2 duckattack:0.3 duckonset:0 postgain:0 ]",
-  "[ 13/4 → 7/2 | s:bd duckorbit:2 duckattack:0.3 duckonset:0 postgain:0 ]",
-  "[ 7/2 → 15/4 | s:bd duckorbit:2 duckattack:0.3 duckonset:0 postgain:0 ]",
-  "[ 15/4 → 4/1 | s:bd duckorbit:2 duckattack:0.3 duckonset:0 postgain:0 ]",
-]
-`;
-
-exports[`runs examples > example "duckonset" example index 1 1`] = `
-[
-  "[ 0/1 → 1/4 | s:bd duckorbit:2 duckattack:0.3 duckonset:0.01 postgain:0 ]",
-  "[ 1/4 → 1/2 | s:bd duckorbit:2 duckattack:0.3 duckonset:0.01 postgain:0 ]",
-  "[ 1/2 → 3/4 | s:bd duckorbit:2 duckattack:0.3 duckonset:0.01 postgain:0 ]",
-  "[ 3/4 → 1/1 | s:bd duckorbit:2 duckattack:0.3 duckonset:0.01 postgain:0 ]",
-  "[ 1/1 → 5/4 | s:bd duckorbit:2 duckattack:0.3 duckonset:0.01 postgain:0 ]",
-  "[ 5/4 → 3/2 | s:bd duckorbit:2 duckattack:0.3 duckonset:0.01 postgain:0 ]",
-  "[ 3/2 → 7/4 | s:bd duckorbit:2 duckattack:0.3 duckonset:0.01 postgain:0 ]",
-  "[ 7/4 → 2/1 | s:bd duckorbit:2 duckattack:0.3 duckonset:0.01 postgain:0 ]",
-  "[ 2/1 → 9/4 | s:bd duckorbit:2 duckattack:0.3 duckonset:0.01 postgain:0 ]",
-  "[ 9/4 → 5/2 | s:bd duckorbit:2 duckattack:0.3 duckonset:0.01 postgain:0 ]",
-  "[ 5/2 → 11/4 | s:bd duckorbit:2 duckattack:0.3 duckonset:0.01 postgain:0 ]",
-  "[ 11/4 → 3/1 | s:bd duckorbit:2 duckattack:0.3 duckonset:0.01 postgain:0 ]",
-  "[ 3/1 → 13/4 | s:bd duckorbit:2 duckattack:0.3 duckonset:0.01 postgain:0 ]",
-  "[ 13/4 → 7/2 | s:bd duckorbit:2 duckattack:0.3 duckonset:0.01 postgain:0 ]",
-  "[ 7/2 → 15/4 | s:bd duckorbit:2 duckattack:0.3 duckonset:0.01 postgain:0 ]",
-  "[ 15/4 → 4/1 | s:bd duckorbit:2 duckattack:0.3 duckonset:0.01 postgain:0 ]",
-]
-`;
-
-exports[`runs examples > example "duckonset" example index 2 1`] = `
-[
-  "[ 0/1 → 1/4 | s:bd bank:tr909 duckorbit:[4 7] duckonset:[0.3 0.003] duckattack:0.25 ]",
-  "[ 1/4 → 1/2 | s:bd bank:tr909 duckorbit:[4 7] duckonset:[0.3 0.003] duckattack:0.25 ]",
-  "[ 1/2 → 3/4 | s:bd bank:tr909 duckorbit:[4 7] duckonset:[0.3 0.003] duckattack:0.25 ]",
-  "[ 3/4 → 1/1 | s:bd bank:tr909 duckorbit:[4 7] duckonset:[0.3 0.003] duckattack:0.25 ]",
-  "[ 1/1 → 5/4 | s:bd bank:tr909 duckorbit:[4 7] duckonset:[0.3 0.003] duckattack:0.25 ]",
-  "[ 5/4 → 3/2 | s:bd bank:tr909 duckorbit:[4 7] duckonset:[0.3 0.003] duckattack:0.25 ]",
-  "[ 3/2 → 7/4 | s:bd bank:tr909 duckorbit:[4 7] duckonset:[0.3 0.003] duckattack:0.25 ]",
-  "[ 7/4 → 2/1 | s:bd bank:tr909 duckorbit:[4 7] duckonset:[0.3 0.003] duckattack:0.25 ]",
-  "[ 2/1 → 9/4 | s:bd bank:tr909 duckorbit:[4 7] duckonset:[0.3 0.003] duckattack:0.25 ]",
-  "[ 9/4 → 5/2 | s:bd bank:tr909 duckorbit:[4 7] duckonset:[0.3 0.003] duckattack:0.25 ]",
-  "[ 5/2 → 11/4 | s:bd bank:tr909 duckorbit:[4 7] duckonset:[0.3 0.003] duckattack:0.25 ]",
-  "[ 11/4 → 3/1 | s:bd bank:tr909 duckorbit:[4 7] duckonset:[0.3 0.003] duckattack:0.25 ]",
-  "[ 3/1 → 13/4 | s:bd bank:tr909 duckorbit:[4 7] duckonset:[0.3 0.003] duckattack:0.25 ]",
-  "[ 13/4 → 7/2 | s:bd bank:tr909 duckorbit:[4 7] duckonset:[0.3 0.003] duckattack:0.25 ]",
-  "[ 7/2 → 15/4 | s:bd bank:tr909 duckorbit:[4 7] duckonset:[0.3 0.003] duckattack:0.25 ]",
-  "[ 15/4 → 4/1 | s:bd bank:tr909 duckorbit:[4 7] duckonset:[0.3 0.003] duckattack:0.25 ]",
-]
-`;
-
 exports[`runs examples > example "duckorbit" example index 0 1`] = `
 [
   "[ 0/1 → 1/16 | s:bd n:4 duckorbit:2 duckattack:0.2 duckdepth:1 ]",
@@ -3395,31 +3172,6 @@ exports[`runs examples > example "duckorbit" example index 0 1`] = `
   "[ 7/2 → 57/16 | s:bd n:4 duckorbit:2 duckattack:0.2 duckdepth:1 ]",
   "[ 59/16 → 15/4 | s:bd n:4 duckorbit:2 duckattack:0.2 duckdepth:1 ]",
   "[ 31/8 → 63/16 | s:bd n:4 duckorbit:2 duckattack:0.2 duckdepth:1 ]",
-]
-`;
-
-exports[`runs examples > example "duckorbit" example index 1 1`] = `
-[
-  "[ 0/1 → 1/16 | s:bd n:4 duckorbit:[2 3] duckattack:0.2 duckdepth:1 ]",
-  "[ 1/4 → 5/16 | s:bd n:4 duckorbit:[2 3] duckattack:0.2 duckdepth:1 ]",
-  "[ 1/2 → 9/16 | s:bd n:4 duckorbit:[2 3] duckattack:0.2 duckdepth:1 ]",
-  "[ 11/16 → 3/4 | s:bd n:4 duckorbit:[2 3] duckattack:0.2 duckdepth:1 ]",
-  "[ 7/8 → 15/16 | s:bd n:4 duckorbit:[2 3] duckattack:0.2 duckdepth:1 ]",
-  "[ 1/1 → 17/16 | s:bd n:4 duckorbit:[2 3] duckattack:0.2 duckdepth:1 ]",
-  "[ 5/4 → 21/16 | s:bd n:4 duckorbit:[2 3] duckattack:0.2 duckdepth:1 ]",
-  "[ 3/2 → 25/16 | s:bd n:4 duckorbit:[2 3] duckattack:0.2 duckdepth:1 ]",
-  "[ 27/16 → 7/4 | s:bd n:4 duckorbit:[2 3] duckattack:0.2 duckdepth:1 ]",
-  "[ 15/8 → 31/16 | s:bd n:4 duckorbit:[2 3] duckattack:0.2 duckdepth:1 ]",
-  "[ 2/1 → 33/16 | s:bd n:4 duckorbit:[2 3] duckattack:0.2 duckdepth:1 ]",
-  "[ 9/4 → 37/16 | s:bd n:4 duckorbit:[2 3] duckattack:0.2 duckdepth:1 ]",
-  "[ 5/2 → 41/16 | s:bd n:4 duckorbit:[2 3] duckattack:0.2 duckdepth:1 ]",
-  "[ 43/16 → 11/4 | s:bd n:4 duckorbit:[2 3] duckattack:0.2 duckdepth:1 ]",
-  "[ 23/8 → 47/16 | s:bd n:4 duckorbit:[2 3] duckattack:0.2 duckdepth:1 ]",
-  "[ 3/1 → 49/16 | s:bd n:4 duckorbit:[2 3] duckattack:0.2 duckdepth:1 ]",
-  "[ 13/4 → 53/16 | s:bd n:4 duckorbit:[2 3] duckattack:0.2 duckdepth:1 ]",
-  "[ 7/2 → 57/16 | s:bd n:4 duckorbit:[2 3] duckattack:0.2 duckdepth:1 ]",
-  "[ 59/16 → 15/4 | s:bd n:4 duckorbit:[2 3] duckattack:0.2 duckdepth:1 ]",
-  "[ 31/8 → 63/16 | s:bd n:4 duckorbit:[2 3] duckattack:0.2 duckdepth:1 ]",
 ]
 `;
 
@@ -3838,8 +3590,6 @@ exports[`runs examples > example "fast" example index 0 1`] = `
 
 exports[`runs examples > example "fastChunk" example index 0 1`] = `
 [
-  "[ 0/1 → 1/4 | color:red note:0 ]",
-  "[ 1/4 → 1/2 | color:red note:1 ]",
   "[ 1/2 → 3/4 | note:E2 ]",
   "[ 3/4 → 1/1 | note:F2 ]",
   "[ 1/1 → 5/4 | note:G2 ]",
@@ -3848,8 +3598,6 @@ exports[`runs examples > example "fastChunk" example index 0 1`] = `
   "[ 7/4 → 2/1 | note:C3 ]",
   "[ 2/1 → 9/4 | note:D3 ]",
   "[ 9/4 → 5/2 | note:D2 ]",
-  "[ 5/2 → 11/4 | color:red note:2 ]",
-  "[ 11/4 → 3/1 | color:red note:3 ]",
   "[ 3/1 → 13/4 | note:G2 ]",
   "[ 13/4 → 7/2 | note:A2 ]",
   "[ 7/2 → 15/4 | note:B2 ]",
@@ -6758,27 +6506,6 @@ exports[`runs examples > example "note" example index 2 1`] = `
 ]
 `;
 
-exports[`runs examples > example "note" example index 3 1`] = `
-[
-  "[ 0/1 → 1/4 | note:fbb1 s:saw ]",
-  "[ 1/4 → 1/2 | note:a#0 s:saw ]",
-  "[ 1/2 → 3/4 | note:cbbb-1 s:saw ]",
-  "[ 3/4 → 1/1 | note:e##-2 s:saw ]",
-  "[ 1/1 → 5/4 | note:fbb1 s:saw ]",
-  "[ 5/4 → 3/2 | note:a#0 s:saw ]",
-  "[ 3/2 → 7/4 | note:cbbb-1 s:saw ]",
-  "[ 7/4 → 2/1 | note:e##-2 s:saw ]",
-  "[ 2/1 → 9/4 | note:fbb1 s:saw ]",
-  "[ 9/4 → 5/2 | note:a#0 s:saw ]",
-  "[ 5/2 → 11/4 | note:cbbb-1 s:saw ]",
-  "[ 11/4 → 3/1 | note:e##-2 s:saw ]",
-  "[ 3/1 → 13/4 | note:fbb1 s:saw ]",
-  "[ 13/4 → 7/2 | note:a#0 s:saw ]",
-  "[ 7/2 → 15/4 | note:cbbb-1 s:saw ]",
-  "[ 15/4 → 4/1 | note:e##-2 s:saw ]",
-]
-`;
-
 exports[`runs examples > example "nrpnn" example index 0 1`] = `
 [
   "[ 0/1 → 1/1 | note:c4 nrpnn:[1 8] nrpv:123 midichan:1 ]",
@@ -6955,24 +6682,6 @@ exports[`runs examples > example "orbit" example index 0 1`] = `
   "[ 11/3 → 23/6 | s:hh delay:0.5 delaytime:0.25 orbit:1 ]",
   "[ 15/4 → 4/1 | s:sd delay:0.5 delaytime:0.125 orbit:2 ]",
   "[ 23/6 → 4/1 | s:hh delay:0.5 delaytime:0.25 orbit:1 ]",
-]
-`;
-
-exports[`runs examples > example "oschost" example index 0 1`] = `
-[
-  "[ 0/1 → 1/1 | note:c4 oschost:127.0.0.1 oscport:57120 ]",
-  "[ 1/1 → 2/1 | note:c4 oschost:127.0.0.1 oscport:57120 ]",
-  "[ 2/1 → 3/1 | note:c4 oschost:127.0.0.1 oscport:57120 ]",
-  "[ 3/1 → 4/1 | note:c4 oschost:127.0.0.1 oscport:57120 ]",
-]
-`;
-
-exports[`runs examples > example "oscport" example index 0 1`] = `
-[
-  "[ 0/1 → 1/1 | note:c4 oschost:127.0.0.1 oscport:57120 ]",
-  "[ 1/1 → 2/1 | note:c4 oschost:127.0.0.1 oscport:57120 ]",
-  "[ 2/1 → 3/1 | note:c4 oschost:127.0.0.1 oscport:57120 ]",
-  "[ 3/1 → 4/1 | note:c4 oschost:127.0.0.1 oscport:57120 ]",
 ]
 `;
 
@@ -7599,64 +7308,6 @@ exports[`runs examples > example "ply" example index 0 1`] = `
   "[ 3/1 → 13/4 | s:bd ]",
   "[ 7/2 → 15/4 | s:sd ]",
   "[ 15/4 → 4/1 | s:cp ]",
-]
-`;
-
-exports[`runs examples > example "plyForEach" example index 0 1`] = `
-[
-  "[ 0/1 → 1/4 | note:C3 ]",
-  "[ 1/4 → 1/2 | note:Eb3 ]",
-  "[ 1/2 → 3/4 | note:G3 ]",
-  "[ 3/4 → 1/1 | note:Bb3 ]",
-  "[ 1/1 → 9/8 | note:Eb3 ]",
-  "[ 9/8 → 5/4 | note:G3 ]",
-  "[ 5/4 → 11/8 | note:Bb3 ]",
-  "[ 11/8 → 3/2 | note:D4 ]",
-  "[ 3/2 → 13/8 | note:G3 ]",
-  "[ 13/8 → 7/4 | note:Bb3 ]",
-  "[ 7/4 → 15/8 | note:D4 ]",
-  "[ 15/8 → 2/1 | note:F4 ]",
-  "[ 2/1 → 9/4 | note:C3 ]",
-  "[ 9/4 → 5/2 | note:Eb3 ]",
-  "[ 5/2 → 11/4 | note:G3 ]",
-  "[ 11/4 → 3/1 | note:Bb3 ]",
-  "[ 3/1 → 25/8 | note:Eb3 ]",
-  "[ 25/8 → 13/4 | note:G3 ]",
-  "[ 13/4 → 27/8 | note:Bb3 ]",
-  "[ 27/8 → 7/2 | note:D4 ]",
-  "[ 7/2 → 29/8 | note:G3 ]",
-  "[ 29/8 → 15/4 | note:Bb3 ]",
-  "[ 15/4 → 31/8 | note:D4 ]",
-  "[ 31/8 → 4/1 | note:F4 ]",
-]
-`;
-
-exports[`runs examples > example "plyWith" example index 0 1`] = `
-[
-  "[ 0/1 → 1/4 | note:C3 ]",
-  "[ 1/4 → 1/2 | note:Eb3 ]",
-  "[ 1/2 → 3/4 | note:G3 ]",
-  "[ 3/4 → 1/1 | note:Bb3 ]",
-  "[ 1/1 → 9/8 | note:Eb3 ]",
-  "[ 9/8 → 5/4 | note:G3 ]",
-  "[ 5/4 → 11/8 | note:Bb3 ]",
-  "[ 11/8 → 3/2 | note:D4 ]",
-  "[ 3/2 → 13/8 | note:G3 ]",
-  "[ 13/8 → 7/4 | note:Bb3 ]",
-  "[ 7/4 → 15/8 | note:D4 ]",
-  "[ 15/8 → 2/1 | note:F4 ]",
-  "[ 2/1 → 9/4 | note:C3 ]",
-  "[ 9/4 → 5/2 | note:Eb3 ]",
-  "[ 5/2 → 11/4 | note:G3 ]",
-  "[ 11/4 → 3/1 | note:Bb3 ]",
-  "[ 3/1 → 25/8 | note:Eb3 ]",
-  "[ 25/8 → 13/4 | note:G3 ]",
-  "[ 13/4 → 27/8 | note:Bb3 ]",
-  "[ 27/8 → 7/2 | note:D4 ]",
-  "[ 7/2 → 29/8 | note:G3 ]",
-  "[ 29/8 → 15/4 | note:Bb3 ]",
-  "[ 15/4 → 31/8 | note:D4 ]",
-  "[ 31/8 → 4/1 | note:F4 ]",
 ]
 `;
 
@@ -8322,33 +7973,6 @@ exports[`runs examples > example "repeatCycles" example index 0 1`] = `
   "[ 13/4 → 7/2 | note:42 s:gm_acoustic_guitar_nylon ]",
   "[ 7/2 → 15/4 | note:41 s:gm_acoustic_guitar_nylon ]",
   "[ 15/4 → 4/1 | note:36 s:gm_acoustic_guitar_nylon ]",
-]
-`;
-
-exports[`runs examples > example "replicate" example index 0 1`] = `
-[
-  "[ 0/1 → 1/8 | s:bd ]",
-  "[ 1/8 → 1/4 | s:bd ]",
-  "[ 3/8 → 1/2 | s:cp ]",
-  "[ 1/2 → 5/8 | s:bd ]",
-  "[ 5/8 → 3/4 | s:bd ]",
-  "[ 7/8 → 1/1 | s:cp ]",
-  "[ 1/1 → 9/8 | s:bd ]",
-  "[ 5/4 → 11/8 | s:sd ]",
-  "[ 3/2 → 13/8 | s:bd ]",
-  "[ 13/8 → 7/4 | s:bd ]",
-  "[ 15/8 → 2/1 | s:cp ]",
-  "[ 2/1 → 17/8 | s:bd ]",
-  "[ 17/8 → 9/4 | s:bd ]",
-  "[ 19/8 → 5/2 | s:cp ]",
-  "[ 5/2 → 21/8 | s:bd ]",
-  "[ 11/4 → 23/8 | s:sd ]",
-  "[ 3/1 → 25/8 | s:bd ]",
-  "[ 25/8 → 13/4 | s:bd ]",
-  "[ 27/8 → 7/2 | s:cp ]",
-  "[ 7/2 → 29/8 | s:bd ]",
-  "[ 29/8 → 15/4 | s:bd ]",
-  "[ 31/8 → 4/1 | s:cp ]",
 ]
 `;
 
@@ -9109,108 +8733,6 @@ exports[`runs examples > example "scale" example index 2 1`] = `
   "[ 29/8 → 15/4 | note:F5 s:piano ]",
   "[ 15/4 → 31/8 | note:C5 s:piano ]",
   "[ 31/8 → 4/1 | note:A4 s:piano ]",
-]
-`;
-
-exports[`runs examples > example "scale" example index 3 1`] = `
-[
-  "[ 0/1 → 1/4 | note:C3 s:piano ]",
-  "[ 0/1 → 1/4 | note:B3 s:piano ]",
-  "[ 1/4 → 3/8 | note:Gb2 s:piano ]",
-  "[ 3/8 → 1/2 | note:F2 s:piano ]",
-  "[ 1/2 → 3/4 | note:A2 s:piano ]",
-  "[ 1/2 → 3/4 | note:D4 s:piano ]",
-  "[ 3/4 → 1/1 | note:G3 s:piano ]",
-  "[ 1/1 → 5/4 | note:C3 s:piano ]",
-  "[ 1/1 → 5/4 | note:C4 s:piano ]",
-  "[ 5/4 → 11/8 | note:Gb2 s:piano ]",
-  "[ 11/8 → 3/2 | note:E2 s:piano ]",
-  "[ 3/2 → 7/4 | note:A2 s:piano ]",
-  "[ 3/2 → 7/4 | note:Eb4 s:piano ]",
-  "[ 7/4 → 2/1 | note:F#3 s:piano ]",
-  "[ 2/1 → 9/4 | note:C3 s:piano ]",
-  "[ 2/1 → 9/4 | note:B3 s:piano ]",
-  "[ 9/4 → 19/8 | note:Gb2 s:piano ]",
-  "[ 19/8 → 5/2 | note:F2 s:piano ]",
-  "[ 5/2 → 11/4 | note:Ab2 s:piano ]",
-  "[ 5/2 → 11/4 | note:D4 s:piano ]",
-  "[ 11/4 → 3/1 | note:G3 s:piano ]",
-  "[ 3/1 → 13/4 | note:C3 s:piano ]",
-  "[ 3/1 → 13/4 | note:C4 s:piano ]",
-  "[ 13/4 → 27/8 | note:Gb2 s:piano ]",
-  "[ 27/8 → 7/2 | note:E2 s:piano ]",
-  "[ 7/2 → 15/4 | note:Ab2 s:piano ]",
-  "[ 7/2 → 15/4 | note:Eb4 s:piano ]",
-  "[ 15/4 → 4/1 | note:F#3 s:piano ]",
-]
-`;
-
-exports[`runs examples > example "scale" example index 4 1`] = `
-[
-  "[ 0/1 → 1/16 | note:Gb1 ]",
-  "[ 1/16 → 1/8 | note:Gb1 ]",
-  "[ 1/8 → 3/16 | note:Gb1 ]",
-  "[ 3/16 → 1/4 | note:Gb1 ]",
-  "[ 1/4 → 5/16 | note:Gb1 ]",
-  "[ 5/16 → 3/8 | note:Gb1 ]",
-  "[ 3/8 → 7/16 | note:Gb1 ]",
-  "[ 7/16 → 1/2 | note:Gb1 ]",
-  "[ 1/2 → 9/16 | note:Gb1 ]",
-  "[ 9/16 → 5/8 | note:Gb1 ]",
-  "[ 5/8 → 11/16 | note:Gb1 ]",
-  "[ 11/16 → 3/4 | note:Gb1 ]",
-  "[ 3/4 → 13/16 | note:Gb1 ]",
-  "[ 13/16 → 7/8 | note:Gb1 ]",
-  "[ 7/8 → 15/16 | note:Gb1 ]",
-  "[ 15/16 → 1/1 | note:Gb1 ]",
-  "[ 1/1 → 17/16 | note:Cb3 ]",
-  "[ 17/16 → 9/8 | note:Cb3 ]",
-  "[ 9/8 → 19/16 | note:Cb3 ]",
-  "[ 19/16 → 5/4 | note:Cb3 ]",
-  "[ 5/4 → 21/16 | note:Cb3 ]",
-  "[ 21/16 → 11/8 | note:Cb3 ]",
-  "[ 11/8 → 23/16 | note:Cb3 ]",
-  "[ 23/16 → 3/2 | note:Cb3 ]",
-  "[ 3/2 → 25/16 | note:Cb3 ]",
-  "[ 25/16 → 13/8 | note:Cb3 ]",
-  "[ 13/8 → 27/16 | note:Cb3 ]",
-  "[ 27/16 → 7/4 | note:Cb3 ]",
-  "[ 7/4 → 29/16 | note:Cb3 ]",
-  "[ 29/16 → 15/8 | note:Cb3 ]",
-  "[ 15/8 → 31/16 | note:Cb3 ]",
-  "[ 31/16 → 2/1 | note:Cb3 ]",
-  "[ 2/1 → 33/16 | note:Eb4 ]",
-  "[ 33/16 → 17/8 | note:Eb4 ]",
-  "[ 17/8 → 35/16 | note:Eb4 ]",
-  "[ 35/16 → 9/4 | note:Eb4 ]",
-  "[ 9/4 → 37/16 | note:Eb4 ]",
-  "[ 37/16 → 19/8 | note:Eb4 ]",
-  "[ 19/8 → 39/16 | note:Eb4 ]",
-  "[ 39/16 → 5/2 | note:Eb4 ]",
-  "[ 5/2 → 41/16 | note:Eb4 ]",
-  "[ 41/16 → 21/8 | note:Eb4 ]",
-  "[ 21/8 → 43/16 | note:Eb4 ]",
-  "[ 43/16 → 11/4 | note:Eb4 ]",
-  "[ 11/4 → 45/16 | note:Eb4 ]",
-  "[ 45/16 → 23/8 | note:Eb4 ]",
-  "[ 23/8 → 47/16 | note:Eb4 ]",
-  "[ 47/16 → 3/1 | note:Eb4 ]",
-  "[ 3/1 → 49/16 | note:Db2 ]",
-  "[ 49/16 → 25/8 | note:Db2 ]",
-  "[ 25/8 → 51/16 | note:Db2 ]",
-  "[ 51/16 → 13/4 | note:Db2 ]",
-  "[ 13/4 → 53/16 | note:Db2 ]",
-  "[ 53/16 → 27/8 | note:Db2 ]",
-  "[ 27/8 → 55/16 | note:Db2 ]",
-  "[ 55/16 → 7/2 | note:Db2 ]",
-  "[ 7/2 → 57/16 | note:Db2 ]",
-  "[ 57/16 → 29/8 | note:Db2 ]",
-  "[ 29/8 → 59/16 | note:Db2 ]",
-  "[ 59/16 → 15/4 | note:Db2 ]",
-  "[ 15/4 → 61/16 | note:Db2 ]",
-  "[ 61/16 → 31/8 | note:Db2 ]",
-  "[ 31/8 → 63/16 | note:Db2 ]",
-  "[ 63/16 → 4/1 | note:Db2 ]",
 ]
 `;
 
@@ -11910,112 +11432,6 @@ exports[`runs examples > example "vowel" example index 1 1`] = `
 ]
 `;
 
-exports[`runs examples > example "warp" example index 0 1`] = `
-[
-  "[ 0/1 → 1/8 | s:basique bank:wt_digital note:F1 warp:0 warpmode:spin ]",
-  "[ (1/8 → 1/5) ⇝ 1/4 | s:basique bank:wt_digital note:F1 warp:0 warpmode:spin ]",
-  "[ 1/8 ⇜ (1/5 → 1/4) | s:basique bank:wt_digital note:F1 warp:0.25 warpmode:spin ]",
-  "[ 1/4 → 3/8 | s:basique bank:wt_digital note:F1 warp:0.25 warpmode:spin ]",
-  "[ (3/8 → 2/5) ⇝ 1/2 | s:basique bank:wt_digital note:F1 warp:0.25 warpmode:spin ]",
-  "[ 3/8 ⇜ (2/5 → 1/2) | s:basique bank:wt_digital note:F1 warp:0.5 warpmode:spin ]",
-  "[ (1/2 → 3/5) ⇝ 5/8 | s:basique bank:wt_digital note:F1 warp:0.5 warpmode:spin ]",
-  "[ 1/2 ⇜ (3/5 → 5/8) | s:basique bank:wt_digital note:F1 warp:0.75 warpmode:spin ]",
-  "[ 5/8 → 3/4 | s:basique bank:wt_digital note:F1 warp:0.75 warpmode:spin ]",
-  "[ (3/4 → 4/5) ⇝ 7/8 | s:basique bank:wt_digital note:F1 warp:0.75 warpmode:spin ]",
-  "[ 3/4 ⇜ (4/5 → 7/8) | s:basique bank:wt_digital note:F1 warp:1 warpmode:spin ]",
-  "[ 7/8 → 1/1 | s:basique bank:wt_digital note:F1 warp:1 warpmode:spin ]",
-  "[ 1/1 → 9/8 | s:basique bank:wt_digital note:F1 warp:0 warpmode:spin ]",
-  "[ (9/8 → 6/5) ⇝ 5/4 | s:basique bank:wt_digital note:F1 warp:0 warpmode:spin ]",
-  "[ 9/8 ⇜ (6/5 → 5/4) | s:basique bank:wt_digital note:F1 warp:0.25 warpmode:spin ]",
-  "[ 5/4 → 11/8 | s:basique bank:wt_digital note:F1 warp:0.25 warpmode:spin ]",
-  "[ (11/8 → 7/5) ⇝ 3/2 | s:basique bank:wt_digital note:F1 warp:0.25 warpmode:spin ]",
-  "[ 11/8 ⇜ (7/5 → 3/2) | s:basique bank:wt_digital note:F1 warp:0.5 warpmode:spin ]",
-  "[ (3/2 → 8/5) ⇝ 13/8 | s:basique bank:wt_digital note:F1 warp:0.5 warpmode:spin ]",
-  "[ 3/2 ⇜ (8/5 → 13/8) | s:basique bank:wt_digital note:F1 warp:0.75 warpmode:spin ]",
-  "[ 13/8 → 7/4 | s:basique bank:wt_digital note:F1 warp:0.75 warpmode:spin ]",
-  "[ (7/4 → 9/5) ⇝ 15/8 | s:basique bank:wt_digital note:F1 warp:0.75 warpmode:spin ]",
-  "[ 7/4 ⇜ (9/5 → 15/8) | s:basique bank:wt_digital note:F1 warp:1 warpmode:spin ]",
-  "[ 15/8 → 2/1 | s:basique bank:wt_digital note:F1 warp:1 warpmode:spin ]",
-  "[ 2/1 → 17/8 | s:basique bank:wt_digital note:F1 warp:0 warpmode:spin ]",
-  "[ (17/8 → 11/5) ⇝ 9/4 | s:basique bank:wt_digital note:F1 warp:0 warpmode:spin ]",
-  "[ 17/8 ⇜ (11/5 → 9/4) | s:basique bank:wt_digital note:F1 warp:0.25 warpmode:spin ]",
-  "[ 9/4 → 19/8 | s:basique bank:wt_digital note:F1 warp:0.25 warpmode:spin ]",
-  "[ (19/8 → 12/5) ⇝ 5/2 | s:basique bank:wt_digital note:F1 warp:0.25 warpmode:spin ]",
-  "[ 19/8 ⇜ (12/5 → 5/2) | s:basique bank:wt_digital note:F1 warp:0.5 warpmode:spin ]",
-  "[ (5/2 → 13/5) ⇝ 21/8 | s:basique bank:wt_digital note:F1 warp:0.5 warpmode:spin ]",
-  "[ 5/2 ⇜ (13/5 → 21/8) | s:basique bank:wt_digital note:F1 warp:0.75 warpmode:spin ]",
-  "[ 21/8 → 11/4 | s:basique bank:wt_digital note:F1 warp:0.75 warpmode:spin ]",
-  "[ (11/4 → 14/5) ⇝ 23/8 | s:basique bank:wt_digital note:F1 warp:0.75 warpmode:spin ]",
-  "[ 11/4 ⇜ (14/5 → 23/8) | s:basique bank:wt_digital note:F1 warp:1 warpmode:spin ]",
-  "[ 23/8 → 3/1 | s:basique bank:wt_digital note:F1 warp:1 warpmode:spin ]",
-  "[ 3/1 → 25/8 | s:basique bank:wt_digital note:F1 warp:0 warpmode:spin ]",
-  "[ (25/8 → 16/5) ⇝ 13/4 | s:basique bank:wt_digital note:F1 warp:0 warpmode:spin ]",
-  "[ 25/8 ⇜ (16/5 → 13/4) | s:basique bank:wt_digital note:F1 warp:0.25 warpmode:spin ]",
-  "[ 13/4 → 27/8 | s:basique bank:wt_digital note:F1 warp:0.25 warpmode:spin ]",
-  "[ (27/8 → 17/5) ⇝ 7/2 | s:basique bank:wt_digital note:F1 warp:0.25 warpmode:spin ]",
-  "[ 27/8 ⇜ (17/5 → 7/2) | s:basique bank:wt_digital note:F1 warp:0.5 warpmode:spin ]",
-  "[ (7/2 → 18/5) ⇝ 29/8 | s:basique bank:wt_digital note:F1 warp:0.5 warpmode:spin ]",
-  "[ 7/2 ⇜ (18/5 → 29/8) | s:basique bank:wt_digital note:F1 warp:0.75 warpmode:spin ]",
-  "[ 29/8 → 15/4 | s:basique bank:wt_digital note:F1 warp:0.75 warpmode:spin ]",
-  "[ (15/4 → 19/5) ⇝ 31/8 | s:basique bank:wt_digital note:F1 warp:0.75 warpmode:spin ]",
-  "[ 15/4 ⇜ (19/5 → 31/8) | s:basique bank:wt_digital note:F1 warp:1 warpmode:spin ]",
-  "[ 31/8 → 4/1 | s:basique bank:wt_digital note:F1 warp:1 warpmode:spin ]",
-]
-`;
-
-exports[`runs examples > example "warpmode" example index 0 1`] = `
-[
-  "[ 0/1 → 1/8 | s:morgana bank:wt_digital note:F1 warp:0 warpmode:asym ]",
-  "[ (1/8 → 1/5) ⇝ 1/4 | s:morgana bank:wt_digital note:F1 warp:0 warpmode:asym ]",
-  "[ 1/8 ⇜ (1/5 → 1/4) | s:morgana bank:wt_digital note:F1 warp:0.25 warpmode:asym ]",
-  "[ 1/4 → 3/8 | s:morgana bank:wt_digital note:F1 warp:0.25 warpmode:asym ]",
-  "[ (3/8 → 2/5) ⇝ 1/2 | s:morgana bank:wt_digital note:F1 warp:0.25 warpmode:asym ]",
-  "[ 3/8 ⇜ (2/5 → 1/2) | s:morgana bank:wt_digital note:F1 warp:0.5 warpmode:asym ]",
-  "[ (1/2 → 3/5) ⇝ 5/8 | s:morgana bank:wt_digital note:F1 warp:0.5 warpmode:bendp ]",
-  "[ 1/2 ⇜ (3/5 → 5/8) | s:morgana bank:wt_digital note:F1 warp:0.75 warpmode:bendp ]",
-  "[ 5/8 → 3/4 | s:morgana bank:wt_digital note:F1 warp:0.75 warpmode:bendp ]",
-  "[ (3/4 → 4/5) ⇝ 7/8 | s:morgana bank:wt_digital note:F1 warp:0.75 warpmode:bendp ]",
-  "[ 3/4 ⇜ (4/5 → 7/8) | s:morgana bank:wt_digital note:F1 warp:1 warpmode:bendp ]",
-  "[ 7/8 → 1/1 | s:morgana bank:wt_digital note:F1 warp:1 warpmode:bendp ]",
-  "[ 1/1 → 9/8 | s:morgana bank:wt_digital note:F1 warp:0 warpmode:spin ]",
-  "[ (9/8 → 6/5) ⇝ 5/4 | s:morgana bank:wt_digital note:F1 warp:0 warpmode:spin ]",
-  "[ 9/8 ⇜ (6/5 → 5/4) | s:morgana bank:wt_digital note:F1 warp:0.25 warpmode:spin ]",
-  "[ 5/4 → 11/8 | s:morgana bank:wt_digital note:F1 warp:0.25 warpmode:spin ]",
-  "[ (11/8 → 7/5) ⇝ 3/2 | s:morgana bank:wt_digital note:F1 warp:0.25 warpmode:spin ]",
-  "[ 11/8 ⇜ (7/5 → 3/2) | s:morgana bank:wt_digital note:F1 warp:0.5 warpmode:spin ]",
-  "[ (3/2 → 8/5) ⇝ 13/8 | s:morgana bank:wt_digital note:F1 warp:0.5 warpmode:logistic ]",
-  "[ 3/2 ⇜ (8/5 → 13/8) | s:morgana bank:wt_digital note:F1 warp:0.75 warpmode:logistic ]",
-  "[ 13/8 → 7/4 | s:morgana bank:wt_digital note:F1 warp:0.75 warpmode:logistic ]",
-  "[ (7/4 → 9/5) ⇝ 15/8 | s:morgana bank:wt_digital note:F1 warp:0.75 warpmode:logistic ]",
-  "[ 7/4 ⇜ (9/5 → 15/8) | s:morgana bank:wt_digital note:F1 warp:1 warpmode:logistic ]",
-  "[ 15/8 → 2/1 | s:morgana bank:wt_digital note:F1 warp:1 warpmode:logistic ]",
-  "[ 2/1 → 17/8 | s:morgana bank:wt_digital note:F1 warp:0 warpmode:sync ]",
-  "[ (17/8 → 11/5) ⇝ 9/4 | s:morgana bank:wt_digital note:F1 warp:0 warpmode:sync ]",
-  "[ 17/8 ⇜ (11/5 → 9/4) | s:morgana bank:wt_digital note:F1 warp:0.25 warpmode:sync ]",
-  "[ 9/4 → 19/8 | s:morgana bank:wt_digital note:F1 warp:0.25 warpmode:sync ]",
-  "[ (19/8 → 12/5) ⇝ 5/2 | s:morgana bank:wt_digital note:F1 warp:0.25 warpmode:sync ]",
-  "[ 19/8 ⇜ (12/5 → 5/2) | s:morgana bank:wt_digital note:F1 warp:0.5 warpmode:sync ]",
-  "[ (5/2 → 13/5) ⇝ 21/8 | s:morgana bank:wt_digital note:F1 warp:0.5 warpmode:wormhole ]",
-  "[ 5/2 ⇜ (13/5 → 21/8) | s:morgana bank:wt_digital note:F1 warp:0.75 warpmode:wormhole ]",
-  "[ 21/8 → 11/4 | s:morgana bank:wt_digital note:F1 warp:0.75 warpmode:wormhole ]",
-  "[ (11/4 → 14/5) ⇝ 23/8 | s:morgana bank:wt_digital note:F1 warp:0.75 warpmode:wormhole ]",
-  "[ 11/4 ⇜ (14/5 → 23/8) | s:morgana bank:wt_digital note:F1 warp:1 warpmode:wormhole ]",
-  "[ 23/8 → 3/1 | s:morgana bank:wt_digital note:F1 warp:1 warpmode:wormhole ]",
-  "[ 3/1 → 25/8 | s:morgana bank:wt_digital note:F1 warp:0 warpmode:brownian ]",
-  "[ (25/8 → 16/5) ⇝ 13/4 | s:morgana bank:wt_digital note:F1 warp:0 warpmode:brownian ]",
-  "[ 25/8 ⇜ (16/5 → 13/4) | s:morgana bank:wt_digital note:F1 warp:0.25 warpmode:brownian ]",
-  "[ 13/4 → 27/8 | s:morgana bank:wt_digital note:F1 warp:0.25 warpmode:brownian ]",
-  "[ (27/8 → 17/5) ⇝ 7/2 | s:morgana bank:wt_digital note:F1 warp:0.25 warpmode:brownian ]",
-  "[ 27/8 ⇜ (17/5 → 7/2) | s:morgana bank:wt_digital note:F1 warp:0.5 warpmode:brownian ]",
-  "[ (7/2 → 18/5) ⇝ 29/8 | s:morgana bank:wt_digital note:F1 warp:0.5 warpmode:asym ]",
-  "[ 7/2 ⇜ (18/5 → 29/8) | s:morgana bank:wt_digital note:F1 warp:0.75 warpmode:asym ]",
-  "[ 29/8 → 15/4 | s:morgana bank:wt_digital note:F1 warp:0.75 warpmode:asym ]",
-  "[ (15/4 → 19/5) ⇝ 31/8 | s:morgana bank:wt_digital note:F1 warp:0.75 warpmode:asym ]",
-  "[ 15/4 ⇜ (19/5 → 31/8) | s:morgana bank:wt_digital note:F1 warp:1 warpmode:asym ]",
-  "[ 31/8 → 4/1 | s:morgana bank:wt_digital note:F1 warp:1 warpmode:asym ]",
-]
-`;
-
 exports[`runs examples > example "wchoose" example index 0 1`] = `
 [
   "[ 0/1 → 1/5 | note:c2 s:sine ]",
@@ -12217,128 +11633,6 @@ exports[`runs examples > example "withValue" example index 0 1`] = `
   "[ 3/1 → 10/3 | 10 ]",
   "[ 10/3 → 11/3 | 11 ]",
   "[ 11/3 → 4/1 | 12 ]",
-]
-`;
-
-exports[`runs examples > example "wt" example index 0 1`] = `
-[
-  "[ 0/1 → 1/8 | s:squelch bank:wt_digital note:F1 wt:0 ]",
-  "[ (1/8 → 1/5) ⇝ 1/4 | s:squelch bank:wt_digital note:F1 wt:0 ]",
-  "[ 1/8 ⇜ (1/5 → 1/4) | s:squelch bank:wt_digital note:F1 wt:0.25 ]",
-  "[ 1/4 → 3/8 | s:squelch bank:wt_digital note:F1 wt:0.25 ]",
-  "[ (3/8 → 2/5) ⇝ 1/2 | s:squelch bank:wt_digital note:F1 wt:0.25 ]",
-  "[ 3/8 ⇜ (2/5 → 1/2) | s:squelch bank:wt_digital note:F1 wt:0.5 ]",
-  "[ (1/2 → 3/5) ⇝ 5/8 | s:squelch bank:wt_digital note:F1 wt:0.5 ]",
-  "[ 1/2 ⇜ (3/5 → 5/8) | s:squelch bank:wt_digital note:F1 wt:0.75 ]",
-  "[ 5/8 → 3/4 | s:squelch bank:wt_digital note:F1 wt:0.75 ]",
-  "[ (3/4 → 4/5) ⇝ 7/8 | s:squelch bank:wt_digital note:F1 wt:0.75 ]",
-  "[ 3/4 ⇜ (4/5 → 7/8) | s:squelch bank:wt_digital note:F1 wt:1 ]",
-  "[ 7/8 → 1/1 | s:squelch bank:wt_digital note:F1 wt:1 ]",
-  "[ 1/1 → 9/8 | s:squelch bank:wt_digital note:F1 wt:0 ]",
-  "[ (9/8 → 6/5) ⇝ 5/4 | s:squelch bank:wt_digital note:F1 wt:0 ]",
-  "[ 9/8 ⇜ (6/5 → 5/4) | s:squelch bank:wt_digital note:F1 wt:0.25 ]",
-  "[ 5/4 → 11/8 | s:squelch bank:wt_digital note:F1 wt:0.25 ]",
-  "[ (11/8 → 7/5) ⇝ 3/2 | s:squelch bank:wt_digital note:F1 wt:0.25 ]",
-  "[ 11/8 ⇜ (7/5 → 3/2) | s:squelch bank:wt_digital note:F1 wt:0.5 ]",
-  "[ (3/2 → 8/5) ⇝ 13/8 | s:squelch bank:wt_digital note:F1 wt:0.5 ]",
-  "[ 3/2 ⇜ (8/5 → 13/8) | s:squelch bank:wt_digital note:F1 wt:0.75 ]",
-  "[ 13/8 → 7/4 | s:squelch bank:wt_digital note:F1 wt:0.75 ]",
-  "[ (7/4 → 9/5) ⇝ 15/8 | s:squelch bank:wt_digital note:F1 wt:0.75 ]",
-  "[ 7/4 ⇜ (9/5 → 15/8) | s:squelch bank:wt_digital note:F1 wt:1 ]",
-  "[ 15/8 → 2/1 | s:squelch bank:wt_digital note:F1 wt:1 ]",
-  "[ 2/1 → 17/8 | s:squelch bank:wt_digital note:F1 wt:0 ]",
-  "[ (17/8 → 11/5) ⇝ 9/4 | s:squelch bank:wt_digital note:F1 wt:0 ]",
-  "[ 17/8 ⇜ (11/5 → 9/4) | s:squelch bank:wt_digital note:F1 wt:0.25 ]",
-  "[ 9/4 → 19/8 | s:squelch bank:wt_digital note:F1 wt:0.25 ]",
-  "[ (19/8 → 12/5) ⇝ 5/2 | s:squelch bank:wt_digital note:F1 wt:0.25 ]",
-  "[ 19/8 ⇜ (12/5 → 5/2) | s:squelch bank:wt_digital note:F1 wt:0.5 ]",
-  "[ (5/2 → 13/5) ⇝ 21/8 | s:squelch bank:wt_digital note:F1 wt:0.5 ]",
-  "[ 5/2 ⇜ (13/5 → 21/8) | s:squelch bank:wt_digital note:F1 wt:0.75 ]",
-  "[ 21/8 → 11/4 | s:squelch bank:wt_digital note:F1 wt:0.75 ]",
-  "[ (11/4 → 14/5) ⇝ 23/8 | s:squelch bank:wt_digital note:F1 wt:0.75 ]",
-  "[ 11/4 ⇜ (14/5 → 23/8) | s:squelch bank:wt_digital note:F1 wt:1 ]",
-  "[ 23/8 → 3/1 | s:squelch bank:wt_digital note:F1 wt:1 ]",
-  "[ 3/1 → 25/8 | s:squelch bank:wt_digital note:F1 wt:0 ]",
-  "[ (25/8 → 16/5) ⇝ 13/4 | s:squelch bank:wt_digital note:F1 wt:0 ]",
-  "[ 25/8 ⇜ (16/5 → 13/4) | s:squelch bank:wt_digital note:F1 wt:0.25 ]",
-  "[ 13/4 → 27/8 | s:squelch bank:wt_digital note:F1 wt:0.25 ]",
-  "[ (27/8 → 17/5) ⇝ 7/2 | s:squelch bank:wt_digital note:F1 wt:0.25 ]",
-  "[ 27/8 ⇜ (17/5 → 7/2) | s:squelch bank:wt_digital note:F1 wt:0.5 ]",
-  "[ (7/2 → 18/5) ⇝ 29/8 | s:squelch bank:wt_digital note:F1 wt:0.5 ]",
-  "[ 7/2 ⇜ (18/5 → 29/8) | s:squelch bank:wt_digital note:F1 wt:0.75 ]",
-  "[ 29/8 → 15/4 | s:squelch bank:wt_digital note:F1 wt:0.75 ]",
-  "[ (15/4 → 19/5) ⇝ 31/8 | s:squelch bank:wt_digital note:F1 wt:0.75 ]",
-  "[ 15/4 ⇜ (19/5 → 31/8) | s:squelch bank:wt_digital note:F1 wt:1 ]",
-  "[ 31/8 → 4/1 | s:squelch bank:wt_digital note:F1 wt:1 ]",
-]
-`;
-
-exports[`runs examples > example "wtphaserand" example index 0 1`] = `
-[
-  "[ 0/1 → 1/16 | s:basique bank:wt_digital wtphaserand:0 ]",
-  "[ 1/16 → 1/8 | s:basique bank:wt_digital wtphaserand:0 ]",
-  "[ 1/8 → 3/16 | s:basique bank:wt_digital wtphaserand:0 ]",
-  "[ 3/16 → 1/4 | s:basique bank:wt_digital wtphaserand:0 ]",
-  "[ 1/4 → 5/16 | s:basique bank:wt_digital wtphaserand:0 ]",
-  "[ 5/16 → 3/8 | s:basique bank:wt_digital wtphaserand:0 ]",
-  "[ 3/8 → 7/16 | s:basique bank:wt_digital wtphaserand:0 ]",
-  "[ 7/16 → 1/2 | s:basique bank:wt_digital wtphaserand:0 ]",
-  "[ 1/2 → 9/16 | s:basique bank:wt_digital wtphaserand:0 ]",
-  "[ 9/16 → 5/8 | s:basique bank:wt_digital wtphaserand:0 ]",
-  "[ 5/8 → 11/16 | s:basique bank:wt_digital wtphaserand:0 ]",
-  "[ 11/16 → 3/4 | s:basique bank:wt_digital wtphaserand:0 ]",
-  "[ 3/4 → 13/16 | s:basique bank:wt_digital wtphaserand:0 ]",
-  "[ 13/16 → 7/8 | s:basique bank:wt_digital wtphaserand:0 ]",
-  "[ 7/8 → 15/16 | s:basique bank:wt_digital wtphaserand:0 ]",
-  "[ 15/16 → 1/1 | s:basique bank:wt_digital wtphaserand:0 ]",
-  "[ 1/1 → 17/16 | s:basique bank:wt_digital wtphaserand:1 ]",
-  "[ 17/16 → 9/8 | s:basique bank:wt_digital wtphaserand:1 ]",
-  "[ 9/8 → 19/16 | s:basique bank:wt_digital wtphaserand:1 ]",
-  "[ 19/16 → 5/4 | s:basique bank:wt_digital wtphaserand:1 ]",
-  "[ 5/4 → 21/16 | s:basique bank:wt_digital wtphaserand:1 ]",
-  "[ 21/16 → 11/8 | s:basique bank:wt_digital wtphaserand:1 ]",
-  "[ 11/8 → 23/16 | s:basique bank:wt_digital wtphaserand:1 ]",
-  "[ 23/16 → 3/2 | s:basique bank:wt_digital wtphaserand:1 ]",
-  "[ 3/2 → 25/16 | s:basique bank:wt_digital wtphaserand:1 ]",
-  "[ 25/16 → 13/8 | s:basique bank:wt_digital wtphaserand:1 ]",
-  "[ 13/8 → 27/16 | s:basique bank:wt_digital wtphaserand:1 ]",
-  "[ 27/16 → 7/4 | s:basique bank:wt_digital wtphaserand:1 ]",
-  "[ 7/4 → 29/16 | s:basique bank:wt_digital wtphaserand:1 ]",
-  "[ 29/16 → 15/8 | s:basique bank:wt_digital wtphaserand:1 ]",
-  "[ 15/8 → 31/16 | s:basique bank:wt_digital wtphaserand:1 ]",
-  "[ 31/16 → 2/1 | s:basique bank:wt_digital wtphaserand:1 ]",
-  "[ 2/1 → 33/16 | s:basique bank:wt_digital wtphaserand:0 ]",
-  "[ 33/16 → 17/8 | s:basique bank:wt_digital wtphaserand:0 ]",
-  "[ 17/8 → 35/16 | s:basique bank:wt_digital wtphaserand:0 ]",
-  "[ 35/16 → 9/4 | s:basique bank:wt_digital wtphaserand:0 ]",
-  "[ 9/4 → 37/16 | s:basique bank:wt_digital wtphaserand:0 ]",
-  "[ 37/16 → 19/8 | s:basique bank:wt_digital wtphaserand:0 ]",
-  "[ 19/8 → 39/16 | s:basique bank:wt_digital wtphaserand:0 ]",
-  "[ 39/16 → 5/2 | s:basique bank:wt_digital wtphaserand:0 ]",
-  "[ 5/2 → 41/16 | s:basique bank:wt_digital wtphaserand:0 ]",
-  "[ 41/16 → 21/8 | s:basique bank:wt_digital wtphaserand:0 ]",
-  "[ 21/8 → 43/16 | s:basique bank:wt_digital wtphaserand:0 ]",
-  "[ 43/16 → 11/4 | s:basique bank:wt_digital wtphaserand:0 ]",
-  "[ 11/4 → 45/16 | s:basique bank:wt_digital wtphaserand:0 ]",
-  "[ 45/16 → 23/8 | s:basique bank:wt_digital wtphaserand:0 ]",
-  "[ 23/8 → 47/16 | s:basique bank:wt_digital wtphaserand:0 ]",
-  "[ 47/16 → 3/1 | s:basique bank:wt_digital wtphaserand:0 ]",
-  "[ 3/1 → 49/16 | s:basique bank:wt_digital wtphaserand:1 ]",
-  "[ 49/16 → 25/8 | s:basique bank:wt_digital wtphaserand:1 ]",
-  "[ 25/8 → 51/16 | s:basique bank:wt_digital wtphaserand:1 ]",
-  "[ 51/16 → 13/4 | s:basique bank:wt_digital wtphaserand:1 ]",
-  "[ 13/4 → 53/16 | s:basique bank:wt_digital wtphaserand:1 ]",
-  "[ 53/16 → 27/8 | s:basique bank:wt_digital wtphaserand:1 ]",
-  "[ 27/8 → 55/16 | s:basique bank:wt_digital wtphaserand:1 ]",
-  "[ 55/16 → 7/2 | s:basique bank:wt_digital wtphaserand:1 ]",
-  "[ 7/2 → 57/16 | s:basique bank:wt_digital wtphaserand:1 ]",
-  "[ 57/16 → 29/8 | s:basique bank:wt_digital wtphaserand:1 ]",
-  "[ 29/8 → 59/16 | s:basique bank:wt_digital wtphaserand:1 ]",
-  "[ 59/16 → 15/4 | s:basique bank:wt_digital wtphaserand:1 ]",
-  "[ 15/4 → 61/16 | s:basique bank:wt_digital wtphaserand:1 ]",
-  "[ 61/16 → 31/8 | s:basique bank:wt_digital wtphaserand:1 ]",
-  "[ 31/8 → 63/16 | s:basique bank:wt_digital wtphaserand:1 ]",
-  "[ 63/16 → 4/1 | s:basique bank:wt_digital wtphaserand:1 ]",
 ]
 `;
 

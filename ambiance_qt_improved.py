@@ -1,35 +1,49 @@
-﻿"""Ambiance - Improved Qt application with plugin chaining and UI fixes."""
+
+"""Ambiance - Improved Qt application with plugin chaining and UI fixes."""
 
 import sys
 import json
 import logging
+import queue
 import os
+os.environ.setdefault("QT_API", "pyqt6")
 import re
 from pathlib import Path
 from collections import deque
-from typing import Optional, List, Dict, Any, Tuple, Deque, Set, cast
+from typing import Optional, List, Dict, Any, Tuple, Deque, Set, Callable, cast, TYPE_CHECKING
 from dataclasses import dataclass, field
 from datetime import datetime
 import threading
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from string import Template
 from textwrap import dedent
+from difflib import SequenceMatcher
 from urllib.parse import urljoin, urlsplit
 from urllib.request import urlopen
+
+# Harden QtWebEngine: disable GPU/WebGL when not already requested by the environment.
+QTWEBENGINE_SAFE_FLAGS = "--disable-gpu --disable-software-rasterizer --disable-webgl --disable-webgl2 --disable-accelerated-video"
+existing_flags = os.environ.get("QTWEBENGINE_CHROMIUM_FLAGS", "").strip()
+if existing_flags:
+    if QTWEBENGINE_SAFE_FLAGS not in existing_flags:
+        os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = f"{existing_flags} {QTWEBENGINE_SAFE_FLAGS}"
+else:
+    os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = QTWEBENGINE_SAFE_FLAGS
+os.environ.setdefault("QTWEBENGINE_DISABLE_SANDBOX", "1")
 
 try:
     import winsound  # Windows-only fallback tone generator
 except ImportError:  # pragma: no cover - non-Windows systems
     winsound = None
 
-from PyQt5.QtWidgets import (
+from qtpy.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QListWidget, QListWidgetItem, QScrollArea,
     QSlider, QFrame, QMessageBox, QComboBox, QTabWidget, QCheckBox,
     QPlainTextEdit, QToolButton, QSizePolicy, QStackedWidget
 )
-from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal, pyqtSlot, QObject, QEvent, QUrl, QSize
-from PyQt5.QtGui import (
+from qtpy.QtCore import Qt, QTimer, QThread, Signal as pyqtSignal, Slot as pyqtSlot, QObject, QEvent, QUrl, QSize
+from qtpy.QtGui import (
     QPainter,
     QColor,
     QPen,
@@ -42,15 +56,180 @@ from PyQt5.QtGui import (
     QKeyEvent,
     QCloseEvent,
     QWindow,
+    QDesktopServices,
 )
 
-try:
-    from PyQt5.QtWebEngineWidgets import QWebEngineView, QWebEngineSettings
-    from PyQt5.QtWebChannel import QWebChannel
-except ImportError:  # pragma: no cover - optional dependency
-    QWebEngineView = None  # type: ignore
-    QWebEngineSettings = None  # type: ignore
-    QWebChannel = None  # type: ignore
+QWebEngineView = None  # type: ignore
+QWebEngineSettings = None  # type: ignore
+QWebEnginePage = None  # type: ignore
+QWebChannel = None  # type: ignore
+WEBENGINE_IMPORT_ERROR: Optional[BaseException] = None
+StrudelWebPage = None  # type: ignore
+
+
+def _define_strudel_web_page() -> None:
+    """Create or clear the StrudelWebPage definition depending on WebEngine availability."""
+    global StrudelWebPage
+    if QWebEnginePage is None:
+        StrudelWebPage = None
+        return
+
+    class _StrudelWebPage(QWebEnginePage):
+        def __init__(self, view: Optional["QWebEngineView"] = None, base_url: Optional[QUrl] = None) -> None:
+            super().__init__(view)
+            try:
+                self.setAudioMuted(False)
+            except Exception:
+                pass
+            self._skip_next_failure = False
+            self._base_url = base_url
+
+            try:
+                self.renderProcessTerminated.connect(self._on_render_process_terminated)
+            except Exception as exc:
+                logging.getLogger(__name__).warning(f"Could not connect renderProcessTerminated signal: {exc}")
+
+        def _on_render_process_terminated(self, termination_status, exit_code):
+            logger = logging.getLogger(__name__)
+            status_names = {
+                0: "NormalTerminationStatus",
+                1: "AbnormalTerminationStatus",
+                2: "CrashedTerminationStatus",
+                3: "KilledTerminationStatus",
+            }
+            status_name = status_names.get(termination_status, f"Unknown({termination_status})")
+            logger.critical(f"Qt WebEngine render process terminated: {status_name}, exit code: {exit_code}")
+            logger.critical(f"Current URL: {self.url().toString() if self.url() else 'None'}")
+
+            if self.view():
+                try:
+                    logger.critical(f"View URL: {self.view().url().toString()}")
+                except Exception:
+                    pass
+
+                try:
+                    self.view().setHtml(
+                        "<html><body style='background:#111;color:#fafafa;font-family:sans-serif;"
+                        "display:flex;align-items:center;justify-content:center;height:100vh;'>"
+                        "<div style='max-width:480px;text-align:center;'>"
+                        "<h2>Strudel crashed inside the embedded browser</h2>"
+                        "<p>We opened https://strudel.cc/ in your default browser so you can keep jamming.</p>"
+                        "<p>You can also disable the embedded view via STRUDEL_FORCE_REMOTE/STRUDEL_ENABLED "
+                        "in ambiance_qt_improved.py.</p>"
+                        "</div></body></html>"
+                    )
+                except Exception:
+                    pass
+
+        def javaScriptConsoleMessage(self, level, message, line_number, source_id):
+            logger = logging.getLogger(__name__)
+            level_names = {0: "INFO", 1: "WARNING", 2: "ERROR"}
+            level_name = level_names.get(level, f"LEVEL{level}")
+            source = source_id if source_id else "(inline)"
+            logger.info(f"[Strudel JS {level_name}] {source}:{line_number} - {message}")
+
+        def _should_externalize(self, url: QUrl, nav_type: "QWebEnginePage.NavigationType", base_host: str) -> bool:
+            if url is None:
+                return False
+            scheme = url.scheme().lower()
+            path = url.path() or ""
+            host = (url.host() or "").lower()
+
+            if scheme in ("http", "https"):
+                if base_host and host == base_host:
+                    return False
+                if host in ("localhost", "127.0.0.1"):
+                    return path.startswith("/learn")
+                if host in ("strudel.cc", "www.strudel.cc", "strudel.tidalcycles.org"):
+                    return nav_type == QWebEnginePage.NavigationTypeLinkClicked and path.startswith("/learn")
+                return nav_type == QWebEnginePage.NavigationTypeLinkClicked
+
+            if scheme in ("", "file"):
+                return path.startswith("/learn")
+            return True
+
+        def _open_external(self, url: QUrl) -> None:
+            if url is None:
+                return
+            if url.scheme() in ("http", "https"):
+                QDesktopServices.openUrl(url)
+                return
+            path = url.path() or "/learn"
+            external = QUrl(f"https://strudel.cc{path}")
+            QDesktopServices.openUrl(external)
+
+        def acceptNavigationRequest(self, url: QUrl, nav_type, is_main_frame):
+            base_host = ""
+            if self._base_url is not None and self._base_url.isValid():
+                base_host = (self._base_url.host() or "").lower()
+            elif self.view() is not None:
+                try:
+                    current = self.view().url()
+                    if current and current.isValid():
+                        base_host = (current.host() or "").lower()
+                except Exception:
+                    base_host = ""
+
+            if is_main_frame and self._should_externalize(url, nav_type, base_host):
+                self._open_external(url)
+                self._skip_next_failure = True
+                if self._base_url is not None and self.view() is not None:
+                    try:
+                        base = QUrl(self._base_url)
+                        if base.isValid():
+                            QTimer.singleShot(0, lambda v=self.view(), u=base: v.setUrl(u))
+                    except Exception:
+                        pass
+                return False
+            return super().acceptNavigationRequest(url, nav_type, is_main_frame)
+
+        def createWindow(self, window_type):
+            page = _StrudelWebPage(base_url=self._base_url)
+
+            def handle_url_changed(new_url: QUrl) -> None:
+                page.deleteLater()
+                base_host = ""
+                if self._base_url is not None and self._base_url.isValid():
+                    base_host = (self._base_url.host() or "").lower()
+                if self._should_externalize(new_url, QWebEnginePage.NavigationTypeLinkClicked, base_host):
+                    self._open_external(new_url)
+                    page._skip_next_failure = True
+                    if self._base_url is not None and self.view() is not None:
+                        try:
+                            base = QUrl(self._base_url)
+                            if base.isValid():
+                                QTimer.singleShot(0, lambda v=self.view(), u=base: v.setUrl(u))
+                        except Exception:
+                            pass
+                else:
+                    QDesktopServices.openUrl(new_url)
+
+            page.urlChanged.connect(handle_url_changed)
+            return page
+
+    StrudelWebPage = _StrudelWebPage  # type: ignore
+
+
+def ensure_webengine() -> None:
+    """Load Qt WebEngine lazily after QApplication is created."""
+    global QWebEngineView, QWebEngineSettings, QWebEnginePage, QWebChannel, WEBENGINE_IMPORT_ERROR
+    if QWebEngineView is not None or WEBENGINE_IMPORT_ERROR is not None:
+        return
+    try:
+        from qtpy.QtWebEngineWidgets import (
+            QWebEngineView as _QWebEngineView,
+            QWebEngineSettings as _QWebEngineSettings,
+            QWebEnginePage as _QWebEnginePage,
+        )
+        from qtpy.QtWebChannel import QWebChannel as _QWebChannel
+    except ImportError as exc:  # pragma: no cover - optional dependency
+        WEBENGINE_IMPORT_ERROR = exc
+        return
+    QWebEngineView = _QWebEngineView  # type: ignore
+    QWebEngineSettings = _QWebEngineSettings  # type: ignore
+    QWebEnginePage = _QWebEnginePage  # type: ignore
+    QWebChannel = _QWebChannel  # type: ignore
+    _define_strudel_web_page()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -58,7 +237,16 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 sys.path.insert(0, str(Path(__file__).parent / "ambiance" / "src"))
 
 from ambiance.integrations.carla_host import CarlaVSTHost, CarlaHostError
-from ambiance.audio_engine import AudioEngine
+try:
+    from ambiance.audio_engine import AudioEngine
+except (RuntimeError, ImportError) as exc:
+    AudioEngine = None  # type: ignore[assignment]
+    AUDIO_ENGINE_IMPORT_ERROR: Optional[BaseException] = exc
+else:
+    AUDIO_ENGINE_IMPORT_ERROR = None
+
+if TYPE_CHECKING:
+    from ambiance.audio_engine import AudioEngine as _AudioEngineType
 from ambiance.widgets import BlocksPanel
 
 # Color scheme
@@ -93,13 +281,13 @@ THEME_PRESETS = {
     },
     "win98": {
         "colors": {
-            'bg': '#c6c6c6',
-            'panel': '#dcdcdc',
-            'card': '#ffffff',
-            'text': '#202020',
+            'bg': '#008080',
+            'panel': '#c3c7cb',
+            'card': '#dfdfdf',
+            'text': '#1a1a1a',
             'muted': '#4f4f4f',
-            'accent': '#2a4cff',
-            'border': '#7a7a7a',
+            'accent': '#000080',
+            'border': '#808080',
             'success': '#0f7a0f',
             'warning': '#ba7b00',
             'error': '#b00020'
@@ -108,18 +296,18 @@ THEME_PRESETS = {
     },
     "winxp": {
         "colors": {
-            'bg': '#0c1a33',
-            'panel': '#13315c',
-            'card': '#18406f',
-            'text': '#f3f6ff',
-            'muted': '#c0d2f1',
-            'accent': '#3fa0ff',
-            'border': '#21538f',
-            'success': '#60d860',
-            'warning': '#ffcc66',
-            'error': '#ff6666'
+            'bg': '#245edb',
+            'panel': '#ece9d8',
+            'card': '#ffffff',
+            'text': '#1b2a4a',
+            'muted': '#4a5c7a',
+            'accent': '#3d6dd1',
+            'border': '#7f9db9',
+            'success': '#3c8500',
+            'warning': '#f0a000',
+            'error': '#d83c3c'
         },
-        "dark": True
+        "dark": False
     }
 }
 
@@ -137,6 +325,18 @@ STRUDEL_REMOTE_FALLBACK_PREFIXES: Tuple[str, ...] = (
     "/sounds/",
     "/media/",
 )
+
+# Global toggle controlling Strudel integration inside the desktop shell
+STRUDEL_ENABLED = True
+# Force the embedded view to use the remote Strudel site instead of local assets.
+# Set to False once the local bundle is stable again.
+STRUDEL_FORCE_REMOTE = False
+
+# Debug toggles for Strudel crash investigation
+DEBUG_SERVE_RAW_STRUDEL_INDEX = True
+DEBUG_ENABLE_STRUDEL_POLYFILLS = False
+DEBUG_ENABLE_STRUDEL_THEME_INJECTION = False
+DEBUG_ENABLE_STRUDEL_BRIDGE = False
 
 
 @dataclass(eq=False)
@@ -177,23 +377,69 @@ class StrudelStaticServer:
     """Minimal HTTP server that serves the bundled Strudel assets with proper MIME types."""
 
     def __init__(self, root: Path) -> None:
-        self.root = root
+        self.root = root.resolve()
         self._httpd: Optional[ThreadingHTTPServer] = None
         self._thread: Optional[threading.Thread] = None
         self.port: Optional[int] = None
         self._remote_index_cache: Optional[str] = None
         self._remote_index_source: Optional[str] = None
         self._remote_index_lock = threading.Lock()
+        self._asset_index: Dict[str, Path] = {}
+        self._asset_index_lock = threading.Lock()
+        embed_root = root / "strudel" / "website" / "dist"
+        self._embed_root: Optional[Path] = embed_root if embed_root.exists() else None
+        search_roots: List[Path] = [self.root.resolve()]
+        if self._embed_root is not None:
+            search_roots.append(self._embed_root.resolve())
+        self._search_roots: Tuple[Path, ...] = tuple(search_roots)
 
     def _extract_missing_assets(self, html: str) -> Set[str]:
         pattern = re.compile(r"[\"'](/?_astro/[^\"']+)")
         assets = {match.group(1) for match in pattern.finditer(html)}
         missing: Set[str] = set()
         for asset in assets:
-            candidate = self.root / asset.lstrip('/')
-            if not candidate.exists():
+            relative = asset.lstrip('/')
+            found = False
+            for base in self._search_roots:
+                candidate = base / relative
+                if candidate.exists():
+                    found = True
+                    break
+            if not found:
                 missing.add(asset)
         return missing
+
+    @staticmethod
+    def _score_hashed_candidate(
+        prefix: str,
+        target_hash: str,
+        suffix: str,
+        path: Path,
+    ) -> Optional[Tuple[Tuple[int, int, int, int, str], Path]]:
+        if not path.is_file():
+            return None
+        try:
+            size = path.stat().st_size
+        except OSError:
+            size = 0
+        name = path.name
+        stem = name[: -len(suffix)] if suffix and name.endswith(suffix) else path.stem
+        hash_separator = stem.rfind(".")
+        candidate_prefix = stem[:hash_separator] if hash_separator != -1 else stem
+        candidate_hash = stem[hash_separator + 1:] if hash_separator != -1 else ""
+
+        prefix_miss = 0 if candidate_prefix == prefix else 1
+        ratio = (
+            SequenceMatcher(None, target_hash, candidate_hash).ratio()
+            if target_hash and candidate_hash
+            else 0.0
+        )
+        ratio_score = -int(ratio * 1000)
+        hash_len_score = abs(len(candidate_hash) - len(target_hash))
+        size_score = -int(size)
+
+        key = (prefix_miss, ratio_score, hash_len_score, size_score, name)
+        return key, path
 
     def _fetch_remote_index(self) -> Optional[str]:
         with self._remote_index_lock:
@@ -232,6 +478,12 @@ class StrudelStaticServer:
                 unresolved.add(asset)
                 continue
 
+            alternate = self._find_alternate_asset(asset)
+            if alternate and alternate.exists():
+                replacement = '/' + alternate.relative_to(self.root).as_posix()
+                replacements[asset] = replacement
+                continue
+
             stem = name[: -len(suffix)]
             hash_separator = stem.rfind('.')
             if hash_separator == -1:
@@ -250,7 +502,17 @@ class StrudelStaticServer:
                 unresolved.add(asset)
                 continue
 
-            replacement_path = matches[0]
+            target_hash = stem[hash_separator + 1 :]
+            scored_matches: List[Tuple[Tuple[int, int, int, int, str], Path]] = []
+            for candidate in matches:
+                scored_candidate = self._score_hashed_candidate(prefix, target_hash, suffix, candidate)
+                if scored_candidate is not None:
+                    scored_matches.append(scored_candidate)
+            if not scored_matches:
+                unresolved.add(asset)
+                continue
+            scored_matches.sort()
+            replacement_path = scored_matches[0][1]
             replacement = '/' + replacement_path.relative_to(self.root).as_posix()
             replacements[asset] = replacement
 
@@ -259,8 +521,112 @@ class StrudelStaticServer:
 
         return html, replacements, unresolved
 
+    def _populate_asset_index(self) -> None:
+        with self._asset_index_lock:
+            if self._asset_index:
+                return
+            ignore_dirs = {".git", ".hg", ".svn", ".pnpm", "node_modules", "__pycache__", ".venv"}
+            for base in self._search_roots:
+                for current, dirnames, filenames in os.walk(base):
+                    current_path = Path(current)
+                    if current_path.name == "_astro":
+                        relative_dir = current_path.relative_to(base)
+                        for filename in filenames:
+                            rel_path = (base / relative_dir / filename).resolve()
+                            self._asset_index.setdefault(filename, rel_path)
+                        dirnames[:] = []
+                        continue
+                    dirnames[:] = [d for d in dirnames if d not in ignore_dirs]
+
+    def _find_alternate_asset(self, rel_path: str) -> Optional[Path]:
+        relative = rel_path.lstrip("/")
+        if not relative:
+            return None
+        for base in self._search_roots:
+            candidate = base / relative
+            if candidate.exists():
+                return candidate
+
+        name = Path(relative).name
+        if not name:
+            return None
+
+        self._populate_asset_index()
+        with self._asset_index_lock:
+            mapped = self._asset_index.get(name)
+            if mapped and mapped.exists():
+                return mapped
+
+        suffix = Path(name).suffix
+        if suffix:
+            stem = name[: -len(suffix)]
+            hash_separator = stem.rfind(".")
+            if hash_separator != -1:
+                prefix = stem[:hash_separator]
+                target_hash = stem[hash_separator + 1 :]
+                scored_matches: List[Tuple[Tuple[int, int, int, int, str], Path]] = []
+                with self._asset_index_lock:
+                    for candidate_name, candidate_path in self._asset_index.items():
+                        if candidate_name.startswith(prefix) and candidate_name.endswith(suffix):
+                            scored = self._score_hashed_candidate(prefix, target_hash, suffix, candidate_path)
+                            if scored is not None:
+                                scored_matches.append(scored)
+                if scored_matches:
+                    scored_matches.sort()
+                    return scored_matches[0][1]
+        return None
+
+    def _serve_alternate_asset(
+        self,
+        handler: SimpleHTTPRequestHandler,
+        rel_path: str,
+        query: str,
+    ) -> bool:
+        alternate = self._find_alternate_asset(rel_path)
+        if alternate is None:
+            return False
+        logger = logging.getLogger(__name__)
+        try:
+            with alternate.open("rb") as handle:
+                data = handle.read()
+        except Exception as exc:
+            logger.debug("Failed to read fallback Strudel asset %s: %s", alternate, exc)
+            return False
+        content_type = handler.guess_type(alternate.name)
+        handler.send_response(200)
+        handler.send_header("Content-Type", content_type)
+        handler.send_header("Content-Length", str(len(data)))
+        handler.end_headers()
+        try:
+            handler.wfile.write(data)
+        except Exception:
+            return True
+        try:
+            relative_display = "/" + alternate.relative_to(self.root).as_posix()
+        except ValueError:
+            relative_display = "/" + alternate.as_posix()
+        suffix = f"?{query}" if query else ""
+        logger.info(
+            "Served fallback Strudel asset %s%s from %s",
+            rel_path,
+            suffix,
+            relative_display,
+        )
+        return True
+
+    def _should_serve_from_embed(self, rel_path: str) -> bool:
+        if self._embed_root is None:
+            return False
+        relative = rel_path.lstrip("/")
+        if not relative:
+            return False
+        if not relative.startswith("embed/"):
+            return False
+        embed_candidate = self._embed_root / relative
+        return embed_candidate.exists()
+
     def _get_index_content(self) -> Tuple[Optional[str], bool, Set[str]]:
-        index_path = self.root / "index.html"
+        index_path: Optional[Path] = self.root / "index.html"
         if not index_path.exists():
             return None, False, set()
         try:
@@ -277,7 +643,7 @@ class StrudelStaticServer:
 
             content, remapped, unresolved = self._attempt_local_asset_remap(content, missing)
             if remapped:
-                summary = ", ".join(f"{old} → {new}" for old, new in remapped.items())
+                summary = ", ".join(f"{old} -> {new}" for old, new in remapped.items())
                 logger.info("Rewrote Strudel asset references to available bundle files: %s", summary)
 
             missing_after = self._extract_missing_assets(content)
@@ -327,6 +693,24 @@ class StrudelStaticServer:
             def do_GET(self):
                 # Intercept index.html to fix base href and module URLs
                 if self.path == '/index.html' or self.path == '/':
+                    served_raw = False
+                    if DEBUG_SERVE_RAW_STRUDEL_INDEX:
+                        try:
+                            index_path = root / 'index.html'
+                            if index_path.exists():
+                                logging.getLogger(__name__).info("Serving UNMODIFIED index.html for crash diagnosis")
+                                data = index_path.read_bytes()
+                                self.send_response(200)
+                                self.send_header('Content-Type', 'text/html; charset=utf-8')
+                                self.send_header('Content-Length', str(len(data)))
+                                self.end_headers()
+                                self.wfile.write(data)
+                                served_raw = True
+                        except Exception as exc:
+                            logging.getLogger(__name__).error(f"Failed to serve unmodified index.html: {exc}")
+                    if served_raw:
+                        return
+
                     try:
                         content, used_remote, missing_assets = server_instance._get_index_content()
                         if content is not None:
@@ -368,37 +752,90 @@ class StrudelStaticServer:
                                 content, count = _rewrite_attr(attr, content)
                                 total_rewrites += count
 
-                            polyfill_comment = "<!-- Strudel compatibility polyfill -->"
-                            if polyfill_comment not in content:
-                                polyfill_script = (
-                                    "<script>"  # pragma: no cover - executed in browser
-                                    "(function(){"
-                                    "if(!('webkitStorageInfo' in window) && typeof navigator !== 'undefined'){"
-                                    "var temp=navigator.webkitTemporaryStorage;"
-                                    "var persistent=navigator.webkitPersistentStorage;"
-                                    "if(temp || persistent){"
-                                    "window.webkitStorageInfo={"
-                                    "TEMPORARY:0,PERSISTENT:1,"
-                                    "requestQuota:function(type,size,success,error){"
-                                    "var target=type===1?persistent:temp;"
-                                    "if(target && typeof target.requestQuota==='function'){"
-                                    "target.requestQuota(size,function(granted){if(typeof success==='function'){success(granted);}},function(err){if(typeof error==='function'){error(err);}});"
-                                    "}else if(typeof success==='function'){success(size);}"
-                                    "},"
-                                    "queryUsageAndQuota:function(type,success,error){"
-                                    "var target=type===1?persistent:temp;"
-                                    "if(target && typeof target.queryUsageAndQuota==='function'){"
-                                    "target.queryUsageAndQuota(function(used,granted){if(typeof success==='function'){success(used,granted);}},function(err){if(typeof error==='function'){error(err);}});"
-                                    "}else if(typeof success==='function'){success(0,0);}"
-                                    "}"
-                                    "};"
-                                    "}"
-                                    "}"
-                                    "})();"
-                                    "</script>"
-                                )
-                                if "</head>" in content:
-                                    content = content.replace("</head>", f"{polyfill_comment}{polyfill_script}</head>")
+                            if DEBUG_ENABLE_STRUDEL_POLYFILLS:
+                                polyfill_comment = "<!-- Strudel compatibility polyfill -->"
+                                if polyfill_comment not in content:
+                                    polyfill_script = (
+                                        "<script>"
+                                        "(function(){"
+                                        "if(!('webkitStorageInfo' in window) && typeof navigator !== 'undefined'){"
+                                        "var temp=navigator.webkitTemporaryStorage;"
+                                        "var persistent=navigator.webkitPersistentStorage;"
+                                        "if(temp || persistent){"
+                                        "window.webkitStorageInfo={"
+                                        "TEMPORARY:0,PERSISTENT:1,"
+                                        "requestQuota:function(type,size,success,error){"
+                                        "var target=type===1?persistent:temp;"
+                                        "if(target && typeof target.requestQuota==='function'){"
+                                        "target.requestQuota(size,function(granted){if(typeof success==='function'){success(granted);}},function(err){if(typeof error==='function'){error(err);}});"
+                                        "}else if(typeof success==='function'){success(size);}"
+                                        "},"
+                                        "queryUsageAndQuota:function(type,success,error){"
+                                        "var target=type===1?persistent:temp;"
+                                        "if(target && typeof target.queryUsageAndQuota==='function'){"
+                                        "target.queryUsageAndQuota(function(used,granted){if(typeof success==='function'){success(used,granted);}},function(err){if(typeof error==='function'){error(err);}});"
+                                        "}else if(typeof success==='function'){success(0,0);}"
+                                        "}"
+                                        "};"
+                                        "}"
+                                        "}"
+                                        "})();"
+                                        "</script>"
+                                    )
+                                    if "</head>" in content:
+                                        content = content.replace("</head>", f"{polyfill_comment}{polyfill_script}</head>")
+
+                                replace_comment = "<!-- Strudel replaceAll polyfill -->"
+                                if replace_comment not in content:
+                                    replace_script = (
+                                        "<script>"
+                                        "(function(){"
+                                        "if(typeof String.prototype.replaceAll!=='function'){"
+                                        "String.prototype.replaceAll=function(search,replace){"
+                                        "if(search instanceof RegExp){"
+                                        "if(!search.global) throw new TypeError('replaceAll with non-global RegExp');"
+                                        "return this.replace(search,replace);"
+                                        "}"
+                                        "var escaped=String(search).replace(/[.*+?^${}()|[\\]\\\\]/g,'\\\\$&');"
+                                        "return this.replace(new RegExp(escaped,'g'),replace);"
+                                        "};"
+                                        "}"
+                                        "})();"
+                                        "</script>"
+                                    )
+                                    if "</head>" in content:
+                                        content = content.replace("</head>", f"{replace_comment}{replace_script}</head>")
+
+                            if DEBUG_ENABLE_STRUDEL_THEME_INJECTION:
+                                learn_comment = "<!-- Ambiance learn redirect -->"
+                                if learn_comment not in content:
+                                    learn_script = (
+                                        "<script>"
+                                        "(function(){"
+                                        "function hideLearn(root){if(!root||!root.querySelectorAll){return;}root.querySelectorAll(\\\"a[href^='/learn']\\\").forEach(function(anchor){anchor.style.display='none';anchor.setAttribute('aria-hidden','true');var parent=anchor.parentElement;if(parent && parent.children.length===1){parent.style.display='none';}});}"
+                                        "hideLearn(document);"
+                                        "new MutationObserver(function(muts){muts.forEach(function(mut){if(mut.addedNodes){mut.addedNodes.forEach(function(node){hideLearn(node);});}});}).observe(document.documentElement,{subtree:true,childList:true});"
+                                        "})();"
+                                        "</script>"
+                                    )
+                                    if "</head>" in content:
+                                        content = content.replace("</head>", f"{learn_comment}{learn_script}</head>")
+
+                                theme_comment = "<!-- Ambiance Strudel CSS -->"
+                                if theme_comment not in content:
+                                    theme_style = (
+                                        "<style>"
+                                        "body,html{background:var(--background,#181a1f);color:var(--foreground,#f2f4f8);}"
+                                        ".bg-background,.bg-white,.bg-gray-50,.bg-gray-100,.bg-surface{background:var(--panel,#20252d)!important;color:var(--foreground,#f2f4f8)!important;}"
+                                        "button,.btn,.button,[role='tab'],.tab{background:var(--panel,#20252d)!important;color:var(--foreground,#f2f4f8)!important;border-color:var(--accent,#59a7ff)!important;}"
+                                        "[role='tab'][aria-selected='true'],.tab-active{color:var(--accent,#59a7ff)!important;border-bottom:2px solid var(--accent,#59a7ff)!important;}"
+                                        "a{color:var(--accent,#59a7ff)!important;}"
+                                        "input,textarea,select{background:var(--panel,#20252d)!important;color:var(--foreground,#f2f4f8)!important;border-color:rgba(255,255,255,0.15)!important;}"
+                                        ".text-foreground,.text-foreground\\/80,.text-foreground\\/60{color:var(--foreground,#f2f4f8)!important;}"
+                                        "</style>"
+                                    )
+                                    if "</head>" in content:
+                                        content = content.replace("</head>", f"{theme_comment}{theme_style}</head>")
 
                             if base_subs or total_rewrites or used_remote:
                                 logging.getLogger(__name__).info(
@@ -421,8 +858,8 @@ class StrudelStaticServer:
                             self.end_headers()
                             self.wfile.write(content_bytes)
                             return
-                    except Exception as e:
-                        logging.getLogger(__name__).warning(f"Failed to modify index.html: {e}")
+                    except Exception as exc:
+                        logging.getLogger(__name__).warning(f"Failed to modify index.html: {exc}")
                 path_info = urlsplit(self.path)
                 normalised_path = path_info.path
                 if normalised_path not in ('', '/'):
@@ -435,13 +872,81 @@ class StrudelStaticServer:
                         self.send_error(403, "Forbidden")
                         return
 
-                    if normalised_path.endswith('/'):
+                    if resolved_candidate.is_dir():
+                        index_candidate = resolved_candidate / "index.html"
+                        if not normalised_path.endswith('/'):
+                            location = normalised_path + '/'
+                            self.send_response(301)
+                            self.send_header('Location', location)
+                            self.end_headers()
+                            return
+                        if index_candidate.exists():
+                            try:
+                                content = index_candidate.read_text(encoding='utf-8')
+
+                                # Only apply asset rewriting for full HTML documents, not redirect stubs
+                                # Redirect stubs are tiny files (<500 bytes) with just window.location
+                                is_redirect_stub = len(content) < 500 and 'window.location' in content
+
+                                if not is_redirect_stub:
+                                    # Apply same base URL and asset rewriting as root index.html
+                                    raw_base = server_instance.base_url or "/"
+                                    base_url = raw_base.rstrip('/')
+                                    if not base_url:
+                                        base_url = "/"
+                                    base_href = f"{base_url}/" if base_url != "/" else "/"
+                                    astro_prefix = "" if base_url == "/" else base_url
+
+                                    # Normalize <base> tag
+                                    base_pattern = re.compile(r'<base\s+href="[^"]*"\s*>', re.IGNORECASE)
+                                    replacement_base = f'<base href="{base_href}">'
+                                    if base_pattern.search(content):
+                                        content = base_pattern.sub(replacement_base, content, count=1)
+
+                                    # Rewrite asset URLs to use HTTP server paths
+                                    for attr in ('src', 'href'):
+                                        for quote in ('"', "'"):
+                                            absolute = f"{attr}={quote}{astro_prefix}/_astro/"
+                                            needle_slash = f"{attr}={quote}/_astro/"
+                                            needle_plain = f"{attr}={quote}_astro/"
+                                            if needle_slash in content:
+                                                content = content.replace(needle_slash, absolute)
+                                            if needle_plain in content:
+                                                content = content.replace(needle_plain, absolute)
+
+                                data = content.encode('utf-8')
+                            except Exception as exc:
+                                logging.getLogger(__name__).warning("Unable to read directory index %s: %s", index_candidate, exc)
+                                self.send_error(500, "Failed to load directory index")
+                                return
+                            self.send_response(200)
+                            self.send_header('Content-Type', 'text/html; charset=utf-8')
+                            self.send_header('Content-Length', str(len(data)))
+                            self.end_headers()
+                            self.wfile.write(data)
+                            return
+
+                    prefer_embed = server_instance._should_serve_from_embed(normalised_path)
+                    if resolved_candidate.is_file() and not prefer_embed:
                         super().do_GET()
                         return
 
-                    if resolved_candidate.is_file():
-                        super().do_GET()
-                        return
+                    if prefer_embed:
+                        alternate_handled = server_instance._serve_alternate_asset(
+                            self,
+                            normalised_path,
+                            path_info.query,
+                        )
+                        if alternate_handled:
+                            return
+                    else:
+                        alternate_handled = server_instance._serve_alternate_asset(
+                            self,
+                            normalised_path,
+                            path_info.query,
+                        )
+                        if alternate_handled:
+                            return
 
                     proxy_handled = False
                     if any(normalised_path.startswith(prefix) for prefix in STRUDEL_REMOTE_FALLBACK_PREFIXES):
@@ -1374,6 +1879,28 @@ class AmbianceQtImproved(QMainWindow):
             except Exception:
                 pass
 
+    def _midi_worker_loop(self) -> None:
+        """Background thread that serialises MIDI operations."""
+        while not getattr(self, "_midi_worker_stop", threading.Event()).is_set():
+            try:
+                job = self._midi_queue.get(timeout=0.5)
+            except queue.Empty:
+                continue
+            if job is None:
+                self._midi_queue.task_done()
+                break
+            callback, args, kwargs = job
+            try:
+                callback(*args, **kwargs)
+            except CarlaHostError as exc:
+                self.logger.warning("MIDI dispatch error: %s", exc)
+            except Exception as exc:
+                self.logger.error("MIDI dispatch crashed: %s", exc, exc_info=True)
+            finally:
+                self._midi_queue.task_done()
+    def poll_parameters(self):
+        pass
+
     def __init__(self):
         super().__init__()
         self.setFocusPolicy(Qt.StrongFocus)
@@ -1399,7 +1926,27 @@ class AmbianceQtImproved(QMainWindow):
         self.fallback_audio_threads: List[threading.Thread] = []
         self.warned_no_winsound = False
 
-        self.strudel_available = QWebEngineView is not None
+        # MIDI dispatch worker keeps Carla calls off the UI thread to prevent plugin crashes.
+        self._midi_queue: "queue.Queue[Optional[tuple[Callable[..., None], tuple, dict]]]" = queue.Queue()
+        self._midi_worker_stop = threading.Event()
+        self._midi_worker = threading.Thread(
+            target=self._midi_worker_loop,
+            name="AmbianceMIDIWorker",
+            daemon=True,
+        )
+        self._midi_worker.start()
+
+        ensure_webengine()
+        self.strudel_available = STRUDEL_ENABLED and QWebEngineView is not None
+        if not self.strudel_available and WEBENGINE_IMPORT_ERROR:
+            self.logger.warning(f"PyQtWebEngine import failed: {WEBENGINE_IMPORT_ERROR}")
+        elif not self.strudel_available:
+            if STRUDEL_ENABLED:
+                self.logger.warning("PyQtWebEngine is not available (QWebEngineView is None)")
+            else:
+                self.logger.info("Strudel integration disabled by configuration")
+        else:
+            self.logger.info("PyQtWebEngine is available")
         self.strudel_loaded = False
         self._strudel_signals_connected = False
         self.body_stack: Optional[QStackedWidget] = None
@@ -1410,18 +1957,27 @@ class AmbianceQtImproved(QMainWindow):
         self._strudel_module_hint: Optional[str] = None
         self._strudel_local_index: Optional[Path] = None
         self._strudel_using_local = False
+        self._strudel_base_url: Optional[QUrl] = None
+        self._strudel_page = None
         self._strudel_static_server: Optional[StrudelStaticServer] = None
         self._strudel_event_queue: Deque[Dict[str, Any]] = deque(maxlen=512)
         self.strudel_bridge = StrudelPatternBridge(self)
         self.default_status_message = "Ready - pick a plugin from the library."
 
-        self.audio_engine: Optional[AudioEngine] = None
-        try:
-            self.audio_engine = AudioEngine()
-            self.logger.info("Audio engine booted (pyo).")
-        except Exception as exc:
-            self.logger.error("Failed to initialise audio engine: %s", exc, exc_info=True)
-            self.audio_engine = None
+        self.audio_engine: Optional["AudioEngine"] = None
+        if AudioEngine is not None:
+            try:
+                self.audio_engine = AudioEngine()
+                self.logger.info("Audio engine booted (pyo).")
+            except Exception as exc:
+                self.logger.error("Failed to initialise audio engine: %s", exc, exc_info=True)
+                self.audio_engine = None
+        else:
+            if AUDIO_ENGINE_IMPORT_ERROR is not None:
+                self.logger.warning(
+                    "Audio engine disabled (pyo unavailable): %s",
+                    AUDIO_ENGINE_IMPORT_ERROR,
+                )
         
         # Timer for parameter updates
         self.poll_timer = QTimer()
@@ -1493,33 +2049,36 @@ class AmbianceQtImproved(QMainWindow):
 
         self.strudel_container = QWidget()
         self.strudel_container.setObjectName("StrudelContainer")
-        strudel_layout = QVBoxLayout(self.strudel_container)
-        strudel_layout.setContentsMargins(0, 0, 0, 0)
-        strudel_layout.setSpacing(0)
+        self._strudel_layout = QVBoxLayout(self.strudel_container)
+        self._strudel_layout.setContentsMargins(0, 0, 0, 0)
+        self._strudel_layout.setSpacing(0)
 
         if self.strudel_available:
-            self.strudel_view = QWebEngineView(self.strudel_container)
-            self.strudel_view.setObjectName("StrudelView")
-            self.strudel_view.setContextMenuPolicy(Qt.NoContextMenu)
-            if QWebEngineSettings is not None:
-                try:
-                    settings = self.strudel_view.settings()
-                    settings.setAttribute(QWebEngineSettings.LocalContentCanAccessFileUrls, True)
-                    settings.setAttribute(QWebEngineSettings.LocalContentCanAccessRemoteUrls, True)
-                except Exception:
-                    pass
-            strudel_layout.addWidget(self.strudel_view)
+            self.strudel_view = None
         else:
-            fallback_label = QLabel(
-                "Strudel Mode requires PyQtWebEngine. Install the 'PyQtWebEngine' package "
-                "to enable the embedded browser."
-            )
+            if not STRUDEL_ENABLED:
+                error_msg = (
+                    "Strudel Mode has been disabled in this build due to stability issues.\n"
+                    "Open https://strudel.cc/ in your web browser to keep jamming."
+                )
+            elif WEBENGINE_IMPORT_ERROR:
+                error_msg = (
+                    f"PyQtWebEngine import failed: {WEBENGINE_IMPORT_ERROR}\n\n"
+                    "Strudel Mode requires PyQtWebEngine.\n"
+                    "Try: pip install --force-reinstall PyQt6-WebEngine PyQt6"
+                )
+            else:
+                error_msg = (
+                    "Strudel Mode requires PyQtWebEngine. Install the 'PyQtWebEngine' package "
+                    "to enable the embedded browser."
+                )
+            fallback_label = QLabel(error_msg)
             fallback_label.setObjectName("StrudelFallback")
             fallback_label.setWordWrap(True)
             fallback_label.setAlignment(Qt.AlignCenter)
-            strudel_layout.addStretch(1)
-            strudel_layout.addWidget(fallback_label)
-            strudel_layout.addStretch(1)
+            self._strudel_layout.addStretch(1)
+            self._strudel_layout.addWidget(fallback_label)
+            self._strudel_layout.addStretch(1)
 
         self.body_stack.addWidget(self.strudel_container)
         self.body_stack.setCurrentWidget(self.scroll_area)
@@ -1564,9 +2123,16 @@ class AmbianceQtImproved(QMainWindow):
         self.style_mode_btn.toggled.connect(self.on_style_mode_toggled)
         layout.addWidget(self.style_mode_btn)
 
+
         self.strudel_mode_btn = QPushButton("Strudel Mode: OFF")
         self.strudel_mode_btn.setCheckable(True)
-        if not self.strudel_available:
+        if not STRUDEL_ENABLED:
+            self.strudel_mode_btn.setEnabled(False)
+            self.strudel_mode_btn.setText("Strudel Mode (Disabled)")
+            self.strudel_mode_btn.setToolTip(
+                "Strudel integration is temporarily disabled due to crashes. Please open https://strudel.cc/ in your browser."
+            )
+        elif not self.strudel_available:
             self.strudel_mode_btn.setToolTip(
                 "Install the 'PyQtWebEngine' package to enable the embedded Strudel playground."
             )
@@ -1614,12 +2180,52 @@ class AmbianceQtImproved(QMainWindow):
 
         return toolbar
 
+    def _ensure_strudel_view(self) -> bool:
+        if self.strudel_view is not None:
+            return True
+        ensure_webengine()
+        if QWebEngineView is None:
+            self.logger.error("Qt WebEngine is unavailable; cannot create Strudel view.")
+            return False
+        try:
+            view = QWebEngineView()
+            view.setParent(self.strudel_container)
+            if StrudelWebPage is not None:
+                self._strudel_page = StrudelWebPage(view, self._strudel_base_url)
+                view.setPage(self._strudel_page)
+            else:
+                self._strudel_page = None
+            view.setObjectName("StrudelView")
+            view.setContextMenuPolicy(Qt.NoContextMenu)
+            if QWebEngineSettings is not None:
+                try:
+                    settings = view.settings()
+                    settings.setAttribute(QWebEngineSettings.LocalContentCanAccessFileUrls, True)
+                    settings.setAttribute(QWebEngineSettings.LocalContentCanAccessRemoteUrls, True)
+                    settings.setAttribute(QWebEngineSettings.JavascriptEnabled, True)
+                    settings.setAttribute(QWebEngineSettings.WebGLEnabled, False)
+                    if hasattr(QWebEngineSettings, "Accelerated2dCanvasEnabled"):
+                        settings.setAttribute(QWebEngineSettings.Accelerated2dCanvasEnabled, False)
+                    settings.setAttribute(QWebEngineSettings.ErrorPageEnabled, True)
+                    settings.setAttribute(QWebEngineSettings.PluginsEnabled, False)
+                    settings.setAttribute(QWebEngineSettings.LocalStorageEnabled, True)
+                except Exception as exc:
+                    self.logger.warning(f"Failed to configure WebEngine settings: {exc}")
+            self._strudel_layout.addWidget(view)
+            self.strudel_view = view
+            return True
+        except Exception as exc:
+            self.logger.error(f"Failed to create Strudel WebEngineView: {exc}")
+            self.append_log(f"Strudel view creation failed: {exc}")
+            self.strudel_available = False
+            return False
+
     def ensure_strudel_loaded(self) -> None:
         if not self.strudel_available:
             return
         if self.strudel_loaded:
             return
-        if not self.strudel_view:
+        if not self._ensure_strudel_view():
             return
         if not self._strudel_signals_connected:
             try:
@@ -1633,19 +2239,42 @@ class AmbianceQtImproved(QMainWindow):
         target_url, module_hint, using_local = self._determine_strudel_target()
         self._strudel_module_hint = module_hint
         self._strudel_using_local = using_local
+        if using_local and self._strudel_static_server and self._strudel_static_server.base_url:
+            self._strudel_base_url = QUrl(self._strudel_static_server.base_url + "/")
+        else:
+            self._strudel_base_url = QUrl(target_url) if target_url is not None else None
+        if self._strudel_page is not None:
+            self._strudel_page._base_url = self._strudel_base_url
         message = (
-            "Strudel Mode active – loading local playground…"
+            "Strudel Mode active  loading local playground"
             if using_local
-            else "Strudel Mode active – loading web playground…"
+            else "Strudel Mode active  loading web playground"
         )
         try:
-            self.strudel_view.setUrl(target_url)
-            self._ensure_strudel_channel()
+            self.logger.info(f"Loading Strudel from URL: {target_url.toString()}")
             self.statusBar().showMessage(message)
+            # Delay the actual URL load slightly to ensure Qt is fully initialized
+            QTimer.singleShot(100, lambda: self._delayed_strudel_load(target_url))
         except Exception as exc:
+            self.logger.error(f"Failed to initiate Strudel load: {exc}", exc_info=True)
             self.append_log(f"Failed to load Strudel playground: {exc}")
             return
-        self.strudel_loaded = True
+
+    def _delayed_strudel_load(self, url: QUrl) -> None:
+        """Load Strudel with a slight delay to ensure Qt is ready."""
+        try:
+            if self.strudel_view:
+                self.logger.info("Setting Strudel URL...")
+                self.strudel_view.setUrl(url)
+                if DEBUG_ENABLE_STRUDEL_BRIDGE:
+                    self._ensure_strudel_channel()
+                else:
+                    self.logger.debug("Strudel bridge connection skipped (disabled for testing)")
+                self.strudel_loaded = True
+                self.logger.info("Strudel load initiated successfully")
+        except Exception as exc:
+            self.logger.error(f"Failed in delayed Strudel load: {exc}", exc_info=True)
+            self.append_log(f"Failed to load Strudel: {exc}")
 
     def _ensure_strudel_server(self, dist_dir: Path) -> Optional[str]:
         if self._strudel_static_server and self._strudel_static_server.base_url:
@@ -1674,6 +2303,10 @@ class AmbianceQtImproved(QMainWindow):
             self._strudel_static_server = None
 
     def _determine_strudel_target(self) -> Tuple[QUrl, Optional[str], bool]:
+        if STRUDEL_FORCE_REMOTE:
+            self._teardown_strudel_server()
+            self._strudel_local_index = None
+            return QUrl(STRUDEL_REMOTE_URL), None, False
         base_dir = Path(__file__).resolve().parent / "resources" / "strudel" / "dist"
         index_path = base_dir / "index.html"
         if index_path.exists():
@@ -1720,32 +2353,55 @@ class AmbianceQtImproved(QMainWindow):
     def on_strudel_load_started(self) -> None:
         try:
             if self._strudel_using_local:
-                self.statusBar().showMessage("Strudel Mode – preparing local playground…")
+                self.statusBar().showMessage("Strudel Mode  preparing local playground")
             else:
-                self.statusBar().showMessage("Strudel Mode – contacting playground…")
+                self.statusBar().showMessage("Strudel Mode  contacting playground")
         except Exception:
             pass
 
     def on_strudel_load_progress(self, progress: int) -> None:
         try:
-            self.statusBar().showMessage(f"Strudel Mode loading… {progress}%")
+            self.statusBar().showMessage(f"Strudel Mode loading {progress}%")
         except Exception:
             pass
 
     def on_strudel_load_finished(self, ok: bool) -> None:
         if ok:
             try:
-                self.statusBar().showMessage("Strudel Mode active – ready to jam.")
+                self.statusBar().showMessage("Strudel Mode active  ready to jam.")
+                self.logger.info("Strudel page loaded successfully")
             except Exception:
                 pass
-            self._ensure_strudel_channel()
-            self._inject_strudel_bridge()
+            if DEBUG_ENABLE_STRUDEL_BRIDGE:
+                try:
+                    self._ensure_strudel_channel()
+                    self._inject_strudel_bridge()
+                    self.logger.info("Strudel load completed (bridge active)")
+                except Exception as exc:
+                    self.logger.error(f"Failed to inject Strudel bridge: {exc}", exc_info=True)
+            else:
+                self.logger.info("Strudel load completed (bridge disabled for testing)")
             return
+
+        page = getattr(self, "_strudel_page", None)
+        if page is not None and getattr(page, "_skip_next_failure", False):
+            page._skip_next_failure = False
+            return
+
+        current_url = self.strudel_view.url() if self.strudel_view else None
+        if current_url is not None:
+            try:
+                if current_url.path().startswith('/learn'):
+                    if self._strudel_base_url is not None and self.strudel_view is not None:
+                        self.strudel_view.setUrl(self._strudel_base_url)
+                    return
+            except Exception:
+                pass
 
         self.strudel_loaded = False
         self.append_log("Strudel playground failed to load. Check your internet connection or firewall settings.")
         try:
-            self.statusBar().showMessage("Strudel Mode unavailable – check your internet connection.")
+            self.statusBar().showMessage("Strudel Mode unavailable  check your internet connection.")
         except Exception:
             pass
         if self.strudel_view:
@@ -1982,12 +2638,36 @@ class AmbianceQtImproved(QMainWindow):
             hap_text = str(hap)
         self.append_log(f"Strudel {kind}: {hap_text}")
 
+
     def on_strudel_mode_toggled(self, checked: bool) -> None:
+        self.logger.info(f"Strudel mode toggled: {'ON' if checked else 'OFF'}")
+
         if not self.strudel_mode_btn:
+            self.logger.warning("Strudel mode button not available")
             return
-        self.strudel_mode_btn.setText("Strudel Mode: ON" if checked else "Strudel Mode: OFF")
+        if STRUDEL_ENABLED:
+            self.strudel_mode_btn.setText("Strudel Mode: ON" if checked else "Strudel Mode: OFF")
+
+        self.apply_theme(self.theme_key, update_combo=False)
 
         if not self.strudel_available:
+            if not STRUDEL_ENABLED:
+                self.logger.info("Strudel integration disabled; forwarding user to browser")
+                if checked:
+                    QMessageBox.information(
+                        self,
+                        "Strudel Mode Disabled",
+                        "The embedded Strudel playground has been turned off in this build because it was unstable.\n\n"
+                        "Please open https://strudel.cc/ in your browser to keep jamming.",
+                    )
+                if self.strudel_mode_btn.isCheckable():
+                    self.strudel_mode_btn.blockSignals(True)
+                    self.strudel_mode_btn.setChecked(False)
+                    self.strudel_mode_btn.blockSignals(False)
+                self._set_keyboard_suspended(False)
+                return
+
+            self.logger.warning("Strudel mode not available (PyQtWebEngine not installed)")
             if checked:
                 QMessageBox.warning(
                     self,
@@ -2001,14 +2681,23 @@ class AmbianceQtImproved(QMainWindow):
             return
 
         if not self.body_stack or not self.strudel_container:
+            self.logger.warning("Strudel UI containers not available")
             return
 
         if checked:
-            self.ensure_strudel_loaded()
-            self.body_stack.setCurrentWidget(self.strudel_container)
-            if self.strudel_loaded:
-                self.statusBar().showMessage("Strudel Mode active – jam inside the embedded playground.")
+            self.logger.info("Activating Strudel mode - loading playground...")
+            try:
+                self.ensure_strudel_loaded()
+                self.logger.info("Switching to Strudel container")
+                self.body_stack.setCurrentWidget(self.strudel_container)
+                if self.strudel_loaded:
+                    self.statusBar().showMessage("Strudel Mode active  jam inside the embedded playground.")
+                    self.logger.info("Strudel mode activated successfully")
+            except Exception as exc:
+                self.logger.error(f"Failed to activate Strudel mode: {exc}", exc_info=True)
+                self.append_log(f"Error activating Strudel mode: {exc}")
         else:
+            self.logger.info("Deactivating Strudel mode")
             self.body_stack.setCurrentWidget(self.scroll_area)
             self.statusBar().showMessage(self.default_status_message)
 
@@ -2029,6 +2718,328 @@ class AmbianceQtImproved(QMainWindow):
             QMessageBox.warning(self, "Blocks", "Audio engine is unavailable, cannot add blocks.")
             return
         self.blocks_panel.create_block()
+
+    def on_theme_changed(self, index: int) -> None:
+        """Handle theme combo box change."""
+        if not hasattr(self, "theme_combo"):
+            return
+        key = self.theme_combo.itemData(index)
+        if not key:
+            key_text = self.theme_combo.itemText(index).strip().lower()
+            key = key_text.replace(" ", "")
+        key = str(key)
+        if key not in THEME_PRESETS:
+            key = "flat"
+        self.apply_theme(key, update_combo=False, log_change=True)
+        self.statusBar().showMessage(f"Theme set to {self.theme_combo.currentText()}")
+
+    def on_plugin_focus_changed(self) -> None:
+        """Update status label when plugin selection changes."""
+        if not getattr(self, "plugin_list", None):
+            return
+        items = self.plugin_list.selectedItems()
+        if not items:
+            if hasattr(self, "selected_plugin_label"):
+                self.selected_plugin_label.setText("Select a plugin to assign it to a lane.")
+            return
+        item = items[0]
+        name = item.text()
+        path = item.data(Qt.UserRole)
+        suffix = ""
+        if path:
+            try:
+                suffix = Path(path).suffix.upper()
+            except Exception:
+                suffix = ""
+        label = f"Selected: {name}"
+        if suffix:
+            label += f"  {suffix}"
+        if hasattr(self, "selected_plugin_label"):
+            self.selected_plugin_label.setText(label)
+
+    def on_chain_slot_selected(self, slot_index: int) -> None:
+        """React to plugin chain slot selections."""
+        slot = None
+        if getattr(self, "chain_widget", None) and 0 <= slot_index < len(self.chain_widget.slots):
+            slot = self.chain_widget.slots[slot_index]
+        self.refresh_selected_plugin_label()
+        self.refresh_host_status(slot)
+        self.update_host_controls()
+
+    def on_chain_slot_updated(self, slot_index: int) -> None:
+        """Refresh host panel when a slot changes."""
+        slot = None
+        if getattr(self, "chain_widget", None) and 0 <= slot_index < len(self.chain_widget.slots):
+            slot = self.chain_widget.slots[slot_index]
+        self.refresh_host_status(slot)
+        self.update_host_controls()
+
+    def refresh_selected_plugin_label(self) -> None:
+        """Show the currently selected slot info."""
+        if not hasattr(self, "selected_plugin_label") or not getattr(self, "chain_widget", None):
+            return
+        index = getattr(self.chain_widget, "selected_slot_index", -1)
+        if index is None or index < 0 or index >= len(self.chain_widget.slots):
+            self.selected_plugin_label.setText("Select a plugin to assign it to a lane.")
+            return
+        slot = self.chain_widget.slots[index]
+        if slot.plugin_path:
+            name = slot.plugin_path.stem
+            suffix = slot.plugin_path.suffix.upper()
+            status = " [Bypassed]" if not slot.enabled else ""
+            self.selected_plugin_label.setText(f"Slot {slot.index + 1}: {name} {suffix}{status}")
+        else:
+            self.selected_plugin_label.setText(f"Slot {slot.index + 1}: [Empty]")
+
+    def update_host_controls(self) -> None:
+        """Enable/disable host controls based on current slot state."""
+        slot = None
+        if getattr(self, "chain_widget", None) and self.chain_widget.selected_slot_index >= 0:
+            try:
+                slot = self.chain_widget.slots[self.chain_widget.selected_slot_index]
+            except (IndexError, AttributeError):
+                slot = None
+        has_host = bool(slot and slot.host)
+        supports_midi = bool(slot and slot.supports_midi)
+
+        for btn_name in ("host_ui_btn", "instrument_open_ui_btn", "instrument_preview_btn"):
+            btn = getattr(self, btn_name, None)
+            if btn is not None:
+                btn.setEnabled(has_host)
+        if hasattr(self, "instrument_panel") and self.instrument_panel is not None:
+            self.instrument_panel.setEnabled(has_host and supports_midi)
+        if hasattr(self, "rack_status_label") and slot:
+            name = slot.plugin_path.stem if slot.plugin_path else "Empty"
+            self.rack_status_label.setText(f"Slot {slot.index + 1}: {name}")
+        elif hasattr(self, "rack_status_label"):
+            self.rack_status_label.setText("No slot selected")
+
+    def append_log(self, message: str) -> None:
+        """Prepend a log entry to the rack output panel."""
+        if not hasattr(self, "rack_output") or self.rack_output is None:
+            return
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        entry = f"[{timestamp}] {message}"
+        existing = self.rack_output.toPlainText()
+        if existing:
+            self.rack_output.setPlainText(entry + "\n" + existing)
+        else:
+            self.rack_output.setPlainText(entry)
+        bar = self.rack_output.verticalScrollBar()
+        if bar:
+            bar.setValue(bar.minimum())
+
+    def copy_workspace_path(self) -> None:
+        """Copy the plugin workspace path to the clipboard."""
+        path = getattr(self, "last_workspace_path", "")
+        clipboard = QApplication.clipboard()
+        if clipboard is not None and path:
+            clipboard.setText(path)
+            self.append_log(f"Copied workspace path: {path}")
+        else:
+            self.append_log("Workspace path unavailable.")
+
+    def scan_plugins(self) -> None:
+        """Scan plugin directories and populate the library list."""
+        if not hasattr(self, "plugin_list") or self.plugin_list is None:
+            return
+
+        self.plugin_list.clear()
+        base_dir = Path(__file__).parent
+        workspace_candidates = [
+            base_dir / "included_plugins",
+            base_dir.parent / "included_plugins",
+        ]
+        workspace_dir = next((p for p in workspace_candidates if p.exists()), None)
+        self.last_workspace_path = str(workspace_dir or "")
+        if hasattr(self, "workspace_path_label"):
+            self.workspace_path_label.setText(self.last_workspace_path or "Workspace not found")
+
+        plugin_dirs = [
+            base_dir / "included_plugins",
+            base_dir.parent / "included_plugins",
+            Path("C:/Program Files/VSTPlugins"),
+            Path("C:/Program Files/Steinberg/VSTPlugins"),
+            Path("C:/Program Files/Common Files/VST3"),
+            Path("C:/Program Files (x86)/VSTPlugins"),
+            Path("C:/Program Files (x86)/Steinberg/VSTPlugins"),
+        ]
+        available_dirs: List[Path] = [p for p in plugin_dirs if p.exists()]
+        missing_dirs: List[Path] = [p for p in plugin_dirs if not p.exists() and "Program Files" not in str(p)]
+
+        plugins: List[Path] = []
+        for plugin_dir in available_dirs:
+            for pattern in ("**/*.dll", "**/*.vst3", "**/*.vst"):
+                plugins.extend(plugin_dir.glob(pattern))
+
+        seen: Dict[str, Path] = {}
+        for plugin_path in sorted(set(plugins)):
+            key = plugin_path.name.lower()
+            if key in seen:
+                continue
+            seen[key] = plugin_path
+            item = QListWidgetItem(plugin_path.stem)
+            item.setData(Qt.UserRole, str(plugin_path))
+            item.setToolTip(str(plugin_path))
+            self.plugin_list.addItem(item)
+
+        notes: List[str] = []
+        if not available_dirs:
+            notes.append("No plugin directories were found. Drop VST files into the Ambiance 'included_plugins' folder.")
+        elif missing_dirs:
+            notes.append("Some optional plugin folders were not found and will be skipped.")
+        if hasattr(self, "workspace_notes"):
+            self.workspace_notes.setText("\n".join(notes))
+
+        plugin_count = len(seen)
+        dir_count = len(available_dirs)
+        self.statusBar().showMessage(f"Found {plugin_count} plugins across {dir_count} folders")
+        if hasattr(self, "rack_status_label"):
+            self.rack_status_label.setText(f"Library: {plugin_count} plugins")
+
+        if plugin_count == 0:
+            self.append_log("No plugins discovered. Add VST/VST3 files to your workspace directory.")
+        else:
+            self.append_log(f"Library refreshed - {plugin_count} plugins ready.")
+
+        self.refresh_selected_plugin_label()
+        self.update_host_controls()
+
+    def get_selected_slot(self) -> Optional[PluginChainSlot]:
+        if getattr(self, "chain_widget", None) is None:
+            return None
+        index = getattr(self.chain_widget, "selected_slot_index", -1)
+        if index is None or index < 0 or index >= len(self.chain_widget.slots):
+            return None
+        return self.chain_widget.slots[index]
+
+    def load_plugin_to_chain(self) -> None:
+        slot = self.get_selected_slot()
+        if slot is None:
+            QMessageBox.information(self, "No Slot", "Select a lane in the rack before loading a plugin.")
+            return
+        items = self.plugin_list.selectedItems() if hasattr(self, "plugin_list") else []
+        if not items:
+            QMessageBox.information(self, "No Plugin", "Select a plugin from the library first.")
+            return
+
+        plugin_path = Path(items[0].data(Qt.UserRole))
+        slot.supports_midi = False
+
+        try:
+            if slot.host:
+                with slot.lock:
+                    slot.host.unload()
+                    slot.host.shutdown()
+
+            slot.host = CarlaVSTHost(client_name=f"AmbianceSlot{slot.index}")
+            if self.chain_widget.host_window_id is not None:
+                slot.host.register_host_window(self.chain_widget.host_window_id)
+
+            slot.host.configure_audio(preferred_drivers=["DirectSound", "ASIO", "WASAPI", "Dummy", "JACK"])
+            slot.host.load_plugin(plugin_path, show_ui=False)
+            slot.plugin_path = plugin_path
+            slot.ui_visible = False
+
+            status: Dict[str, Any] = {}
+            try:
+                status = slot.host.status()
+            except Exception:
+                status = {}
+
+            driver_name = status.get("driver", "unknown")
+            self.logger.info(f"Slot {slot.index} using audio driver: {driver_name}")
+
+            slot.supports_midi, _ = self._extract_plugin_capabilities(status)
+            self.chain_widget.update_slot_display(slot.index)
+            self.chain_widget.update_controls()
+
+            self.update_parameters_for_slot(slot)
+            self.refresh_host_status(slot)
+            self.update_host_controls()
+            self.refresh_selected_plugin_label()
+
+            if len(self.chain_widget.get_active_slots()) == 1:
+                self.poll_timer.start(100)
+
+            self.statusBar().showMessage(f"Loaded {plugin_path.stem} into slot {slot.index + 1}")
+            self.append_log(f"Loaded '{plugin_path.stem}' into slot {slot.index + 1}.")
+
+        except Exception as exc:
+            slot.supports_midi = False
+            QMessageBox.critical(self, "Load Error", f"Failed to load plugin:\n{exc}")
+            self.logger.error(f"Plugin load error: {exc}", exc_info=True)
+            self.append_log(f"Failed to load plugin: {exc}")
+
+    def unload_selected_slot(self) -> None:
+        slot = self.get_selected_slot()
+        if slot is None:
+            QMessageBox.information(self, "No Slot", "Select a lane from the rack first.")
+            return
+        self.chain_widget.unload_plugin_from_slot()
+        self.param_refresh_attempts.pop(slot.index, None)
+        self.append_log(f"Unloaded slot {slot.index + 1}.")
+        self.refresh_host_status(self.get_selected_slot())
+        self.update_host_controls()
+
+    def toggle_slot_ui_from_host(self) -> None:
+        slot = self.get_selected_slot()
+        if not slot or not slot.host:
+            QMessageBox.information(self, "No Plugin", "Load a plugin into the selected slot first.")
+            return
+        self.chain_widget.toggle_slot_ui()
+
+    def preview_plugin(self) -> None:
+        slot = self.get_selected_slot()
+        if not slot or not slot.host:
+            QMessageBox.information(self, "No Plugin", "Load a plugin into the selected slot first.")
+            return
+        self.append_log("Preview playback is not implemented for the Carla backend yet.")
+
+    def adjust_instrument_octave(self, delta: int) -> None:
+        self.instrument_octave = max(0, min(8, self.instrument_octave + delta))
+        self.update_instrument_octave_label()
+        if hasattr(self, "piano") and self.piano is not None:
+            self.piano.start_note = 12 * (self.instrument_octave + 1)
+            self.piano.update()
+
+    def update_instrument_octave_label(self) -> None:
+        if hasattr(self, "instrument_octave_label"):
+            self.instrument_octave_label.setText(f"Octave {self.instrument_octave}")
+
+    def on_instrument_velocity_changed(self, value: int) -> None:
+        self.instrument_velocity = max(0.2, min(1.2, value / 100.0))
+
+    def on_plugin_selected(self, item: QListWidgetItem) -> None:
+        """Double-click handler from the plugin library."""
+        if item is None:
+            return
+        self.load_plugin_to_chain()
+
+    def on_note_on(self, note: int) -> None:
+        """Send note-on to all active MIDI-capable slots."""
+        active_slots = []
+        if getattr(self, "chain_widget", None):
+            active_slots = [s for s in self.chain_widget.get_active_slots() if s.supports_midi]
+        if not active_slots:
+            self.play_fallback_tone(note, self.instrument_velocity)
+            return
+        velocity = self.instrument_velocity
+        for slot in active_slots:
+            host = slot.host
+            if host is None:
+                continue
+            self._submit_midi_job(self._perform_note_on, host, note, velocity, slot.index)
+
+    def on_note_off(self, note: int) -> None:
+        """Send note-off to all active MIDI-capable slots."""
+        if not getattr(self, "chain_widget", None):
+            return
+        for slot in [s for s in self.chain_widget.get_active_slots() if s.supports_midi]:
+            host = slot.host
+            if host is None:
+                continue
+            self._submit_midi_job(self._perform_note_off, host, note, slot.index)
 
     def build_plugin_block(self) -> QFrame:
         block = QFrame()
@@ -2364,7 +3375,467 @@ class AmbianceQtImproved(QMainWindow):
         preset = THEME_PRESETS.get(key, THEME_PRESETS['flat'])
         self.colors.update(preset["colors"])
         self.dark_mode = preset["dark"]
+        self.setStyleSheet("")
 
+    def apply_global_styles(self) -> None:
+        """Apply theme-specific application-wide styling."""
+        key = getattr(self, "theme_key", "flat")
+        c = self.colors
+
+        if key == "win98":
+            palette = {
+                "teal": "#008080",
+                "surface": "#c3c7cb",
+                "face": "#dfdfdf",
+                "shadow": "#808080",
+                "highlight": "#ffffff",
+                "frame": "#0a0a0a",
+                "blue": "#000080",
+                "text": "#000000",
+            }
+            style_template = Template(
+                dedent(
+                    """
+                    QMainWindow {
+                        background-color: $teal;
+                        color: $text;
+                        font-family: 'MS Sans Serif','Microsoft Sans Serif','Pixelated MS Sans Serif',sans-serif;
+                        font-size: 11px;
+                    }
+                    QWidget#CentralWidget,
+                    QWidget#BodyWidget,
+                    QWidget#StrudelContainer {
+                        background-color: $surface;
+                        color: $text;
+                    }
+                    QFrame#Toolbar,
+                    QFrame#PluginBlock,
+                    QFrame#WorkspacePanel,
+                    QFrame#RackPanel,
+                    QFrame#HostPanel,
+                    QFrame#InstrumentPanel,
+                    QFrame#RackLogPanel {
+                        background-color: $surface;
+                        border: 2px solid $shadow;
+                        border-top-color: $highlight;
+                        border-left-color: $highlight;
+                        border-radius: 0px;
+                        padding: 6px;
+                    }
+                    QLabel#RackTitle,
+                    QLabel#WorkspaceTitle,
+                    QLabel#HostTitle,
+                    QLabel#InstrumentTitle {
+                        color: $text;
+                        font-weight: bold;
+                    }
+                    QLabel#RackStatus,
+                    QLabel#WorkspaceHint,
+                    QLabel#WorkspaceNotes,
+                    QLabel#RackTagline,
+                    QLabel#HostSubtitle,
+                    QLabel#HostStatus,
+                    QLabel#HostWarnings,
+                    QLabel#InstrumentSubtitle,
+                    QLabel#InstrumentStatus,
+                    QLabel#VelocityLabel {
+                        color: $text;
+                    }
+                    QPushButton,
+                    QToolButton,
+                    QComboBox,
+                    QLineEdit,
+                    QPlainTextEdit,
+                    QTextEdit,
+                    QSpinBox,
+                    QDoubleSpinBox {
+                        background-color: $face;
+                        color: $text;
+                        border: 2px solid $shadow;
+                        border-top-color: $highlight;
+                        border-left-color: $highlight;
+                        border-radius: 0px;
+                        padding: 2px 8px;
+                    }
+                    QPushButton,
+                    QToolButton {
+                        min-height: 22px;
+                    }
+                    QPushButton:pressed,
+                    QToolButton:pressed {
+                        border-top-color: $shadow;
+                        border-left-color: $shadow;
+                        border-bottom-color: $highlight;
+                        border-right-color: $highlight;
+                        padding-left: 9px;
+                        padding-top: 3px;
+                    }
+                    QPushButton:focus,
+                    QToolButton:focus,
+                    QComboBox:focus,
+                    QLineEdit:focus {
+                        outline: 1px dotted $frame;
+                        outline-offset: -3px;
+                    }
+                    QPushButton:disabled,
+                    QToolButton:disabled {
+                        color: #6e6e6e;
+                        background-color: #dfdfdf;
+                    }
+                    QListWidget,
+                    QTreeWidget,
+                    QTableWidget {
+                        background-color: $face;
+                        color: $text;
+                        border: 2px solid $shadow;
+                        border-top-color: $highlight;
+                        border-left-color: $highlight;
+                        border-radius: 0px;
+                    }
+                    QListWidget::item:selected,
+                    QTreeWidget::item:selected,
+                    QTableWidget::item:selected {
+                        background-color: $blue;
+                        color: #ffffff;
+                    }
+                    QTabWidget::pane {
+                        border: 2px solid $shadow;
+                        border-top-color: $highlight;
+                        border-left-color: $highlight;
+                        border-radius: 0px;
+                        background-color: $surface;
+                    }
+                    QTabBar::tab {
+                        background-color: $surface;
+                        color: $text;
+                        border: 2px solid $shadow;
+                        border-top-color: $highlight;
+                        border-left-color: $highlight;
+                        border-bottom: none;
+                        border-radius: 0px;
+                        padding: 4px 10px;
+                        margin-right: 2px;
+                    }
+                    QTabBar::tab:selected {
+                        background-color: $face;
+                    }
+                    QPlainTextEdit#RackOutput {
+                        background-color: #ffffff;
+                        color: #000000;
+                        border: 2px solid $shadow;
+                        border-top-color: $highlight;
+                        border-left-color: $highlight;
+                    }
+                    QScrollBar:vertical,
+                    QScrollBar:horizontal {
+                        background: $surface;
+                        border: 2px solid $shadow;
+                        border-top-color: $highlight;
+                        border-left-color: $highlight;
+                        border-radius: 0px;
+                        margin: 0px;
+                    }
+                    QScrollBar::handle:vertical,
+                    QScrollBar::handle:horizontal {
+                        background: $face;
+                        border: 2px solid $shadow;
+                        border-top-color: $highlight;
+                        border-left-color: $highlight;
+                        border-radius: 0px;
+                        min-height: 20px;
+                        min-width: 20px;
+                    }
+                    QScrollBar::add-line:vertical,
+                    QScrollBar::sub-line:vertical,
+                    QScrollBar::add-line:horizontal,
+                    QScrollBar::sub-line:horizontal {
+                        background: $face;
+                        border: 2px solid $shadow;
+                        border-top-color: $highlight;
+                        border-left-color: $highlight;
+                        width: 18px;
+                        height: 18px;
+                    }
+                    """
+                )
+            )
+            self.setStyleSheet(style_template.substitute(**palette))
+            return
+
+        if key == "winxp":
+            palette = {
+                "bg_top": "#4f7cd7",
+                "bg_bottom": "#1b4aa5",
+                "surface": "#ece9d8",
+                "panel": "#f6f9ff",
+                "card": "#ffffff",
+                "border": "#7f9db9",
+                "border_light": "#bcd0f1",
+                "text": "#1a2848",
+                "muted": "#3b4f78",
+                "button_top": "#fefefe",
+                "button_bottom": "#d7e4fb",
+                "button_hover_top": "#ffffff",
+                "button_hover_bottom": "#dfeaff",
+                "button_pressed_top": "#cbdafe",
+                "button_pressed_bottom": "#b7caf5",
+                "selected": "#316ac5",
+            }
+            style_template = Template(
+                dedent(
+                    """
+                    QMainWindow {
+                        background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 $bg_top, stop:1 $bg_bottom);
+                        color: $text;
+                        font-family: 'Tahoma','Segoe UI',sans-serif;
+                        font-size: 12px;
+                    }
+                    QWidget#CentralWidget,
+                    QWidget#BodyWidget,
+                    QWidget#StrudelContainer {
+                        background-color: $surface;
+                        color: $text;
+                    }
+                    QFrame#Toolbar,
+                    QFrame#PluginBlock,
+                    QFrame#WorkspacePanel,
+                    QFrame#RackPanel,
+                    QFrame#HostPanel,
+                    QFrame#InstrumentPanel,
+                    QFrame#RackLogPanel {
+                        background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #fefefe, stop:1 #e1ecff);
+                        border: 1px solid $border;
+                        border-radius: 12px;
+                        padding: 12px;
+                        box-shadow: 0 1px 4px rgba(18,44,120,0.18);
+                    }
+                    QLabel#RackTitle,
+                    QLabel#WorkspaceTitle,
+                    QLabel#HostTitle,
+                    QLabel#InstrumentTitle {
+                        color: $text;
+                        font-weight: bold;
+                    }
+                    QLabel#RackTagline,
+                    QLabel#WorkspaceHint,
+                    QLabel#WorkspaceNotes,
+                    QLabel#HostSubtitle,
+                    QLabel#HostStatus,
+                    QLabel#HostWarnings,
+                    QLabel#InstrumentSubtitle,
+                    QLabel#InstrumentStatus,
+                    QLabel#VelocityLabel {
+                        color: $muted;
+                    }
+                    QPushButton,
+                    QToolButton {
+                        background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 $button_top, stop:1 $button_bottom);
+                        border: 1px solid $border;
+                        border-radius: 6px;
+                        padding: 6px 16px;
+                        color: $text;
+                        min-height: 24px;
+                    }
+                    QPushButton:hover,
+                    QToolButton:hover {
+                        background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 $button_hover_top, stop:1 $button_hover_bottom);
+                    }
+                    QPushButton:pressed,
+                    QToolButton:pressed {
+                        background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 $button_pressed_top, stop:1 $button_pressed_bottom);
+                        border-color: $border_light;
+                    }
+                    QPushButton:disabled,
+                    QToolButton:disabled {
+                        color: rgba(0,0,0,0.35);
+                        background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #f0f2f7, stop:1 #dbe2f4);
+                    }
+                    QLineEdit,
+                    QPlainTextEdit,
+                    QTextEdit,
+                    QSpinBox,
+                    QDoubleSpinBox,
+                    QComboBox {
+                        background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #ffffff, stop:1 #edf3ff);
+                        border: 1px solid $border;
+                        border-radius: 6px;
+                        padding: 6px 8px;
+                        color: $text;
+                    }
+                    QListWidget,
+                    QTreeWidget,
+                    QTableWidget {
+                        background-color: #ffffff;
+                        color: $text;
+                        border: 1px solid $border;
+                        border-radius: 8px;
+                    }
+                    QListWidget::item:selected,
+                    QTreeWidget::item:selected,
+                    QTableWidget::item:selected {
+                        background: $selected;
+                        color: #ffffff;
+                    }
+                    QTabWidget::pane {
+                        border: 1px solid $border;
+                        border-radius: 10px;
+                        background: #ffffff;
+                    }
+                    QTabBar::tab {
+                        background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #f9fcff, stop:1 #dfe9ff);
+                        border: 1px solid $border;
+                        border-bottom: none;
+                        border-top-left-radius: 8px;
+                        border-top-right-radius: 8px;
+                        padding: 6px 14px;
+                        margin-right: 4px;
+                        color: $text;
+                    }
+                    QTabBar::tab:selected {
+                        background: #ffffff;
+                    }
+                    QPlainTextEdit#RackOutput {
+                        background: #0f0f0f;
+                        color: #00ffd0;
+                        border: 1px solid $border;
+                        border-radius: 8px;
+                        font-family: 'Consolas','Courier New',monospace;
+                        font-size: 11px;
+                    }
+                    QScrollBar:vertical,
+                    QScrollBar:horizontal {
+                        background: #dce6ff;
+                        border: 1px solid $border;
+                        border-radius: 6px;
+                        margin: 0px;
+                    }
+                    QScrollBar::handle:vertical,
+                    QScrollBar::handle:horizontal {
+                        background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #ffffff, stop:1 #e3ecff);
+                        border: 1px solid $border;
+                        border-radius: 6px;
+                        min-height: 18px;
+                        min-width: 18px;
+                    }
+                    QScrollBar::add-line:vertical,
+                    QScrollBar::sub-line:vertical,
+                    QScrollBar::add-line:horizontal,
+                    QScrollBar::sub-line:horizontal {
+                        background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #fefefe, stop:1 #dfe9ff);
+                        border: 1px solid $border;
+                        border-radius: 6px;
+                        width: 18px;
+                        height: 18px;
+                    }
+                    """
+                )
+            )
+            self.setStyleSheet(style_template.substitute(**palette))
+            return
+
+        # Default modern fallback styling.
+        panel = c['panel']
+        card = c['card']
+        text = c['text']
+        accent = c['accent']
+        border = c['border']
+        bg = c['bg']
+
+        style_template = Template(
+            dedent(
+                """
+                QMainWindow {
+                    background-color: $bg;
+                    color: $text;
+                    font-family: 'Segoe UI', 'Tahoma', sans-serif;
+                    font-size: 14px;
+                }
+                QWidget#CentralWidget,
+                QWidget#BodyWidget,
+                QWidget#StrudelContainer {
+                    background-color: $panel;
+                    color: $text;
+                }
+                QFrame#Toolbar,
+                QFrame#PluginBlock,
+                QFrame#WorkspacePanel,
+                QFrame#RackPanel,
+                QFrame#HostPanel,
+                QFrame#InstrumentPanel,
+                QFrame#RackLogPanel {
+                    background-color: $card;
+                    border: 1px solid $border;
+                    border-radius: 10px;
+                }
+                QPushButton,
+                QToolButton {
+                    background-color: $accent;
+                    color: $text;
+                    border: none;
+                    border-radius: 6px;
+                    padding: 6px 14px;
+                }
+                QPushButton:disabled,
+                QToolButton:disabled {
+                    background-color: rgba(128,128,128,0.35);
+                }
+                QLineEdit,
+                QPlainTextEdit,
+                QTextEdit,
+                QSpinBox,
+                QDoubleSpinBox,
+                QComboBox {
+                    background-color: $card;
+                    color: $text;
+                    border: 1px solid $border;
+                    border-radius: 6px;
+                    padding: 4px;
+                }
+                QListWidget,
+                QTreeWidget,
+                QTableWidget {
+                    background-color: $card;
+                    color: $text;
+                    border: 1px solid $border;
+                    border-radius: 6px;
+                }
+                QListWidget::item:selected,
+                QTreeWidget::item:selected,
+                QTableWidget::item:selected {
+                    background-color: $accent;
+                    color: $text;
+                }
+                QTabWidget::pane {
+                    border: 1px solid $border;
+                    border-radius: 8px;
+                    background-color: $card;
+                }
+                QTabBar::tab {
+                    background-color: $panel;
+                    color: $text;
+                    padding: 6px 12px;
+                    border: 1px solid $border;
+                    border-bottom: none;
+                    border-top-left-radius: 6px;
+                    border-top-right-radius: 6px;
+                }
+                QTabBar::tab:selected {
+                    background-color: $card;
+                }
+                """
+            )
+        )
+
+        self.setStyleSheet(
+            style_template.substitute(
+                bg=bg,
+                text=text,
+                panel=panel,
+                card=card,
+                accent=accent,
+                border=border,
+            )
+        )
     def apply_theme(self, key: str, *, update_combo: bool = True, log_change: bool = False) -> None:
         theme_key = key if key in THEME_PRESETS else "flat"
         self.theme_key = theme_key
@@ -2441,7 +3912,17 @@ class AmbianceQtImproved(QMainWindow):
                 return False
             modifiers = event.modifiers()
             disallowed = Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier
-            if int(modifiers & disallowed):
+            def _has_disallowed(mods, mask) -> bool:
+                combined = mods & mask
+                if hasattr(combined, "value"):
+                    return combined.value != 0
+                try:
+                    return int(combined) != 0
+                except TypeError:
+                    no_modifier = getattr(getattr(Qt, "KeyboardModifier", Qt), "NoModifier", 0)
+                    return combined != no_modifier
+
+            if _has_disallowed(modifiers, disallowed):
                 return False
             offset = self.KEYBOARD_NOTE_MAP.get(event.key())
             if offset is None:
@@ -2525,317 +4006,481 @@ class AmbianceQtImproved(QMainWindow):
         self.cleanup_fallback_threads()
 
     def apply_global_styles(self):
+        if self.theme_key == "win98":
+            win98 = {
+                "teal": "#008080",
+                "surface": "#c3c7cb",
+                "face": "#dfdfdf",
+                "shadow": "#808080",
+                "highlight": "#ffffff",
+                "blue": "#000080",
+            }
+            style_template = Template(
+                dedent(
+                    """
+                    QMainWindow {
+                        background-color: ;
+                        color: ;
+                        font-family: 'MS Sans Serif', 'Microsoft Sans Serif', 'Pixelated MS Sans Serif', sans-serif;
+                        font-size: 11px;
+                    }
+                    QWidget#CentralWidget,
+                    QWidget#BodyWidget,
+                    QFrame#Toolbar,
+                    QFrame#PluginBlock,
+                    QWidget#StrudelContainer {
+                        background-color: ;
+                        color: ;
+                    }
+                    QFrame#Toolbar,
+                    QFrame#PluginBlock,
+                    QWidget#StrudelContainer {
+                        border: 2px solid ;
+                        border-top-color: ;
+                        border-left-color: ;
+                        border-bottom-color: ;
+                        border-right-color: ;
+                        border-radius: 0px;
+                        padding: 6px;
+                    }
+                    QLabel#ToolbarTitle {
+                        font-weight: bold;
+                        color: ;
+                    }
+                    QPushButton,
+                    QToolButton,
+                    QComboBox,
+                    QLineEdit,
+                    QSpinBox,
+                    QDoubleSpinBox,
+                    QTextEdit,
+                    QPlainTextEdit,
+                    QListWidget,
+                    QTreeWidget,
+                    QTableWidget {
+                        background-color: ;
+                        color: ;
+                        border: 2px solid ;
+                        border-top-color: ;
+                        border-left-color: ;
+                        border-bottom-color: ;
+                        border-right-color: ;
+                        border-radius: 0px;
+                        padding: 2px 6px;
+                    }
+                    QComboBox QAbstractItemView {
+                        background-color: ;
+                        border: 2px solid ;
+                        border-top-color: ;
+                        border-left-color: ;
+                        border-bottom-color: ;
+                        border-right-color: ;
+                    }
+                    QGroupBox {
+                        border: 2px solid ;
+                        border-top-color: ;
+                        border-left-color: ;
+                        border-bottom-color: ;
+                        border-right-color: ;
+                        background-color: ;
+                        margin-top: 10px;
+                        padding: 12px;
+                    }
+                    QGroupBox::title {
+                        subcontrol-origin: margin;
+                        left: 8px;
+                        padding: 0 4px;
+                        color: ;
+                        background-color: ;
+                    }
+                    QListWidget::item:selected,
+                    QTreeWidget::item:selected,
+                    QTableWidget::item:selected {
+                        background: ;
+                        color: #ffffff;
+                    }
+                    QHeaderView::section {
+                        background-color: ;
+                        color: ;
+                        border: 2px solid ;
+                        border-top-color: ;
+                        border-left-color: ;
+                        border-bottom-color: ;
+                        border-right-color: ;
+                        padding: 2px 6px;
+                    }
+                    QScrollBar:vertical,
+                    QScrollBar:horizontal {
+                        background: ;
+                        border: 2px solid ;
+                        border-top-color: ;
+                        border-left-color: ;
+                        border-bottom-color: ;
+                        border-right-color: ;
+                        margin: 0px;
+                    }
+                    QScrollBar::handle:vertical,
+                    QScrollBar::handle:horizontal {
+                        background: ;
+                        border: 2px solid ;
+                        border-top-color: ;
+                        border-left-color: ;
+                        border-bottom-color: ;
+                        border-right-color: ;
+                        min-width: 18px;
+                        min-height: 18px;
+                    }
+                    QScrollBar::add-line,
+                    QScrollBar::sub-line {
+                        background: ;
+                        border: 2px solid ;
+                        border-top-color: ;
+                        border-left-color: ;
+                        border-bottom-color: ;
+                        border-right-color: ;
+                        width: 18px;
+                        height: 18px;
+                    }
+                    QTabWidget::pane {
+                        background: ;
+                        border: 2px solid ;
+                        border-top-color: ;
+                        border-left-color: ;
+                        border-bottom-color: ;
+                        border-right-color: ;
+                    }
+                    QTabBar::tab {
+                        background: ;
+                        border: 2px solid ;
+                        border-top-color: ;
+                        border-left-color: ;
+                        border-bottom-color: ;
+                        border-right-color: ;
+                        padding: 4px 10px;
+                        margin-right: 2px;
+                        color: ;
+                    }
+                    QTabBar::tab:selected {
+                        background: ;
+                    }
+                    QProgressBar {
+                        border: 2px solid ;
+                        border-top-color: ;
+                        border-left-color: ;
+                        border-bottom-color: ;
+                        border-right-color: ;
+                        background: ;
+                        color: ;
+                        text-align: center;
+                    }
+                    QProgressBar::chunk {
+                        background: ;
+                    }
+                    QPushButton:pressed,
+                    QToolButton:pressed {
+                        border-top-color: ;
+                        border-left-color: ;
+                        border-bottom-color: ;
+                        border-right-color: ;
+                    }
+                    QPushButton:disabled,
+                    QToolButton:disabled {
+                        color: #6e6e6e;
+                    }
+                    """
+                )
+            )
+            style = style_template.substitute(
+                teal=win98["teal"],
+                text=self.colors['text'],
+                surface=win98["surface"],
+                face=win98["face"],
+                shadow=win98["shadow"],
+                highlight=win98["highlight"],
+                blue=win98["blue"],
+            )
+            self.setStyleSheet(style)
+            return
+
+        if self.theme_key == "winxp":
+            xp = {
+                "bg_top": "#4f7cd7",
+                "bg_bottom": "#1b4aa5",
+                "surface": "#ece9d8",
+                "button_top": "#fefefe",
+                "button_bottom": "#d7e4fb",
+                "button_hover_top": "#ffffff",
+                "button_hover_bottom": "#dfeaff",
+                "button_pressed_top": "#cbdafe",
+                "button_pressed_bottom": "#b7caf5",
+                "selected": "#316ac5",
+            }
+            style_template = Template(
+                dedent(
+                    """
+                    QMainWindow {
+                        background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 , stop:1 );
+                        color: ;
+                        font-family: 'Tahoma', 'Segoe UI', Arial, sans-serif;
+                        font-size: 12px;
+                    }
+                    QWidget#CentralWidget,
+                    QWidget#BodyWidget,
+                    QWidget#StrudelContainer {
+                        background-color: ;
+                        color: ;
+                        border-radius: 12px;
+                    }
+                    QFrame#Toolbar {
+                        background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #f6f9ff, stop:1 #d6e5ff);
+                        border: 1px solid ;
+                        border-radius: 10px;
+                        padding: 8px 12px;
+                    }
+                    QLabel#ToolbarTitle {
+                        font-size: 18px;
+                        font-weight: bold;
+                        color: #0a246a;
+                        text-shadow: 0 1px 0 rgba(255,255,255,0.6);
+                    }
+                    QFrame#PluginBlock {
+                        background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #f9fcff, stop:1 #e1edff);
+                        border: 1px solid ;
+                        border-radius: 14px;
+                        box-shadow: 0px 8px 18px rgba(16,43,105,0.22);
+                    }
+                    QPushButton,
+                    QToolButton {
+                        background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 , stop:1 );
+                        border: 1px solid ;
+                        border-radius: 6px;
+                        padding: 4px 14px;
+                        color: ;
+                        min-height: 24px;
+                        font-weight: 500;
+                    }
+                    QPushButton:hover,
+                    QToolButton:hover {
+                        background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 , stop:1 );
+                    }
+                    QPushButton:pressed,
+                    QToolButton:pressed {
+                        background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 , stop:1 );
+                        border-color: ;
+                    }
+                    QPushButton:disabled,
+                    QToolButton:disabled {
+                        color: rgba(0,0,0,0.35);
+                        background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #f0f2f7, stop:1 #dbe2f4);
+                    }
+                    QComboBox,
+                    QLineEdit,
+                    QSpinBox,
+                    QDoubleSpinBox,
+                    QTextEdit,
+                    QPlainTextEdit {
+                        background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #ffffff, stop:1 #edf3ff);
+                        border: 1px solid ;
+                        border-radius: 6px;
+                        padding: 6px 10px;
+                        color: ;
+                    }
+                    QComboBox QAbstractItemView {
+                        background: #ffffff;
+                        border: 1px solid ;
+                        selection-background-color: ;
+                        selection-color: #ffffff;
+                    }
+                    QListWidget,
+                    QTreeWidget,
+                    QTableWidget {
+                        background: #ffffff;
+                        border: 1px solid ;
+                        border-radius: 8px;
+                    }
+                    QListWidget::item:selected,
+                    QTreeWidget::item:selected,
+                    QTableWidget::item:selected {
+                        background: ;
+                        color: #ffffff;
+                    }
+                    QHeaderView::section {
+                        background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #f6f9ff, stop:1 #d9e8ff);
+                        color: #123169;
+                        border: 1px solid ;
+                        padding: 4px 8px;
+                    }
+                    QScrollBar:vertical,
+                    QScrollBar:horizontal {
+                        background: #f0f5ff;
+                        border: 1px solid ;
+                        border-radius: 6px;
+                    }
+                    QScrollBar::handle:vertical,
+                    QScrollBar::handle:horizontal {
+                        background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #ffffff, stop:1 #e3ecff);
+                        border: 1px solid ;
+                        border-radius: 6px;
+                        min-height: 20px;
+                        min-width: 20px;
+                    }
+                    QTabWidget::pane {
+                        border: 1px solid ;
+                        border-radius: 10px;
+                        background: #ffffff;
+                    }
+                    QTabBar::tab {
+                        background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #f9fcff, stop:1 #dfe9ff);
+                        border: 1px solid ;
+                        border-bottom: none;
+                        border-top-left-radius: 8px;
+                        border-top-right-radius: 8px;
+                        padding: 6px 14px;
+                        margin-right: 4px;
+                        color: ;
+                    }
+                    QTabBar::tab:selected {
+                        background: #ffffff;
+                    }
+                    QProgressBar {
+                        border: 1px solid ;
+                        border-radius: 8px;
+                        background: #f0f4ff;
+                        color: ;
+                        text-align: center;
+                    }
+                    QProgressBar::chunk {
+                        background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #5d9bff, stop:1 #2f69d3);
+                        border-radius: 6px;
+                    }
+                    """
+                )
+            )
+            style = style_template.substitute(
+                bg_top=xp["bg_top"],
+                bg_bottom=xp["bg_bottom"],
+                text=self.colors['text'],
+                surface=xp["surface"],
+                border=self.colors['border'],
+                border_light=self.rgba(self.colors['border'], 0.75),
+                button_top=xp["button_top"],
+                button_bottom=xp["button_bottom"],
+                button_hover_top=xp["button_hover_top"],
+                button_hover_bottom=xp["button_hover_bottom"],
+                button_pressed_top=xp["button_pressed_top"],
+                button_pressed_bottom=xp["button_pressed_bottom"],
+                selected=xp["selected"],
+            )
+            self.setStyleSheet(style)
+            return
+
         c = self.colors
+        panel_border = self.rgba(c['border'], 0.85)
         accent_soft = self.rgba(c['accent'], 0.22)
-        accent_border = self.rgba(c['accent'], 0.45)
         accent_hover = self.rgba(c['accent'], 0.32)
-        accent_selected = self.rgba(c['accent'], 0.4)
-        badge_bg = self.rgba(c['accent'], 0.16)
-        badge_border = self.rgba(c['accent'], 0.32)
-        panel_border = self.rgba(c['border'], 0.9)
-        card_border = self.rgba(c['border'], 0.4)
-        panel_opaque = self.rgba(c['panel'], 1.0)
-        panel_soft = self.rgba(c['panel'], 0.9)
-        list_bg = self.rgba(c['card'], 0.65) if self.dark_mode else self.rgba(c['card'], 0.35)
-        list_hover = self.rgba(c['accent'], 0.12)
-        list_selected = self.rgba(c['accent'], 0.35)
-        log_bg = self.rgba(c['card'], 0.55)
-        text_disabled = self.rgba(c['text'], 0.45)
-        border_disabled = self.rgba(c['border'], 0.25)
-        card_disabled = self.rgba(c['card'], 0.25)
-        card_half = self.rgba(c['card'], 0.5)
-        card_sixty = self.rgba(c['card'], 0.6)
+        accent_selected = self.rgba(c['accent'], 0.45)
 
         style_template = Template(
             dedent(
                 """
                 QMainWindow {
-                    background-color: $bg;
-                    color: $text;
+                    background-color: ;
+                    color: ;
                     font-family: 'Segoe UI', Arial, sans-serif;
                     font-size: 14px;
                 }
                 QWidget#CentralWidget,
-                QWidget#BodyWidget {
-                    background-color: $panel_opaque;
-                }
-                QScrollArea#BodyScrollArea {
-                    background-color: $panel_opaque;
-                    border: none;
-                }
-                QScrollArea#BodyScrollArea QWidget {
-                    background-color: $panel_opaque;
-                }
-                QStackedWidget#BodyStack {
-                    background-color: transparent;
-                    border: none;
-                }
+                QWidget#BodyWidget,
                 QWidget#StrudelContainer {
-                    background-color: $card;
-                    border: 1px solid $panel_border;
-                    border-radius: 16px;
-                }
-                QWebEngineView#StrudelView {
-                    background: transparent;
-                    border: none;
-                    border-radius: 14px;
-                }
-                QLabel#StrudelFallback {
-                    color: $text;
-                    padding: 24px;
+                    background-color: ;
+                    color: ;
                 }
                 QFrame#Toolbar {
-                    background-color: $panel;
-                    border: 1px solid $panel_border;
-                    border-radius: 10px;
+                    background-color: ;
+                    border: 1px solid ;
+                    border-radius: 12px;
+                    padding: 12px;
                 }
                 QLabel#ToolbarTitle {
                     font-size: 18px;
                     font-weight: 600;
-                    color: $text;
-                }
-                QComboBox#ThemePicker {
-                    background-color: $card;
-                    border: 1px solid $panel_border;
-                    border-radius: 6px;
-                    padding: 6px 10px;
-                    color: $text;
+                    color: ;
                 }
                 QFrame#PluginBlock {
-                    background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 $panel, stop:1 $card);
-                    border-radius: 16px;
-                    border: 1px solid $panel_border;
-                    box-shadow: 0px 26px 48px rgba(0, 0, 0, 0.30);
-                }
-                QFrame#CollapsibleSection {
-                    background-color: transparent;
-                    border: none;
-                }
-                QToolButton#SectionToggle {
-                    border: 1px solid $panel_border;
-                    border-radius: 10px;
-                    font-weight: 600;
-                    padding: 6px 10px;
-                    text-align: left;
-                    background-color: rgba(240, 240, 240, 0.94);
-                    color: #000000;
-                }
-                QToolButton#SectionToggle:hover {
-                    background-color: rgba(255, 255, 255, 0.98);
-                    color: #000000;
-                }
-                QFrame#CollapsibleSectionContent {
-                    background-color: $panel_soft;
-                    border: 1px solid $panel_border;
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 , stop:1 );
                     border-radius: 14px;
+                    border: 1px solid ;
+                    padding: 12px;
                 }
-                QLabel#RackTitle {
-                    font-size: 22px;
-                    font-weight: 700;
-                    color: $text;
-                }
-                QLabel#RackTagline {
-                    color: $muted;
-                }
-                QLabel#RackStatus {
-                    padding: 6px 12px;
-                    border-radius: 999px;
-                    background-color: $badge_bg;
-                    border: 1px solid $badge_border;
-                    color: $text;
-                    font-size: 12px;
-                }
-                QFrame#WorkspacePanel,
-                QFrame#RackPanel,
-                QFrame#HostPanel,
-                QFrame#InstrumentPanel,
-                QFrame#RackLogPanel {
-                    background-color: $panel_soft;
-                    border: 1px solid $card_border;
-                    border-radius: 12px;
-                }
-                QFrame#HostPanel {
-                    border: 1px solid $accent_border;
-                }
-                QFrame#PluginEditorContainer {
-                    background-color: $panel_soft;
-                    border: 1px dashed $card_border;
-                    border-radius: 12px;
-                    min-height: 320px;
-                }
-                QFrame#PluginEditorContainer QLabel#PluginEditorPlaceholder {
-                    color: $muted;
-                    font-style: italic;
-                }
-                QListWidget#PluginList {
-                    background-color: $list_bg;
-                    border: 1px solid $card_border;
+                QPushButton,
+                QToolButton {
+                    background-color: ;
+                    border: 1px solid ;
                     border-radius: 10px;
-                    padding: 6px;
-                }
-                QListWidget#PluginList::item {
-                    padding: 10px;
-                    border-radius: 8px;
-                    margin: 4px 0;
-                    color: $text;
-                }
-                QListWidget#PluginList::item:selected {
-                    background-color: $list_selected;
-                    border: 1px solid $accent_border;
-                }
-                QListWidget#PluginList::item:hover {
-                    background-color: $list_hover;
-                }
-                QPlainTextEdit#RackOutput {
-                    background-color: $log_bg;
-                    border: 1px solid $card_border;
-                    border-radius: 10px;
-                    padding: 10px;
-                    color: $text;
-                }
-                QPushButton {
-                    background-color: $accent_soft;
-                    border: 1px solid $accent_border;
-                    border-radius: 8px;
-                    padding: 8px 14px;
-                    color: $text;
+                    padding: 6px 16px;
+                    color: ;
                     font-weight: 600;
                 }
-                QPushButton:hover {
-                    background-color: $accent_hover;
+                QPushButton:hover,
+                QToolButton:hover {
+                    background-color: ;
                 }
-                QPushButton:disabled {
-                    color: $text_disabled;
-                    border-color: $border_disabled;
-                    background-color: $card_disabled;
+                QPushButton:pressed,
+                QToolButton:pressed {
+                    background-color: ;
                 }
-                QTabWidget#ParameterTabs::pane {
-                    border: 1px solid $card_border;
-                    background-color: $card_half;
+                QComboBox,
+                QLineEdit,
+                QSpinBox,
+                QDoubleSpinBox,
+                QTextEdit,
+                QPlainTextEdit {
+                    background-color: ;
+                    border: 1px solid ;
                     border-radius: 10px;
+                    padding: 6px 10px;
+                    color: ;
                 }
-                QTabBar::tab {
-                    background-color: $card_sixty;
-                    border: 1px solid $card_border;
-                    border-radius: 8px;
-                    padding: 8px 16px;
-                    color: $text;
-                    margin-right: 6px;
+                QListWidget,
+                QTreeWidget,
+                QTableWidget {
+                    background-color: ;
+                    border: 1px solid ;
+                    border-radius: 12px;
                 }
-                QTabBar::tab:selected {
-                    background-color: $accent_selected;
+                QListWidget::item:selected,
+                QTreeWidget::item:selected,
+                QTableWidget::item:selected {
+                    background-color: ;
+                    color: ;
+                }
+                QProgressBar {
+                    border: 1px solid ;
+                    border-radius: 10px;
+                    background-color: ;
+                    color: ;
+                    text-align: center;
+                }
+                QProgressBar::chunk {
+                    background-color: ;
+                    border-radius: 9px;
                 }
                 """
             )
         )
 
-        stylesheet = style_template.substitute(
+        style = style_template.substitute(
             bg=c['bg'],
             text=c['text'],
-            muted=c['muted'],
             panel=c['panel'],
-            panel_opaque=panel_opaque,
-            panel_soft=panel_soft,
-            panel_border=panel_border,
             card=c['card'],
-            card_border=card_border,
-            card_half=card_half,
-            card_sixty=card_sixty,
-            card_disabled=card_disabled,
-            list_bg=list_bg,
-            list_hover=list_hover,
-            list_selected=list_selected,
-            log_bg=log_bg,
+            panel_border=panel_border,
             accent_soft=accent_soft,
-            accent_border=accent_border,
             accent_hover=accent_hover,
             accent_selected=accent_selected,
-            badge_bg=badge_bg,
-            badge_border=badge_border,
-            text_disabled=text_disabled,
-            border_disabled=border_disabled,
         )
 
-        self.setStyleSheet(stylesheet)
-
-    def on_edit_mode_toggled(self, checked: bool):
-        self.edit_mode_btn.setText("Edit: ON" if checked else "Edit: OFF")
-        state = "enabled" if checked else "disabled"
-        self.append_log(f"Edit mode {state}.")
-
-    def on_style_mode_toggled(self, checked: bool):
-        self.style_mode_btn.setText("Style Mode: ON" if checked else "Style Mode: OFF")
-        state = "enabled" if checked else "disabled"
-        self.append_log(f"Style inspector {state}.")
-
-    def on_theme_changed(self, index: int):
-        key = self.theme_combo.itemData(index)
-        if not key:
-            return
-        self.apply_theme(key, update_combo=False, log_change=True)
-
-    def copy_workspace_path(self):
-        if not hasattr(self, "last_workspace_path") or not self.last_workspace_path:
-            self.append_log("No workspace path available to copy.")
-            return
-        clipboard = QApplication.clipboard()
-        clipboard.setText(self.last_workspace_path)
-        self.append_log(f"Workspace path copied: {self.last_workspace_path}")
-
-    def on_plugin_focus_changed(self):
-        self.refresh_selected_plugin_label()
-        self.update_host_controls()
-
-    def get_selected_slot(self) -> Optional[PluginChainSlot]:
-        index = self.chain_widget.selected_slot_index
-        if 0 <= index < len(self.chain_widget.slots):
-            return self.chain_widget.slots[index]
-        return None
-
-    def on_chain_slot_selected(self, index: int):
-        self.update_host_controls()
-        slot = self.get_selected_slot()
-        self.refresh_host_status(slot)
-
-    def on_chain_slot_updated(self, index: int):
-        self.update_host_controls()
-        if index == self.chain_widget.selected_slot_index:
-            slot = self.get_selected_slot()
-            self.refresh_host_status(slot)
-
-    def update_host_controls(self):
-        slot = self.get_selected_slot()
-        has_slot = slot is not None
-        has_plugin = bool(slot and slot.plugin_path)
-        has_host = bool(slot and slot.host)
-
-        self.host_load_btn.setEnabled(has_slot)
-        self.host_unload_btn.setEnabled(has_plugin)
-        self.host_ui_btn.setEnabled(has_host)
-        self.instrument_open_ui_btn.setEnabled(has_host)
-
-        self.refresh_selected_plugin_label()
-
-    def refresh_selected_plugin_label(self):
-        items = self.plugin_list.selectedItems()
-        if items:
-            item = items[0]
-            name = item.text()
-            path = item.data(Qt.UserRole) or ""
-            suffix = Path(path).suffix.upper()
-            if suffix:
-                text = f"Selected: {name}  {suffix}"
-            else:
-                text = f"Selected: {name}"
-            self.selected_plugin_label.setText(text)
-        else:
-            slot = self.get_selected_slot()
-            if slot and slot.plugin_path:
-                name = slot.plugin_path.stem
-                text = f"Slot {slot.index + 1}: {name}"
-            else:
-                self.selected_plugin_label.setText("Select a plugin to assign it to a lane.")
-
+        self.setStyleSheet(style)
     def _extract_plugin_capabilities(self, status: Dict[str, Any]) -> Tuple[bool, bool]:
         """Determine plugin MIDI support and instrument flag from a status payload."""
         supports_midi = False
@@ -3071,7 +4716,7 @@ class AmbianceQtImproved(QMainWindow):
 
             # Configure audio WITHOUT lock (plugin_host.py doesn't use locks)
             # Try DirectSound first for testing - JACK needs server running + routing setup
-            slot.host.configure_audio(preferred_drivers=["DirectSound", "ASIO", "WASAPI", "JACK"])
+            slot.host.configure_audio(preferred_drivers=["DirectSound", "ASIO", "WASAPI", "Dummy", "JACK"])
 
             # Load plugin WITHOUT lock (plugin_host.py doesn't use locks)
             slot.host.load_plugin(plugin_path, show_ui=False)
@@ -3277,11 +4922,75 @@ class AmbianceQtImproved(QMainWindow):
         
         layout.addWidget(frame)
     
+    def _submit_midi_job(self, callback: Callable[..., None], *args, **kwargs) -> None:
+        """Queue a MIDI operation, falling back to direct execution if the worker is stopping."""
+        if self._midi_worker_stop.is_set():
+            try:
+                callback(*args, **kwargs)
+            except Exception as exc:
+                self.logger.error("MIDI dispatch (sync) failed: %s", exc, exc_info=True)
+            return
+        self._midi_queue.put((callback, args, kwargs))
+
+    def on_edit_mode_toggled(self, checked: bool) -> None:
+        """Toggle edit affordances in the UI."""
+        label = "Edit: ON" if checked else "Edit: OFF"
+        self.edit_mode_btn.setText(label)
+        self.edit_mode_btn.setProperty("toggled", checked)
+        self.edit_mode_btn.style().unpolish(self.edit_mode_btn)
+        self.edit_mode_btn.style().polish(self.edit_mode_btn)
+        self.edit_mode_btn.update()
+        if checked:
+            self.append_log("Edit mode enabled.")
+        else:
+            self.append_log("Edit mode disabled.")
+
+    def on_style_mode_toggled(self, checked: bool) -> None:
+        """Toggle style controls visibility."""
+        label = "Style Mode: ON" if checked else "Style Mode: OFF"
+        self.style_mode_btn.setText(label)
+        self.style_mode_btn.setProperty("toggled", checked)
+        self.style_mode_btn.style().unpolish(self.style_mode_btn)
+        self.style_mode_btn.style().polish(self.style_mode_btn)
+        self.style_mode_btn.update()
+        if checked:
+            self.append_log("Style mode enabled.")
+        else:
+            self.append_log("Style mode disabled.")
+
+    def _perform_note_on(self, host: CarlaVSTHost, note: int, velocity: float, slot_index: Optional[int] = None) -> None:
+        try:
+            host.note_on(note, velocity=velocity)
+        except CarlaHostError as exc:
+            if slot_index is not None:
+                self.logger.warning("Note on error for slot %s: %s", slot_index, exc)
+            else:
+                self.logger.warning("Note on error: %s", exc)
+        except Exception as exc:
+            if slot_index is not None:
+                self.logger.error("Note on crash for slot %s: %s", slot_index, exc, exc_info=True)
+            else:
+                self.logger.error("Note on crash: %s", exc, exc_info=True)
+
+    def _perform_note_off(self, host: CarlaVSTHost, note: int, slot_index: Optional[int] = None) -> None:
+        try:
+            host.note_off(note)
+        except CarlaHostError as exc:
+            if slot_index is not None:
+                self.logger.warning("Note off error for slot %s: %s", slot_index, exc)
+            else:
+                self.logger.warning("Note off error: %s", exc)
+        except Exception as exc:
+            if slot_index is not None:
+                self.logger.error("Note off crash for slot %s: %s", slot_index, exc, exc_info=True)
+            else:
+                self.logger.error("Note off crash: %s", exc, exc_info=True)
+
     def toggle_note_names(self, checked):
         """Toggle note name display."""
         self.piano.show_note_names = checked
         self.piano.update()
-    
+
     def on_note_on(self, note: int):
         """Handle note on event - send to all active plugins in chain."""
         active_slots = [s for s in self.chain_widget.get_active_slots() if s.supports_midi]
@@ -3289,27 +4998,20 @@ class AmbianceQtImproved(QMainWindow):
             self.play_fallback_tone(note, self.instrument_velocity)
             return
 
+        velocity = self.instrument_velocity
         for slot in active_slots:
-            try:
-                host = slot.host
-                if host is None:
-                    continue
-                # Don't hold lock during MIDI send to avoid deadlock
-                host.note_on(note, velocity=self.instrument_velocity)
-            except Exception as e:
-                self.logger.error(f"Note on error for slot {slot.index}: {e}")
+            host = slot.host
+            if host is None:
+                continue
+            self._submit_midi_job(self._perform_note_on, host, note, velocity, slot.index)
 
     def on_note_off(self, note: int):
         """Handle note off event - send to all active plugins in chain."""
         for slot in [s for s in self.chain_widget.get_active_slots() if s.supports_midi]:
-            try:
-                host = slot.host
-                if host is None:
-                    continue
-                # Don't hold lock during MIDI send to avoid deadlock
-                host.note_off(note)
-            except Exception as e:
-                self.logger.error(f"Note off error for slot {slot.index}: {e}")
+            host = slot.host
+            if host is None:
+                continue
+            self._submit_midi_job(self._perform_note_off, host, note, slot.index)
     
     def poll_parameters(self):
         """Poll parameter values for all active slots."""
@@ -3377,6 +5079,16 @@ class AmbianceQtImproved(QMainWindow):
                 thread.join(timeout=0.2)
         self.fallback_audio_threads.clear()
 
+        if getattr(self, "_midi_worker_stop", None):
+            self._midi_worker_stop.set()
+            try:
+                self._midi_queue.put(None)
+            except Exception:
+                pass
+            worker = getattr(self, "_midi_worker", None)
+            if worker and worker.is_alive():
+                worker.join(timeout=1.0)
+
         if self._qt_app is not None:
             try:
                 self._qt_app.removeEventFilter(self)
@@ -3386,16 +5098,119 @@ class AmbianceQtImproved(QMainWindow):
         event.accept()
 
 
+def _ambiance_on_edit_mode_toggled(self: AmbianceQtImproved, checked: bool) -> None:
+    label = "Edit: ON" if checked else "Edit: OFF"
+    if getattr(self, "edit_mode_btn", None):
+        self.edit_mode_btn.setText(label)
+        self.edit_mode_btn.setProperty("toggled", checked)
+        self.edit_mode_btn.style().unpolish(self.edit_mode_btn)
+        self.edit_mode_btn.style().polish(self.edit_mode_btn)
+        self.edit_mode_btn.update()
+    if hasattr(self, "append_log"):
+        self.append_log("Edit mode enabled." if checked else "Edit mode disabled.")
+
+
+def _ambiance_on_style_mode_toggled(self: AmbianceQtImproved, checked: bool) -> None:
+    label = "Style Mode: ON" if checked else "Style Mode: OFF"
+    if getattr(self, "style_mode_btn", None):
+        self.style_mode_btn.setText(label)
+        self.style_mode_btn.setProperty("toggled", checked)
+        self.style_mode_btn.style().unpolish(self.style_mode_btn)
+        self.style_mode_btn.style().polish(self.style_mode_btn)
+        self.style_mode_btn.update()
+    if hasattr(self, "append_log"):
+        self.append_log("Style mode enabled." if checked else "Style mode disabled.")
+
+
+AmbianceQtImproved.on_edit_mode_toggled = _ambiance_on_edit_mode_toggled
+AmbianceQtImproved.on_style_mode_toggled = _ambiance_on_style_mode_toggled
+
+
+def _ambiance_toggle_note_names(self: AmbianceQtImproved, checked: bool) -> None:
+    if getattr(self, "piano", None):
+        self.piano.show_note_names = checked
+        self.piano.update()
+
+
+AmbianceQtImproved.toggle_note_names = _ambiance_toggle_note_names
+
+
+def qt_message_handler(mode, context, message):
+    """Capture Qt warning/error messages."""
+    import logging
+    logger = logging.getLogger('Qt')
+    if mode == 0:  # QtDebugMsg
+        logger.debug(f"Qt: {message}")
+    elif mode == 1:  # QtWarningMsg
+        logger.warning(f"Qt: {message}")
+    elif mode == 2:  # QtCriticalMsg
+        logger.error(f"Qt: {message}")
+    elif mode == 3:  # QtFatalMsg
+        logger.critical(f"Qt FATAL: {message}")
+
 def main():
-    app = QApplication(sys.argv)
-    app.setApplicationName("Ambiance Improved")
-    app.setStyle("Fusion")
-    
-    window = AmbianceQtImproved()
-    window.show()
-    
-    sys.exit(app.exec_())
+    try:
+        # Install Qt message handler to capture errors
+        try:
+            from qtpy.QtCore import qInstallMessageHandler
+            qInstallMessageHandler(qt_message_handler)
+        except Exception:
+            pass
+
+        try:
+            share_attr = getattr(Qt, "AA_ShareOpenGLContexts", None)
+            if share_attr is None and hasattr(Qt, "ApplicationAttribute"):
+                share_attr = Qt.ApplicationAttribute.AA_ShareOpenGLContexts
+            if share_attr is not None:
+                QApplication.setAttribute(share_attr, True)
+        except Exception:
+            pass
+
+        try:
+            attr = getattr(Qt, "AA_UseSoftwareOpenGL", None)
+            if attr is None and hasattr(Qt, "ApplicationAttribute"):
+                attr = Qt.ApplicationAttribute.AA_UseSoftwareOpenGL
+            if attr is not None:
+                QApplication.setAttribute(attr, True)
+        except Exception:
+            pass
+
+        app = QApplication(sys.argv)
+        app.setApplicationName("Ambiance Improved")
+        app.setStyle("Fusion")
+
+        ensure_webengine()
+        if QWebEngineView is not None:
+            try:
+                from qtpy.QtWebEngineCore import QtWebEngine
+                QtWebEngine.initialize()
+            except Exception:
+                pass
+        elif WEBENGINE_IMPORT_ERROR is not None:
+            logging.getLogger(__name__).warning("Qt WebEngine failed to import: %s", WEBENGINE_IMPORT_ERROR)
+
+        window = AmbianceQtImproved()
+        window.show()
+
+        logging.getLogger(__name__).info("Application window shown, entering event loop")
+        exit_code = app.exec()
+        logging.getLogger(__name__).info(f"Event loop exited with code: {exit_code}")
+        sys.exit(exit_code)
+    except Exception as exc:
+        import traceback
+        logging.getLogger(__name__).critical("FATAL ERROR during Ambiance startup", exc_info=True)
+        print(f"\n{'='*60}")
+        print("FATAL ERROR during Ambiance startup:")
+        print(f"{'='*60}")
+        traceback.print_exc()
+        print(f"{'='*60}\n")
+        sys.exit(1)
+    except KeyboardInterrupt:
+        logging.getLogger(__name__).info("Application interrupted by user")
+        sys.exit(0)
 
 
 if __name__ == "__main__":
     main()
+
+

@@ -1,21 +1,38 @@
-import { clamp } from './util.mjs';
-import { registerSound, soundMap } from './superdough.mjs';
-import { getAudioContext } from './audioContext.mjs';
+import { clamp, midiToFreq, noteToMidi } from './util.mjs';
+import { registerSound, getAudioContext, soundMap, getLfo } from './superdough.mjs';
 import {
   applyFM,
-  destroyAudioWorkletNode,
   gainNode,
   getADSRValues,
-  getFrequencyFromValue,
-  getLfo,
   getParamADSR,
   getPitchEnvelope,
   getVibratoOscillator,
+  webAudioTimeout,
   getWorklet,
   noises,
-  webAudioTimeout,
 } from './helpers.mjs';
 import { getNoiseMix, getNoiseOscillator } from './noise.mjs';
+
+const getFrequencyFromValue = (value, defaultNote = 36) => {
+  let { note, freq } = value;
+  note = note || defaultNote;
+  if (typeof note === 'string') {
+    note = noteToMidi(note); // e.g. c3 => 48
+  }
+  // get frequency
+  if (!freq && typeof note === 'number') {
+    freq = midiToFreq(note); // + 48);
+  }
+
+  return Number(freq);
+};
+function destroyAudioWorkletNode(node) {
+  if (node == null) {
+    return;
+  }
+  node.disconnect();
+  node.parameters.get('end')?.setValueAtTime(0, 0);
+}
 
 const waveforms = ['triangle', 'square', 'sawtooth', 'sine'];
 const waveformAliases = [

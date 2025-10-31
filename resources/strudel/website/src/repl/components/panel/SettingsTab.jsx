@@ -74,7 +74,6 @@ const fontFamilyOptions = {
   FiraCode: 'FiraCode',
   'FiraCode-SemiBold': 'FiraCode SemiBold',
   teletext: 'teletext',
-  tic80: 'tic80',
   mode7: 'mode7',
   BigBlueTerminal: 'BigBlueTerminal',
   x3270: 'x3270',

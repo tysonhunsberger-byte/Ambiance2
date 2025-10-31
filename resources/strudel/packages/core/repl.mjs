@@ -74,14 +74,6 @@ export function repl({
     return silence;
   };
 
-  // helper to get a patternified pure value out
-  function unpure(pat) {
-    if (pat._Pattern) {
-      return pat.__pure;
-    }
-    return pat;
-  }
-
   const setPattern = async (pattern, autostart = true) => {
     pattern = editPattern?.(pattern) || pattern;
     await scheduler.setPattern(pattern, autostart);
@@ -93,10 +85,7 @@ export function repl({
   const start = () => scheduler.start();
   const pause = () => scheduler.pause();
   const toggle = () => scheduler.toggle();
-  const setCps = (cps) => {
-    scheduler.setCps(unpure(cps));
-    return silence;
-  };
+  const setCps = (cps) => scheduler.setCps(cps);
 
   /**
    * Changes the global tempo to the given cycles per minute
@@ -108,10 +97,7 @@ export function repl({
    * setcpm(140/4) // =140 bpm in 4/4
    * $: s("bd*4,[- sd]*2").bank('tr707')
    */
-  const setCpm = (cpm) => {
-    scheduler.setCps(unpure(cpm) / 60);
-    return silence;
-  };
+  const setCpm = (cpm) => scheduler.setCps(cpm / 60);
 
   // TODO - not documented as jsdoc examples as the test framework doesn't simulate enough context for `each` and `all`..
 
@@ -214,10 +200,7 @@ export function repl({
       }
       let { pattern, meta } = await _evaluate(code, transpiler, transpilerOptions);
       if (Object.keys(pPatterns).length) {
-        let patterns = [];
-        for (const [key, value] of Object.entries(pPatterns)) {
-          patterns.push(value.withState((state) => state.setControls({ id: key })));
-        }
+        let patterns = Object.values(pPatterns);
         if (eachTransform) {
           // Explicit lambda so only element (not index and array) are passed
           patterns = patterns.map((x) => eachTransform(x));
@@ -231,7 +214,6 @@ export function repl({
           pattern = allTransforms[i](pattern);
         }
       }
-
       if (!isPattern(pattern)) {
         const message = `got "${typeof evaluated}" instead of pattern`;
         throw new Error(message + (typeof evaluated === 'function' ? ', did you forget to call a function?' : '.'));

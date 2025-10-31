@@ -1,0 +1,15 @@
+{
+  "presets": [
+    ["@babel/preset-env", {
+      "targets": {
+        "ie": "11"
+      },
+      "modules": false
+    }]
+  ],
+  "plugins": [
+    "@babel/plugin-syntax-top-level-await",
+    "@babel/plugin-transform-parameters",
+    ["@babel/plugin-transform-destructuring", {"useBuiltIns": true, "loose": true}]
+  ]
+}

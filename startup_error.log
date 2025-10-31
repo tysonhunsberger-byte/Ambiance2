@@ -1,0 +1,33 @@
+Cannot connect to named pipe after wait = \\.\pipe\server_jack_default_0 err = 2
+Cannot connect to server request channel
+jack server is not running or cannot be started
+JackShmReadWritePtr::~JackShmReadWritePtr - Init not done for -1, skipping unlock
+JackShmReadWritePtr::~JackShmReadWritePtr - Init not done for -1, skipping unlock
+jack_deactivate called with a NULL client
+jack_deactivate called with a NULL client
+jack_client_close called with a NULL client
+Cannot connect to named pipe after wait = \\.\pipe\server_jack_default_0 err = 2
+Cannot connect to server request channel
+jack server is not running or cannot be started
+JackShmReadWritePtr::~JackShmReadWritePtr - Init not done for -1, skipping unlock
+JackShmReadWritePtr::~JackShmReadWritePtr - Init not done for -1, skipping unlock
+jack_deactivate called with a NULL client
+jack_deactivate called with a NULL client
+jack_client_close called with a NULL client
+Cannot connect to named pipe after wait = \\.\pipe\server_jack_default_0 err = 2
+Cannot connect to server request channel
+jack server is not running or cannot be started
+JackShmReadWritePtr::~JackShmReadWritePtr - Init not done for -1, skipping unlock
+JackShmReadWritePtr::~JackShmReadWritePtr - Init not done for -1, skipping unlock
+jack_deactivate called with a NULL client
+jack_deactivate called with a NULL client
+jack_client_close called with a NULL client
+Cannot connect to named pipe after wait = \\.\pipe\server_jack_default_0 err = 2
+Cannot connect to server request channel
+jack server is not running or cannot be started
+JackShmReadWritePtr::~JackShmReadWritePtr - Init not done for -1, skipping unlock
+JackShmReadWritePtr::~JackShmReadWritePtr - Init not done for -1, skipping unlock
+jack_deactivate called with a NULL client
+jack_deactivate called with a NULL client
+jack_client_close called with a NULL client
+2025-10-30 20:16:53,612 - INFO - Audio engine booted (pyo).

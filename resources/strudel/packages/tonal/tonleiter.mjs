@@ -101,11 +101,11 @@ export function nearestNumberIndex(target, numbers, preferHigher) {
 let scaleSteps = {}; // [scaleName]: semitones[]
 
 export function stepInNamedScale(step, scale, anchor, preferHigher) {
-  const [root, scaleName] = Scale.tokenize(scale);
+  let [root, scaleName] = Scale.tokenize(scale);
   const rootMidi = x2midi(root);
   const rootChroma = midi2chroma(rootMidi);
   if (!scaleSteps[scaleName]) {
-    const { intervals } = Scale.get(`C ${scaleName}`);
+    let { intervals } = Scale.get(`C ${scaleName}`);
     // cache result
     scaleSteps[scaleName] = intervals.map(step2semitones);
   }
@@ -222,7 +222,6 @@ export const Note = {
 };
 
 // TODO: support octave numbers
-// Example: Note("Bb3").transpose("c3")
 export function transpose(note, step) {
   // example: E, 3
   const stepNumber = Step.tokenize(step)[1]; // 3
@@ -236,3 +235,5 @@ export function transpose(note, step) {
   const offsetAccidentals = accidentalString(Step.accidentals(step) + Note.accidentals(note) + stepIndex - indexOffset); // "we need to add a # to to the G to make it a major third from E"
   return [targetNote, offsetAccidentals].join('');
 }
+
+//Note("Bb3").transpose("c3")

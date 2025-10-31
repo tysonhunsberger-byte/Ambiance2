@@ -27,18 +27,11 @@ from urllib.request import urlopen
 
 
 CARLA_REQUIRED_WINDOWS_BINARIES: tuple[str, ...] = (
-    "carla-bridge-win32.exe",
     "carla-bridge-win64.exe",
-    "carla-discovery-win32.exe",
 )
 
 
 CARLA_WIN_RELEASES: tuple[dict[str, Any], ...] = (
-    {
-        "name": "Carla-2.5.10-win32",
-        "url": "https://github.com/falkTX/Carla/releases/download/v2.5.10/Carla-2.5.10-win32.zip",
-        "required": CARLA_REQUIRED_WINDOWS_BINARIES,
-    },
     {
         "name": "Carla-2.5.10-win64",
         "url": "https://github.com/falkTX/Carla/releases/download/v2.5.10/Carla-2.5.10-win64.zip",
@@ -72,19 +65,18 @@ else:  # pragma: no cover - non-Windows environments
     WS_EX_APPWINDOW = WS_EX_TOOLWINDOW = 0
 
 
-# Try to import PyQt5 for UI support
+# Try to import Qt support via qtpy so we share the active binding
 try:
-    from PyQt5.QtWidgets import QApplication
-    from PyQt5.QtCore import QTimer, QObject, pyqtSignal, pyqtSlot
-    HAS_PYQT5 = True
-except ImportError:
-    HAS_PYQT5 = False
-    QApplication = None
-    QTimer = None
-    QObject = None
-    pyqtSignal = None
-    pyqtSlot = None
+    from qtpy.QtWidgets import QApplication  # type: ignore[import]
+    from qtpy.QtCore import QTimer, QObject  # type: ignore[import]
+    HAS_QT = True
+except Exception:
+    HAS_QT = False
+    QApplication = None  # type: ignore[assignment]
+    QTimer = None  # type: ignore[assignment]
+    QObject = object  # type: ignore[misc,assignment]
 
+HAS_PYQT5 = HAS_QT  # Backwards compatibility for older imports
 
 class CarlaHostError(RuntimeError):
     """Raised when the Carla backend cannot perform the requested action."""
@@ -125,7 +117,7 @@ class CarlaParameterSnapshot:
         return payload
 
 
-if HAS_PYQT5:
+if HAS_QT:
     import queue
 
     class QtApplicationManager(QObject):
@@ -465,7 +457,7 @@ class CarlaBackend:
             self.warnings.append(f"Failed to register Carla engine callback: {exc}")
 
         # Initialize Qt support for UI
-        if HAS_PYQT5:
+        if HAS_QT:
             try:
                 self._qt_manager = QtApplicationManager.get_instance()
                 if not (self._qt_manager and self._qt_manager.is_available()):
@@ -570,6 +562,22 @@ class CarlaBackend:
 
         return None
 
+
+    def _is_supported_windows_library(self, path: Path) -> bool:
+        if os.name != "nt" or path.suffix.lower() != ".dll":
+            return True
+        try:
+            with path.open('rb') as handle:
+                if handle.read(2) != b'MZ':
+                    return True
+                handle.seek(0x3C)
+                header_offset = struct.unpack('<I', handle.read(4))[0]
+                handle.seek(header_offset + 4)
+                machine = struct.unpack('<H', handle.read(2))[0]
+                return machine == 0x8664
+        except OSError:
+            return False
+
     def _locate_library(self, root: Path) -> Path:
         """Find libcarla_standalone2 library."""
         names = (
@@ -594,6 +602,8 @@ class CarlaBackend:
             for name in names:
                 candidate = directory / name
                 if candidate.exists():
+                    if not self._is_supported_windows_library(candidate):
+                        continue
                     self._binary_hints.add(candidate.parent)
                     self._binary_hints.add(directory)
                     return candidate
@@ -603,6 +613,8 @@ class CarlaBackend:
             matches = list(root.glob(f"**/{name}"))
             if matches:
                 candidate = matches[0]
+                if not self._is_supported_windows_library(candidate):
+                    continue
                 self._binary_hints.add(candidate.parent)
                 return candidate
         
@@ -939,12 +951,15 @@ class CarlaBackend:
             if not resolved:
                 return
 
+            name_lower = resolved.name.lower()
+            if "win32" in name_lower and "win64" not in name_lower:
+                return
+
             # Windows archives often contain an extra nested "Carla" folder that
             # actually hosts the bridge executables (e.g.
             # ``Carla/Carla-2.5.10-win32/Carla``).  If we only register the
             # outer directory we miss those binaries, so automatically descend
             # one level when the folder follows the release naming pattern.
-            name_lower = resolved.name.lower()
             if name_lower.startswith("carla-") and name_lower != "carla":
                 nested = resolved / "Carla"
                 register_release(nested)
@@ -966,10 +981,8 @@ class CarlaBackend:
 
         def contains_bridge(directory: Path) -> bool:
             for bridge_name in (
-                "carla-bridge-win32.exe",
                 "carla-bridge-win64.exe",
                 "carla-bridge-native.exe",
-                "carla-discovery-win32.exe",
             ):
                 if (directory / bridge_name).exists():
                     return True
@@ -2016,7 +2029,7 @@ class CarlaBackend:
     def status(self, include_parameters: bool = True) -> dict[str, Any]:
         with self._lock:
             qt_available = bool(
-                HAS_PYQT5 and self._qt_manager and self._qt_manager.is_available()
+                HAS_QT and self._qt_manager and self._qt_manager.is_available()
             )
             payload: dict[str, Any] = {
                 "available": self.available,
@@ -2295,6 +2308,8 @@ class CarlaBackend:
 
     def _send_midi_note(self, note: int, velocity: float) -> None:
         import logging
+
+        needs_idle_sync = False
         with self._lock:
             if self.host is None or self._plugin_id is None:
                 raise CarlaHostError("No plugin hosted")
@@ -2303,27 +2318,33 @@ class CarlaBackend:
             if not self._midi_routed:
                 logging.info("🎹 MIDI not routed, calling _ensure_midi_routing()")
                 self._ensure_midi_routing()
+                needs_idle_sync = True
             if not self._audio_routed:
                 logging.warning("⚠️ Audio not routed! Calling _ensure_audio_routing()")
                 self._ensure_audio_routing()
+                needs_idle_sync = True
 
+        if needs_idle_sync:
+            self._wait_for_engine_idle(0.2)
+        else:
+            self._wait_for_engine_idle(0.05)
+
+        with self._lock:
+            if self.host is None or self._plugin_id is None:
+                raise CarlaHostError("No plugin hosted")
             note = int(note)
             vel = max(0.0, min(1.0, float(velocity)))
             value = int(round(vel * 127.0))
             value = max(0, min(127, value))
 
-            logging.info(f"🎹 Sending MIDI: note={note} (C4=60), velocity={value}, audio_routed={self._audio_routed}, midi_routed={self._midi_routed}")
+            logging.info(
+                f"🎹 Sending MIDI: note={note} (C4=60), velocity={value}, "
+                f"audio_routed={self._audio_routed}, midi_routed={self._midi_routed}"
+            )
             self.host.send_midi_note(self._plugin_id, 0, note, value)
             logging.info(f"✓ MIDI sent successfully for note {note}")
 
-            # Give engine time to process the MIDI action to avoid assertion failures
-            # "pData->nextAction.opcode == kEnginePostActionNull"
-            import time
-            time.sleep(0.002)  # 2ms delay
-            try:
-                self.host.engine_idle()
-            except Exception:
-                pass  # Ignore idle errors
+        self._wait_for_engine_idle(0.1)
 
     def note_on(self, note: int, velocity: float = 0.8) -> None:
         with self._lock:
@@ -2543,7 +2564,7 @@ class CarlaBackend:
             logging.info("🪟 Acquired lock")
             if self._plugin_id is None or self.host is None:
                 raise CarlaHostError("No plugin hosted")
-            if not HAS_PYQT5:
+            if not HAS_QT:
                 raise CarlaHostError("PyQt5 not installed - cannot show plugin UI. Install with: pip install PyQt5")
 
             # Call show_custom_ui directly on current thread (like plugin_host.py does)
@@ -2666,7 +2687,7 @@ class CarlaBackend:
             "parameters": [param.to_status_entry() for param in self._parameters] if include_parameters else [],
             "capabilities": {
                 "instrument": self._plugin_is_instrument(),
-                "editor": self._plugin_supports_custom_ui() and HAS_PYQT5,
+                "editor": self._plugin_supports_custom_ui() and HAS_QT,
                 "midi": self._supports_midi,
             },
         }
@@ -2703,7 +2724,7 @@ class CarlaBackend:
             "plugin": plugin,
             "capabilities": {
                 "instrument": is_instrument,
-                "editor": self._plugin_supports_custom_ui() and HAS_PYQT5,
+                "editor": self._plugin_supports_custom_ui() and HAS_QT,
                 "midi": supports_midi,
             },
         }
@@ -2755,7 +2776,7 @@ class CarlaBackend:
             )
 
         # Check Qt availability
-        if visible and not HAS_PYQT5:
+        if visible and not HAS_QT:
             raise CarlaHostError(
                 "PyQt5 is not installed. Plugin UIs require PyQt5. "
                 "Install it with: pip install PyQt5"
@@ -2881,13 +2902,18 @@ class CarlaVSTHost:
     def ensure_available(self) -> None:
         if self._backend.available:
             return
-        message = (
-            "; ".join(self._backend.warnings)
-            if self._backend.warnings
-            else "Carla backend is not available."
-        )
+        warnings = [
+            w for w in self._backend.warnings
+            if "32-bit Carla bridge binaries" not in w
+        ]
+        if not warnings:
+            if any("32-bit Carla bridge binaries" in w for w in self._backend.warnings):
+                logging.getLogger(__name__).info(
+                    "Carla Win32 bridge is unavailable; proceeding with 64-bit bridge only."
+                )
+            return
+        message = "; ".join(warnings)
         raise CarlaHostError(message)
-
     def load_plugin(
         self,
         plugin_path: str | Path,
@@ -2982,7 +3008,8 @@ class CarlaVSTHost:
             return self._backend.hide_ui()
 
 
-_exports = ["CarlaVSTHost", "CarlaHostError", "HAS_PYQT5"]
-if HAS_PYQT5:
+_exports = ["CarlaVSTHost", "CarlaHostError", "HAS_QT", "HAS_PYQT5"]
+if HAS_QT:
     _exports.append("QtApplicationManager")
 __all__ = _exports
+

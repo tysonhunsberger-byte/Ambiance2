@@ -44,9 +44,6 @@ export function SoundsTab() {
     if (soundsFilter === soundFilterType.SYNTHS) {
       return filtered.filter(([_, { data }]) => ['synth', 'soundfont'].includes(data.type));
     }
-    if (soundsFilter === soundFilterType.WAVETABLES) {
-      return filtered.filter(([_, { data }]) => data.type === 'wavetable');
-    }
     //TODO: tidy this up, it does not need to be saved in settings
     if (soundsFilter === 'importSounds') {
       return [];
@@ -56,9 +53,6 @@ export function SoundsTab() {
 
   // holds mutable ref to current triggered sound
   const trigRef = useRef();
-
-  // Used to cycle through sound previews on banks with multiple sounds
-  let soundPreviewIdx = 0;
 
   // stop current sound on mouseup
   useEvent('mouseup', () => {
@@ -80,7 +74,6 @@ export function SoundsTab() {
             samples: 'samples',
             drums: 'drum-machines',
             synths: 'Synths',
-            wavetables: 'Wavetables',
             user: 'User',
             importSounds: 'import-sounds',
           }}
@@ -117,13 +110,11 @@ export function SoundsTab() {
                 const params = {
                   note: ['synth', 'soundfont'].includes(data.type) ? 'a3' : undefined,
                   s: name,
-                  n: soundPreviewIdx,
                   clip: 1,
                   release: 0.5,
                   sustain: 1,
                   duration: 0.5,
                 };
-                soundPreviewIdx++;
                 const time = ctx.currentTime + 0.05;
                 const onended = () => trigRef.current?.node?.disconnect();
                 trigRef.current = Promise.resolve(onTrigger(time, params, onended));
@@ -135,7 +126,6 @@ export function SoundsTab() {
               {' '}
               {name}
               {data?.type === 'sample' ? `(${getSamples(data.samples)})` : ''}
-              {data?.type === 'wavetable' ? `(${getSamples(data.tables)})` : ''}
               {data?.type === 'soundfont' ? `(${data.fonts.length})` : ''}
             </span>
           );

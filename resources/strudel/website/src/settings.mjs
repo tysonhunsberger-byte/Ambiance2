@@ -13,7 +13,6 @@ export const soundFilterType = {
   DRUMS: 'drums',
   SAMPLES: 'samples',
   SYNTHS: 'synths',
-  WAVETABLES: 'wavetables',
   ALL: 'all',
 };
 
