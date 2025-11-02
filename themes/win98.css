@@ -1,0 +1,207 @@
+/* Windows 98 Classic Theme */
+
+QMainWindow, QWidget {
+    background: #c0c0c0;
+    color: #000;
+    font-family: "MS Sans Serif", Tahoma, Arial;
+    font-size: 11px;
+}
+QPushButton {
+    background: #c0c0c0;
+    color: #000;
+    border: 2px outset #c0c0c0;
+    border-top-color: #ffffff;
+    border-left-color: #ffffff;
+    border-bottom-color: #000000;
+    border-right-color: #000000;
+    padding: 4px 12px;
+    min-height: 18px;
+}
+QPushButton:hover {
+    background: #c0c0c0;
+}
+QPushButton:pressed {
+    border: 2px inset #c0c0c0;
+    border-top-color: #000000;
+    border-left-color: #000000;
+    border-bottom-color: #ffffff;
+    border-right-color: #ffffff;
+    padding-left: 5px;
+    padding-top: 5px;
+}
+QComboBox {
+    background: #fff;
+    color: #000;
+    border: 2px inset;
+    border-top-color: #808080;
+    border-left-color: #808080;
+    border-bottom-color: #ffffff;
+    border-right-color: #ffffff;
+    padding: 2px 4px;
+}
+QListWidget {
+    background: #fff;
+    color: #000;
+    border: 2px inset;
+    border-top-color: #808080;
+    border-left-color: #808080;
+    border-bottom-color: #ffffff;
+    border-right-color: #ffffff;
+}
+QListWidget::item:selected {
+    background: #000080;
+    color: #fff;
+}
+QGroupBox {
+    background: #c0c0c0;
+    color: #000;
+    border: 2px groove #c0c0c0;
+    border-radius: 0px;
+    padding-top: 18px;
+    margin-top: 8px;
+    font-weight: bold;
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 10px;
+    padding: 0 4px;
+}
+QTextEdit {
+    background: #fff;
+    color: #000;
+    border: 2px inset;
+    border-top-color: #808080;
+    border-left-color: #808080;
+    border-bottom-color: #ffffff;
+    border-right-color: #ffffff;
+    font-family: "Courier New", monospace;
+}
+QLabel {
+    color: #000;
+    background: transparent;
+}
+QSpinBox {
+    background: #fff;
+    color: #000;
+    border: 2px inset;
+    border-top-color: #808080;
+    border-left-color: #808080;
+    border-bottom-color: #ffffff;
+    border-right-color: #ffffff;
+    padding: 2px;
+}
+QSlider::groove:horizontal {
+    background: #c0c0c0;
+    height: 4px;
+}
+QSlider::handle:horizontal {
+    background: #c0c0c0;
+    border: 2px outset #c0c0c0;
+    border-top-color: #ffffff;
+    border-left-color: #ffffff;
+    border-bottom-color: #000000;
+    border-right-color: #000000;
+    width: 12px;
+    margin: -6px 0;
+}
+QScrollArea {
+    background: #c0c0c0;
+    border: 2px inset;
+    border-top-color: #808080;
+    border-left-color: #808080;
+    border-bottom-color: #ffffff;
+    border-right-color: #ffffff;
+}
+QTabWidget::pane {
+    border: 2px outset #c0c0c0;
+    background: #c0c0c0;
+}
+QTabBar::tab {
+    background: #c0c0c0;
+    color: #000;
+    border: 2px outset #c0c0c0;
+    border-bottom: none;
+    padding: 4px 12px;
+    margin-right: 2px;
+}
+QTabBar::tab:selected {
+    background: #c0c0c0;
+    border-bottom: 2px solid #c0c0c0;
+}
+QMdiArea#desktop {
+    background: #008080;  /* Classic teal desktop */
+}
+/* Window decorations - Windows 98 style */
+QMdiSubWindow {
+    background: #c0c0c0;
+    border: 2px outset #c0c0c0;
+    border-top-color: #ffffff;
+    border-left-color: #ffffff;
+    border-bottom-color: #808080;
+    border-right-color: #808080;
+}
+QMdiSubWindow::title {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #000080, stop:1 #1084d0);
+    color: #fff;
+    padding: 2px;
+    padding-left: 8px;
+    font-weight: bold;
+    font-size: 11px;
+    text-align: left;
+}
+QMdiSubWindow > QMenu {
+    background: transparent;
+    max-width: 0px;
+    max-height: 0px;
+}
+QMdiSubWindow QWidget#qt_scrollarea_viewport {
+    background: transparent;
+}
+/* Window control buttons - Windows 98 style */
+QMdiSubWindow::close-button, QMdiSubWindow::minimize-button, QMdiSubWindow::maximize-button {
+    background: #c0c0c0;
+    border: 2px outset #c0c0c0;
+    border-top-color: #ffffff;
+    border-left-color: #ffffff;
+    border-bottom-color: #808080;
+    border-right-color: #808080;
+    width: 16px;
+    height: 14px;
+}
+QMdiSubWindow::close-button:pressed, QMdiSubWindow::minimize-button:pressed, QMdiSubWindow::maximize-button:pressed {
+    border: 2px inset #c0c0c0;
+    border-top-color: #808080;
+    border-left-color: #808080;
+    border-bottom-color: #ffffff;
+    border-right-color: #ffffff;
+}
+/* Taskbar styling - Windows 98 style */
+QWidget#taskbar {
+    background: #c0c0c0;
+    border-top: 2px outset #c0c0c0;
+    border-top-color: #ffffff;
+}
+QWidget#taskbar QPushButton {
+    background: #c0c0c0;
+    color: #000;
+    border: 2px outset #c0c0c0;
+    border-top-color: #ffffff;
+    border-left-color: #ffffff;
+    border-bottom-color: #000000;
+    border-right-color: #000000;
+    padding: 4px 8px;
+    text-align: left;
+}
+QWidget#taskbar QPushButton:hover {
+    background: #c0c0c0;
+}
+QWidget#taskbar QPushButton:pressed, QWidget#taskbar QPushButton:checked {
+    border: 2px inset #c0c0c0;
+    border-top-color: #000000;
+    border-left-color: #000000;
+    border-bottom-color: #ffffff;
+    border-right-color: #ffffff;
+    padding-left: 5px;
+    padding-top: 5px;
+}

@@ -22,7 +22,9 @@
       "Bash(nul)",
       "Bash(dir:*)",
       "Bash(python:*)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(findstr:*)",
+      "Bash(awk:*)"
     ],
     "deny": [],
     "ask": []

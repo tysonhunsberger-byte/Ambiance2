@@ -1,0 +1,37 @@
+/* Minimal Test Theme */
+
+QMainWindow {
+    background: #121212;
+    color: #f0f0f0;
+}
+
+QPushButton {
+    background: #2a2a2a;
+    color: white;
+    border: 1px solid gray;
+    padding: 8px;
+}
+
+QMdiArea#desktop {
+    background: #0a0a0a;
+}
+
+QMdiSubWindow {
+    background: #2a2a2a;
+    border: 1px solid gray;
+}
+
+QMdiSubWindow::title {
+    background: #3a3a3a;
+    color: white;
+    padding: 4px;
+}
+
+QWidget#taskbar {
+    background: #2a2a2a;
+}
+
+QWidget#taskbar QPushButton {
+    background: #333333;
+    color: white;
+}

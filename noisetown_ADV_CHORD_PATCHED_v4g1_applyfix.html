@@ -11,7 +11,10 @@
     --select:#1b1e28; --select-border:#666;
   }
   *{box-sizing:border-box}
-  html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font:14px/1.4 system-ui,Segoe UI,Tahoma,Arial,sans-serif}
+  /* Map legacy --background/--foreground vars to our theme vars so any injected CSS stays in sync */
+  body{ --background: var(--bg); --foreground: var(--text); }
+  /* Scope background/color to body only so themed html backgrounds don't interfere */
+  body{height:100%;margin:0;background:var(--bg);color:var(--text);font:14px/1.4 system-ui,Segoe UI,Tahoma,Arial,sans-serif}
   #app{display:flex;flex-direction:column;height:100%}
   #toolbar{display:flex;gap:10px;align-items:center;padding:10px;background:var(--panel);border-bottom:1px solid #444;position:sticky;top:0;z-index:5}
   #main{flex:1;overflow:auto;padding:10px;display:flex;gap:10px;flex-wrap:wrap;position:relative}
@@ -221,16 +224,16 @@ input[type="range"]::-moz-range-thumb{ width:16px; height:16px; border:1px solid
 body.theme-98 #stylePreset, body.theme-xp #stylePreset{ background:#fff; color:#000; border:1px solid #7b7b7b; }
 body.theme-98 #stylePreset option, body.theme-xp #stylePreset option{ color:#000; background:#fff; }
 
-/* === Windows XP look (xp.css-inspired) === */
-body.theme-xp{ background-image: var(--xp-wallpaper); background-size: cover; background-position:center;  image-rendering:pixelated; font-family: Tahoma, Verdana, sans-serif; background: var(--xp-wallpaper), linear-gradient(#6aa6ff 0 50%, #4c82f4 55%, #99d86d 60%, #56ad34 100%) fixed; }
-body.theme-xp .mod{ border:1px solid #6c8ed0; border-radius:2px; background:linear-gradient(#f7faff 0%, #e0ebff 55%, #d4e2ff 100%); box-shadow:0 1px 0 rgba(255,255,255,.7) inset; }
+/* === Windows XP look (authentic Luna theme colors) === */
+body.theme-xp{ background-image: var(--xp-wallpaper); background-size: cover; background-position:center; font-family: Tahoma, Verdana, sans-serif; -webkit-font-smoothing: antialiased; background: var(--xp-wallpaper), linear-gradient(#6aa6ff 0 50%, #4c82f4 55%, #99d86d 60%, #56ad34 100%) fixed; }
+body.theme-xp .mod{ border:1px solid #8c8165; border-radius:2px; background:linear-gradient(#f6f4ec 0%, #ede9d5 55%, #e7e2d0 100%); box-shadow:0 1px 0 rgba(255,255,255,.7) inset; }
 body.theme-xp .mod-hdr{ background: linear-gradient(180deg,#5c8fff 0%,#3f73e2 75%); color:#fff; border-bottom:1px solid #355db9; border-radius:2px 2px 0 0; text-shadow:0 1px 0 rgba(0,0,0,.35); }
-body.theme-xp .btn{ border-radius:2px; background: linear-gradient(#f5f9ff 0%, #d4e4ff 100%); border:1px solid #6b8ccc; color:#13336d; box-shadow:0 1px 0 rgba(255,255,255,.8) inset, 0 1px 2px rgba(20,48,125,.18); }
-body.theme-xp .btn:hover{ background:linear-gradient(#ffffff 0%, #dcebff 100%); }
-body.theme-xp .btn:active{ background: linear-gradient(#cddfff,#b9d0fb); color:#0a2c66; box-shadow: inset 0 1px 2px rgba(0,0,0,.18); }
-body.theme-xp select, body.theme-xp input[type="text"], body.theme-xp input[type="number"]{ border:1px solid #6b8ccc; background:linear-gradient(#ffffff,#edf3ff); border-radius:3px; color:#123169; box-shadow:0 1px 0 rgba(255,255,255,.7) inset; }
-body.theme-xp input[type="range"]::-webkit-slider-thumb{ width:14px; height:14px; border-radius:2px; background:linear-gradient(#f6f9ff,#d7e6ff); border:1px solid #5c7ed1; }
-body.theme-xp input[type="range"]::-moz-range-thumb{ width:14px; height:14px; border-radius:2px; background:linear-gradient(#f6f9ff,#d7e6ff); border:1px solid #5c7ed1; }
+body.theme-xp .btn{ border-radius:2px; background: linear-gradient(#ffffff 0%, #ece9d8 86%, #d8d0c4 100%); border:1px solid #003c74; color:#000; box-shadow:0 1px 0 rgba(255,255,255,.8) inset, 0 1px 2px rgba(0,0,0,.18); }
+body.theme-xp .btn:hover{ background:linear-gradient(#ffffff 0%, #fef9e8 100%); box-shadow:inset -1px 1px #fff0cf, inset 1px 2px #fdd889, inset -2px 2px #fbc761, inset 2px -2px #e5a01a; }
+body.theme-xp .btn:active{ background: linear-gradient(180deg, #cdc2c3 0%, #e3e3db 8%, #e5e5de 94%, #f2f2f1 100%); box-shadow: inset 0 1px 2px rgba(0,0,0,.18); }
+body.theme-xp select, body.theme-xp input[type="text"], body.theme-xp input[type="number"]{ border:1px solid #789dbc; background:#ffffff; border-radius:3px; color:#000; box-shadow:inset 1px 1px 2px rgba(0,0,0,.1); }
+body.theme-xp input[type="range"]::-webkit-slider-thumb{ width:14px; height:14px; border-radius:2px; background:linear-gradient(#ffffff,#ece9d8); border:1px solid #789dbc; }
+body.theme-xp input[type="range"]::-moz-range-thumb{ width:14px; height:14px; border-radius:2px; background:linear-gradient(#ffffff,#ece9d8); border:1px solid #789dbc; }
 
 /* ====================== XP fidelity pack ====================== */
 
@@ -270,10 +273,10 @@ body.theme-xp #toolbarInner{ display:flex; align-items:center; gap:8px; flex:1; 
 body.theme-xp .mod-hdr{ position: relative; padding-right: 64px; }
 body.theme-xp .win-ctl{ position:absolute; right:6px; top:4px; display:flex; gap:4px; }
 body.theme-xp .win-ctl .btnctl{
-  width:18px; height:18px; border:1px solid #6b8ccc; border-radius:2px; background:#e7edf9;
+  width:18px; height:18px; border:1px solid #789dbc; border-radius:2px; background:#ece9d8;
   box-shadow: inset 0 1px 0 #fff;
 }
-body.theme-xp .win-ctl .btnctl:hover{ background:#fff; }
+body.theme-xp .win-ctl .btnctl:hover{ background:#fff; box-shadow:inset -1px 1px #fff0cf, inset 1px 2px #fdd889; }
 body.theme-xp .win-ctl .min{ background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='18' height='18'><rect x='4' y='12' width='10' height='2' fill='%23000'/></svg>"); background-repeat:no-repeat; background-position:center; }
 body.theme-xp .win-ctl .max{ background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='18' height='18'><rect x='4' y='4' width='10' height='10' fill='none' stroke='%23000'/></svg>"); background-repeat:no-repeat; background-position:center; }
 body.theme-xp .win-ctl .cls{ background:#ff5a5a; background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='18' height='18'><path d='M5 5 L13 13 M13 5 L5 13' stroke='%23fff' stroke-width='2' /></svg>"); background-repeat:no-repeat; background-position:center; }
@@ -282,11 +285,11 @@ body.theme-xp .win-ctl .cls{ background:#ff5a5a; background-image:url("data:imag
 body.theme-xp .mod.maximized{ position:relative; z-index:5; }
 body.theme-xp .mod.maximized .mod-body{ max-height: 60vh; overflow:auto; }
 
-/* Scrollbars (WebKit) */
+/* Scrollbars (WebKit) - Luna beige */
 body.theme-xp *::-webkit-scrollbar{ width:14px; height:14px; }
-body.theme-xp *::-webkit-scrollbar-track{ background: #e7edf9; }
-body.theme-xp *::-webkit-scrollbar-thumb{ background: linear-gradient(#fff,#d6e4ff); border:1px solid #6b8ccc; border-radius:2px; }
-body.theme-xp *::-webkit-scrollbar-button{ background: #d6e4ff; border:1px solid #6b8ccc; }
+body.theme-xp *::-webkit-scrollbar-track{ background: linear-gradient(90deg, rgba(197,213,255,1) 0%, rgba(181,211,255,1) 86%, rgba(182,202,247,1) 100%); }
+body.theme-xp *::-webkit-scrollbar-thumb{ background: linear-gradient(#fff,#ece9d8); border:1px solid #789dbc; border-radius:2px; box-shadow: inset 1px 1px white, inset -1px -1px white, inset 2px 2px #b9cdfa, inset -2px -2px #b6c9f7; }
+body.theme-xp *::-webkit-scrollbar-button{ background: #ece9d8; border:1px solid #789dbc; }
 body.theme-xp *::-webkit-scrollbar-button:vertical:decrement{ background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14'><polygon points='7,3 11,9 3,9' fill='%23000'/></svg>"); background-repeat:no-repeat; background-position:center; }
 body.theme-xp *::-webkit-scrollbar-button:vertical:increment{ background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14'><polygon points='3,5 11,5 7,11' fill='%23000'/></svg>"); background-repeat:no-repeat; background-position:center; }
 body.theme-xp *::-webkit-scrollbar-button:horizontal:decrement{ background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14'><polygon points='3,7 9,3 9,11' fill='%23000'/></svg>"); background-repeat:no-repeat; background-position:center; }
@@ -294,8 +297,8 @@ body.theme-xp *::-webkit-scrollbar-button:horizontal:increment{ background-image
 
 /* Checkboxes / Radios (bitmap-ish) */
 body.theme-xp input[type="checkbox"]{
-  appearance:none; -webkit-appearance:none; width:13px; height:13px; border:1px solid #6b8ccc; border-radius:2px;
-  background:#fff; box-shadow: inset 0 1px 0 #fff;
+  appearance:none; -webkit-appearance:none; width:13px; height:13px; border:1px solid #789dbc; border-radius:2px;
+  background:linear-gradient(135deg, rgba(220,220,215,1) 0%, rgba(255,255,255,1) 100%); box-shadow: inset 0 1px 0 #fff;
   vertical-align:middle; margin-right:6px;
 }
 body.theme-xp input[type="checkbox"]:checked{
@@ -303,8 +306,8 @@ body.theme-xp input[type="checkbox"]:checked{
   background-repeat:no-repeat; background-position:center;
 }
 body.theme-xp input[type="radio"]{
-  appearance:none; -webkit-appearance:none; width:13px; height:13px; border:1px solid #6b8ccc; border-radius:50%;
-  background:#fff; box-shadow: inset 0 1px 0 #fff;
+  appearance:none; -webkit-appearance:none; width:13px; height:13px; border:1px solid #789dbc; border-radius:50%;
+  background:linear-gradient(135deg, rgba(220,220,215,1) 0%, rgba(255,255,255,1) 100%); box-shadow: inset 0 1px 0 #fff;
   vertical-align:middle; margin-right:6px;
 }
 body.theme-xp input[type="radio"]:checked{
@@ -334,14 +337,18 @@ body.theme-xp #themePicker, body.theme-xp #themePicker option{ background:#fff; 
 
 
 /* ===== Windows 98 theme (scoped) ===== */
-body.theme-98{ background:#008080 !important; background:#008080 !important;
+body.theme-98{ background:#008080 !important;
   /* canonical Win98 colors */
   --bg:#c0c0c0; --panel:#c0c0c0; --card:#c0c0c0; --text:#000; --muted:#111; --accent:#000080;
   --select:#000080; --select-border:#7b7b7b;
   font-family: "MS Sans Serif", Tahoma, Verdana, Arial, sans-serif;
+  -webkit-font-smoothing: none;
   image-rendering: pixelated;
 }
 /* Bars / containers */
+body.theme-98 #main{
+  background:#c0c0c0 !important;
+}
 body.theme-98 #toolbar{
   background:#c0c0c0;
   border-top:2px solid #7b7b7b; border-left:2px solid #7b7b7b;
@@ -441,26 +448,27 @@ body.theme-98 *::-webkit-scrollbar-thumb{
 
 /* ===== Windows XP theme (scoped) ===== */
 body.theme-xp{ background-image: var(--xp-wallpaper); background-size: cover; background-position:center;
-  /* canonical XP-ish colors */
-  --bg:#1f4fd0; --panel:#d0e2ff; --card:#e4efff; --text:#00174a; --muted:#274276; --accent:#2b63e6;
-  --select:#f7fbff; --select-border:#6e8ed1;
+  /* Authentic Luna theme colors */
+  --bg:#ece9d8; --panel:#ece9d8; --card:#ece9d8; --text:#000; --muted:#3c3c3c; --accent:#0055e5;
+  --select:#ffffff; --select-border:#789dbc;
   font-family: Tahoma, "Segoe UI", Verdana, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
   background: linear-gradient(#4b85ff, #1f4fd0) fixed;
 }
 body.theme-xp #main{
-  background: linear-gradient(180deg, rgba(255,255,255,.92) 0%, rgba(205,226,255,.94) 35%, rgba(178,210,255,.96) 100%);
+  background: #ece9d8 !important;
 }
 body.theme-xp #toolbar{
-  background: linear-gradient(#f4f8ff 0%, #d7e6ff 100%); border-bottom:1px solid #6e8ed1; padding:6px 8px;
+  background: #ece9d8; border-bottom:1px solid #789dbc; padding:6px 8px;
   box-shadow: inset 0 1px 0 rgba(255,255,255,.9);
 }
 body.theme-xp .stream, body.theme-xp .block{
-  background: linear-gradient(180deg, rgba(249,252,255,1) 0%, rgba(221,234,255,1) 48%, rgba(199,219,255,1) 100%);
+  background: #ece9d8;
   border-radius:8px;
-  border:1px solid #6e8ed1; box-shadow: 0 1px 0 rgba(255,255,255,.8) inset, 0 1px 2px rgba(23,47,128,.2);
+  border:1px solid #8c8165; box-shadow: inset 0 1px 0 rgba(255,255,255,.8), 0 1px 2px rgba(0,0,0,.1);
 }
 body.theme-xp .mod{
-  border-radius:8px; border:1px solid #6e8ed1; background:linear-gradient(#f4f8ff,#dce8ff);
+  border-radius:8px; border:1px solid #8c8165; background:#ece9d8;
 }
 body.theme-xp .mod-hdr{
   display:flex; align-items:center; justify-content:space-between; gap:8px;
@@ -469,7 +477,7 @@ body.theme-xp .mod-hdr{
 }
 body.theme-xp .mod-hdr .name,
 body.theme-xp .mod-hdr .carat{ color:#fff; }
-body.theme-xp .mod-body{ background:linear-gradient(#f9fbff,#e7f0ff); }
+body.theme-xp .mod-body{ background:#ece9d8; }
 body.theme-xp .btn{
   background: linear-gradient(180deg, #ffffff 0%, #ece9d8 86%, #d8d0c4 100%);
   color: #000000;
@@ -490,33 +498,33 @@ body.theme-xp .btn:active{
 /* Checkboxes & radios */
 body.theme-xp input[type="checkbox"], body.theme-xp input[type="radio"]{
   appearance:none; -webkit-appearance:none; outline:none; margin:0 6px 0 0;
-  width:14px; height:14px; background:#fff; border-radius:3px;
-  border:1px solid #93a4bd; box-shadow: 0 1px 0 #fff inset;
+  width:14px; height:14px; background:linear-gradient(135deg, rgba(220,220,215,1) 0%, rgba(255,255,255,1) 100%); border-radius:3px;
+  border:1px solid #789dbc; box-shadow: 0 1px 0 #fff inset;
 }
 body.theme-xp input[type="checkbox"]:checked{ background:
   linear-gradient(45deg, transparent 45%, #0a5bd3 45% 55%, transparent 55%),
   linear-gradient(-45deg, transparent 45%, #0a5bd3 45% 55%, transparent 55%),
-  #fff; }
+  linear-gradient(135deg, rgba(220,220,215,1) 0%, rgba(255,255,255,1) 100%); }
 body.theme-xp input[type="radio"]{ border-radius:50%; }
 body.theme-xp input[type="radio"]:checked{
-  background: radial-gradient(circle at 50% 50%, #0a5bd3 0 4px, transparent 4px) #fff;
+  background: radial-gradient(circle at 50% 50%, #0a5bd3 0 4px, transparent 4px), linear-gradient(135deg, rgba(220,220,215,1) 0%, rgba(255,255,255,1) 100%);
 }
 
 /* Sliders */
 body.theme-xp input[type="range"]{
-  -webkit-appearance:none; appearance:none; height:6px; background:#c3d4f7; border-radius:4px; border:1px solid #93a4bd;
+  -webkit-appearance:none; appearance:none; height:6px; background:linear-gradient(90deg, rgba(197,213,255,1) 0%, rgba(181,211,255,1) 86%, rgba(182,202,247,1) 100%); border-radius:4px; border:1px solid #789dbc;
 }
-body.theme-xp input[type="range"]::-webkit-slider-runnable-track{ height:6px; background:#c3d4f7; border-radius:4px; }
+body.theme-xp input[type="range"]::-webkit-slider-runnable-track{ height:6px; background:linear-gradient(90deg, rgba(197,213,255,1) 0%, rgba(181,211,255,1) 86%, rgba(182,202,247,1) 100%); border-radius:4px; }
 body.theme-xp input[type="range"]::-webkit-slider-thumb{
   -webkit-appearance:none; width:16px; height:16px; margin-top:-6px;
-  background:linear-gradient(#fff, #e6eefb); border:1px solid #93a4bd; border-radius:50%;
+  background:linear-gradient(#fff, #ece9d8); border:1px solid #789dbc; border-radius:50%;
   box-shadow: 0 1px 0 #fff inset, 0 0 2px rgba(0,0,0,.25);
 }
 
 /* Inputs */
 body.theme-xp select, body.theme-xp input[type="number"], body.theme-xp input[type="text"]{
-  background:linear-gradient(#ffffff,#edf3ff); color:#123169; border:1px solid #6e8ed1; border-radius:6px; padding:4px 6px;
-  box-shadow: 0 1px 0 rgba(255,255,255,.85) inset;
+  background:#ffffff; color:#000; border:1px solid #789dbc; border-radius:6px; padding:4px 6px;
+  box-shadow: inset 1px 1px 2px rgba(0,0,0,.1);
 }
 
 /* Canvases */
@@ -527,7 +535,8 @@ body.theme-xp .spectro, body.theme-xp .scope{
 /* Scrollbars */
 body.theme-xp *::-webkit-scrollbar{ width:12px; height:12px; }
 body.theme-xp *::-webkit-scrollbar-thumb{
-  background: linear-gradient(#fff,#e6eefb); border:1px solid #93a4bd; border-radius:8px;
+  background: linear-gradient(#fff,#ece9d8); border:1px solid #789dbc; border-radius:8px;
+  box-shadow: inset 1px 1px white, inset -1px -1px white, inset 2px 2px #b9cdfa, inset -2px -2px #b6c9f7;
 }
 
 </style>
@@ -538,47 +547,82 @@ body.theme-xp{ background-image: none !important; }
 </style>
 
 <style id="theme-fixes-v4">
-/* Ensure theme colors apply correctly */
-body.theme-98 #app,
-body.theme-98 #main{
-  background: #c0c0c0 !important;
+/* Plugin block theme overrides */
+body.theme-98 .plugin-block,
+body.theme-xp .plugin-block{
+  background: var(--panel) !important;
+  border: 2px solid;
+  border-color: #fff #7b7b7b #7b7b7b #fff;
+  border-radius: 0;
   color: #000 !important;
 }
 
-body.theme-xp #app,
-body.theme-xp #main{
-  background: #ece9d8 !important;
+body.theme-xp .plugin-block{
+  border: 1px solid #8c8165;
+  border-radius: 8px;
+}
+
+body.theme-98 .plugin-block .workspace-panel,
+body.theme-98 .plugin-block .host-panel,
+body.theme-98 .plugin-block .rack-panel,
+body.theme-98 .plugin-block .rackStream,
+body.theme-98 .plugin-block .laneCard{
+  background: #c0c0c0;
+  border: 2px solid;
+  border-color: #7b7b7b #fff #fff #7b7b7b;
   color: #000 !important;
 }
 
-body.theme-98 .mod-body{
-  background: #c0c0c0 !important;
+body.theme-xp .plugin-block .workspace-panel,
+body.theme-xp .plugin-block .host-panel,
+body.theme-xp .plugin-block .rack-panel,
+body.theme-xp .plugin-block .rackStream,
+body.theme-xp .plugin-block .laneCard{
+  background: #ece9d8;
+  border: 1px solid #8c8165;
   color: #000 !important;
 }
 
-body.theme-xp .mod-body{
-  background: #ece9d8 !important;
+/* Force all text inside plugin blocks to be black */
+body.theme-98 .plugin-block *,
+body.theme-xp .plugin-block *{
   color: #000 !important;
 }
 
-/* Ensure all text is visible */
-body.theme-98 label, body.theme-98 .title, body.theme-98 span, body.theme-98 div{
-  color: #000 !important;
+/* But keep mod-hdr text white */
+body.theme-98 .plugin-block .mod-hdr,
+body.theme-98 .plugin-block .mod-hdr *,
+body.theme-xp .plugin-block .mod-hdr,
+body.theme-xp .plugin-block .mod-hdr *{
+  color: #fff !important;
 }
 
-body.theme-xp label, body.theme-xp .title, body.theme-xp span, body.theme-xp div{
+/* Fix specific plugin block elements */
+body.theme-98 .plugin-block .workspacePath,
+body.theme-xp .plugin-block .workspacePath{
+  background: #fff !important;
   color: #000 !important;
+  border: 1px solid #7b7b7b !important;
 }
 
-/* Fix select dropdowns */
-body.theme-98 select, body.theme-98 select option{
+body.theme-98 .plugin-block .slotList .slot,
+body.theme-xp .plugin-block .slotList .slot{
   background: #fff !important;
   color: #000 !important;
 }
 
-body.theme-xp select, body.theme-xp select option{
+body.theme-98 .plugin-block .slotList .empty,
+body.theme-xp .plugin-block .slotList .empty{
   background: #fff !important;
   color: #000 !important;
+  border: 1px dashed #808080 !important;
+}
+
+body.theme-98 .plugin-block .hostStatus,
+body.theme-xp .plugin-block .hostStatus{
+  background: #fff !important;
+  color: #000 !important;
+  border: 1px solid #7b7b7b !important;
 }
 </style></head>
 <body>

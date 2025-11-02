@@ -1,0 +1,201 @@
+/* Windows XP Theme */
+/* Note: {bliss_path} will be replaced with actual image path */
+
+QMainWindow, QWidget {
+    background: #ece9d8;
+    color: #000;
+    font-family: Tahoma, Arial;
+    font-size: 11px;
+}
+QPushButton {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #ffffff, stop:0.4 #ecebe5, stop:0.6 #e6e4d8, stop:1 #d8d5c8);
+    color: #000;
+    border: 1px solid #003c74;
+    border-radius: 3px;
+    padding: 5px 14px;
+    min-height: 20px;
+}
+QPushButton:hover {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #fff5cc, stop:0.5 #ffe7a2, stop:1 #ffd65a);
+    border-color: #0066cc;
+}
+QPushButton:pressed {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #e5c365, stop:0.5 #f2d58b, stop:1 #fce5ac);
+    border-color: #003c74;
+}
+QComboBox {
+    background: #fff;
+    color: #000;
+    border: 1px solid #7f9db9;
+    border-radius: 0px;
+    padding: 3px 6px;
+}
+QComboBox:hover {
+    border-color: #0066cc;
+}
+QListWidget {
+    background: #fff;
+    color: #000;
+    border: 1px solid #7f9db9;
+    selection-background-color: #316ac5;
+    selection-color: #fff;
+}
+QListWidget::item:selected {
+    background: #316ac5;
+    color: #fff;
+}
+QListWidget::item:hover {
+    background: #d6e9f7;
+}
+QGroupBox {
+    background: #ece9d8;
+    color: #000;
+    border: 1px solid #a5acb2;
+    border-radius: 4px;
+    padding-top: 18px;
+    margin-top: 10px;
+    font-weight: bold;
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 8px;
+    padding: 0 6px;
+    color: #0054e3;
+}
+QTextEdit {
+    background: #fff;
+    color: #000;
+    border: 1px solid #7f9db9;
+    font-family: "Courier New", monospace;
+}
+QLabel {
+    color: #000;
+    background: transparent;
+}
+QSpinBox {
+    background: #fff;
+    color: #000;
+    border: 1px solid #7f9db9;
+    padding: 2px;
+}
+QSlider::groove:horizontal {
+    background: #e3dfd5;
+    height: 6px;
+    border: 1px solid #aca899;
+    border-radius: 3px;
+}
+QSlider::handle:horizontal {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #fff, stop:0.5 #dedad0, stop:1 #c4c1b5);
+    border: 1px solid #003c74;
+    width: 14px;
+    height: 20px;
+    margin: -8px 0;
+    border-radius: 2px;
+}
+QScrollArea {
+    background: #ece9d8;
+    border: 1px solid #7f9db9;
+}
+QTabWidget::pane {
+    border: 1px solid #a5acb2;
+    background: #ece9d8;
+    border-radius: 3px;
+}
+QTabBar::tab {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #f8f6f0, stop:1 #e3dfd5);
+    color: #000;
+    border: 1px solid #a5acb2;
+    border-bottom: none;
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+    padding: 6px 14px;
+    margin-right: 2px;
+}
+QTabBar::tab:selected {
+    background: #ece9d8;
+    font-weight: bold;
+}
+QTabBar::tab:hover {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #fff5cc, stop:1 #ffe7a2);
+}
+QMdiArea#desktop {
+    background: url({bliss_path});
+    background-repeat: no-repeat;
+    background-position: center;
+}
+/* Window decorations - Windows XP style */
+QMdiSubWindow {
+    background: #ece9d8;
+    border: 1px solid #0054e3;
+    border-radius: 8px 8px 0 0;
+}
+QMdiSubWindow::title {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #0997ff, stop:0.5 #0053ee, stop:1 #0050e6);
+    color: #fff;
+    padding: 4px;
+    padding-left: 8px;
+    font-weight: bold;
+    font-size: 11px;
+    border-radius: 8px 8px 0 0;
+    text-align: left;
+}
+QMdiSubWindow > QMenu {
+    background: transparent;
+    max-width: 0px;
+    max-height: 0px;
+}
+QMdiSubWindow QWidget#qt_scrollarea_viewport {
+    background: transparent;
+}
+/* Window control buttons - Windows XP style */
+QMdiSubWindow::close-button, QMdiSubWindow::minimize-button, QMdiSubWindow::maximize-button {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 rgba(255, 255, 255, 200), stop:1 rgba(200, 220, 255, 180));
+    border: 1px solid rgba(255, 255, 255, 150);
+    border-radius: 2px;
+    width: 16px;
+    height: 16px;
+}
+QMdiSubWindow::close-button:hover {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #ff6666, stop:1 #cc0000);
+}
+QMdiSubWindow::minimize-button:hover, QMdiSubWindow::maximize-button:hover {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 rgba(255, 255, 255, 220), stop:1 rgba(180, 210, 255, 200));
+}
+QMdiSubWindow::close-button:pressed, QMdiSubWindow::minimize-button:pressed, QMdiSubWindow::maximize-button:pressed {
+    background: rgba(150, 180, 220, 200);
+}
+/* Taskbar styling - Windows XP style */
+QWidget#taskbar {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #245edb, stop:0.5 #3f8cf3, stop:1 #1941a5);
+    border-top: 1px solid #0831d9;
+}
+QWidget#taskbar QPushButton {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #3d95ff, stop:0.5 #2179d9, stop:1 #1162c5);
+    color: #fff;
+    border: 1px solid #0831d9;
+    border-radius: 3px;
+    padding: 5px 10px;
+    text-align: left;
+}
+QWidget#taskbar QPushButton:hover {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #5fb5ff, stop:0.5 #3d95ff, stop:1 #2179d9);
+    border: 1px solid #fff;
+}
+QWidget#taskbar QPushButton:checked {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #1162c5, stop:0.5 #2179d9, stop:1 #3d95ff);
+    border: 1px solid #003c74;
+}

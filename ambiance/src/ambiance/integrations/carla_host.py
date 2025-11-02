@@ -2316,11 +2316,11 @@ class CarlaBackend:
             if not self._supports_midi:
                 raise CarlaHostError("Hosted plugin does not accept MIDI input")
             if not self._midi_routed:
-                logging.info("🎹 MIDI not routed, calling _ensure_midi_routing()")
+                # logging.info("🎹 MIDI not routed, calling _ensure_midi_routing()")
                 self._ensure_midi_routing()
                 needs_idle_sync = True
             if not self._audio_routed:
-                logging.warning("⚠️ Audio not routed! Calling _ensure_audio_routing()")
+                # logging.warning("⚠️ Audio not routed! Calling _ensure_audio_routing()")
                 self._ensure_audio_routing()
                 needs_idle_sync = True
 
@@ -2337,12 +2337,13 @@ class CarlaBackend:
             value = int(round(vel * 127.0))
             value = max(0, min(127, value))
 
-            logging.info(
-                f"🎹 Sending MIDI: note={note} (C4=60), velocity={value}, "
-                f"audio_routed={self._audio_routed}, midi_routed={self._midi_routed}"
-            )
+            # Logging disabled for performance
+            # logging.info(
+            #     f"🎹 Sending MIDI: note={note} (C4=60), velocity={value}, "
+            #     f"audio_routed={self._audio_routed}, midi_routed={self._midi_routed}"
+            # )
             self.host.send_midi_note(self._plugin_id, 0, note, value)
-            logging.info(f"✓ MIDI sent successfully for note {note}")
+            # logging.info(f"✓ MIDI sent successfully for note {note}")
 
         self._wait_for_engine_idle(0.1)
 
