@@ -1,4 +1,4 @@
-/* Windows 98 Classic Theme */
+
 
 QMainWindow, QWidget {
     background: #c0c0c0;
@@ -17,10 +17,6 @@ QPushButton {
     border-right-color: #000000;
     padding: 4px 12px;
     min-height: 18px;
-    /* Inner bevel using box-shadow */
-    box-shadow:
-        inset 1px 1px 0px #dfdfdf,
-        inset -1px -1px 0px #808080;
 }
 QPushButton:hover {
     background: #c0c0c0;
@@ -34,10 +30,6 @@ QPushButton:pressed {
     border-right-color: #ffffff;
     padding-left: 5px;
     padding-top: 5px;
-    /* Inverted inner bevel for pressed state */
-    box-shadow:
-        inset 1px 1px 0px #808080,
-        inset -1px -1px 0px #dfdfdf;
 }
 QComboBox {
     background: #fff;
@@ -138,7 +130,6 @@ QTabBar::tab:selected {
     background: #c0c0c0;
     border-bottom: 2px solid #c0c0c0;
 }
-/* Toolbar styling */
 QWidget#toolbar {
     background: #c0c0c0;
     border-bottom: 2px outset #c0c0c0;
@@ -169,10 +160,6 @@ QWidget#toolbar QPushButton {
     min-height: 20px;
     margin: 0 4px;
     font-weight: bold;
-    /* Inner bevel using box-shadow */
-    box-shadow:
-        inset 1px 1px 0px #dfdfdf,
-        inset -1px -1px 0px #404040;
 }
 QWidget#toolbar QPushButton:pressed {
     border-width: 2px;
@@ -183,10 +170,6 @@ QWidget#toolbar QPushButton:pressed {
     border-right-color: #ffffff;
     padding-top: 3px;
     padding-left: 11px;
-    /* Inverted inner bevel for pressed state */
-    box-shadow:
-        inset 1px 1px 0px #808080,
-        inset -1px -1px 0px #dfdfdf;
 }
 QWidget#toolbar QPushButton#emergencyStopButton {
     background: #c04040;
@@ -209,8 +192,6 @@ QWidget#toolbar QPushButton#emergencyStopButton:pressed {
     padding-top: 3px;
     padding-left: 15px;
 }
-
-/* Window decorations - Windows 98 style */
 QMdiSubWindow {
     background: #c0c0c0;
     border: 2px outset #c0c0c0;
@@ -250,7 +231,6 @@ QMdiSubWindow QWidget#qt_scrollarea_viewport {
     border-bottom-color: #ffffff;
     border-right-color: #ffffff;
 }
-/* Window control buttons - Windows 98 style */
 QMdiSubWindow::close-button, QMdiSubWindow::minimize-button, QMdiSubWindow::maximize-button {
     background: #c0c0c0;
     border: 2px outset #c0c0c0;
@@ -258,6 +238,7 @@ QMdiSubWindow::close-button, QMdiSubWindow::minimize-button, QMdiSubWindow::maxi
     border-left-color: #ffffff;
     border-bottom-color: #808080;
     border-right-color: #808080;
+    border-radius: 2px;
     width: 16px;
     height: 14px;
 }
@@ -268,7 +249,6 @@ QMdiSubWindow::close-button:pressed, QMdiSubWindow::minimize-button:pressed, QMd
     border-bottom-color: #ffffff;
     border-right-color: #ffffff;
 }
-/* Taskbar styling - Windows 98 style */
 QWidget#taskbar {
     background: #c0c0c0;
     border-top: 2px outset #c0c0c0;
@@ -285,10 +265,6 @@ QWidget#taskbar QPushButton {
     border-right-color: #000000;
     padding: 4px 8px;
     text-align: left;
-    /* Inner bevel using box-shadow */
-    box-shadow:
-        inset 1px 1px 0px #dfdfdf,
-        inset -1px -1px 0px #808080;
 }
 QWidget#taskbar QPushButton#startButton {
     min-width: 90px;
@@ -330,10 +306,6 @@ QWidget#taskbar QPushButton:pressed, QWidget#taskbar QPushButton:checked {
     border-right-color: #ffffff;
     padding-left: 5px;
     padding-top: 5px;
-    /* Inverted inner bevel for pressed state */
-    box-shadow:
-        inset 1px 1px 0px #808080,
-        inset -1px -1px 0px #dfdfdf;
 }
 
 QPushButton#sessionSaveButton,

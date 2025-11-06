@@ -134,15 +134,15 @@ QTabBar::tab:hover {
 /* Window decorations - Windows 7 Aero style */
 QMdiSubWindow {
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-        stop:0 rgba(255, 255, 255, 0.9),
-        stop:0.1 rgba(240, 248, 255, 0.85),
-        stop:0.5 rgba(210, 230, 255, 0.75),
-        stop:1 rgba(180, 210, 245, 0.7));
+        stop:0 rgba(255, 255, 255, 0.94),
+        stop:0.1 rgba(245, 250, 255, 0.9),
+        stop:0.6 rgba(210, 230, 255, 0.75),
+        stop:1 rgba(184, 210, 252, 0.7));
     border: 1px solid rgba(60, 100, 150, 0.6);
     border-top: 1px solid rgba(255, 255, 255, 0.95);
-    border-left: 1px solid rgba(255, 255, 255, 0.8);
-    border-radius: 10px 10px 0px 0px;
-    padding: 4px;
+    border-left: 1px solid rgba(255, 255, 255, 0.85);
+    border-radius: 10px;
+    padding: 6px;
 }
 QMdiSubWindow::title {
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
@@ -236,7 +236,7 @@ QMdiSubWindow::close-button, QMdiSubWindow::minimize-button, QMdiSubWindow::maxi
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
         stop:0 rgba(255, 255, 255, 100), stop:1 rgba(220, 235, 252, 100));
     border: 1px solid rgba(100, 150, 200, 100);
-    border-radius: 3px;
+    border-radius: 6px;
     width: 17px;
     height: 17px;
 }
@@ -258,7 +258,7 @@ QWidget#taskbar {
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
         stop:0 rgba(102, 162, 255, 0.95), stop:1 rgba(58, 112, 214, 0.95));
     border-top: 1px solid rgba(255, 255, 255, 0.45);
-    padding: 10px 16px;
+    padding: 6px 12px;
 }
 QWidget#taskbar QPushButton {
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
@@ -266,8 +266,8 @@ QWidget#taskbar QPushButton {
     color: #0d2040;
     border: 1px solid rgba(255, 255, 255, 0.5);
     border-radius: 7px;
-    padding: 6px 16px;
-    min-height: 32px;
+    padding: 4px 12px;
+    min-height: 24px;
     margin: 4px 6px 4px 0;
     text-align: left;
 }
@@ -284,7 +284,7 @@ QWidget#taskbar QPushButton:checked {
 }
 QWidget#taskbar QPushButton#startButton {
     min-width: 120px;
-    min-height: 56px;
+    min-height: 46px;
     font-weight: 600;
     color: #ffffff;
     padding-left: 0px;
@@ -337,5 +337,6 @@ QMdiArea {
 QMdiArea QWidget#wallpaper_viewport {
     background: transparent;
 }
+
 
 

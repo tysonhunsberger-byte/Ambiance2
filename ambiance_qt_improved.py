@@ -209,20 +209,26 @@ class AmbianceMainWindow(QMainWindow):
         self.taskbar_layout = QHBoxLayout(self.taskbar)
         self.taskbar_layout.setContentsMargins(0, 0, 6, 0)
         self.taskbar_layout.setSpacing(4)
-        self.taskbar.setFixedHeight(40)
+        self.taskbar.setFixedHeight(36)
 
         layout.addWidget(self.taskbar)
 
         # Store reference to plugin rack widget
         self.plugin_rack_widget = None
+
+        # Track current theme before constructing dependent widgets
+        self.current_theme = "flat"
+
         if PluginRackManager is not None:
             self.plugin_rack_widget = PluginRackWidget(self)
             # Hide the main widget since we only use its children in MDI windows
             self.plugin_rack_widget.hide()
 
         # Apply initial theme
-        self.current_theme = "flat"
         self._apply_theme(self.current_theme)
+
+        if self.plugin_rack_widget:
+            self.plugin_rack_widget.apply_theme_titles(self.current_theme)
 
         # Create desktop windows after theme is applied
         self._create_desktop_windows()
@@ -516,7 +522,8 @@ class AmbianceMainWindow(QMainWindow):
         # Plugin Studio Window (Plugin discovery and chain)
         plugin_studio_win = QMdiSubWindow()
         plugin_studio_win.setWidget(self.plugin_rack_widget.header_group)
-        plugin_studio_win.setWindowTitle("Plugin Studio")
+        plugin_studio_title = self.plugin_rack_widget._groupbox_titles[self.plugin_rack_widget.header_group]
+        plugin_studio_win.setWindowTitle(plugin_studio_title)
         plugin_studio_win.setGeometry(20, 20, 800, 400)
         plugin_studio_win.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, False)  # Hide instead of close
         # Remove window flags that cause white boxes
@@ -532,7 +539,8 @@ class AmbianceMainWindow(QMainWindow):
         # Plugin UI Window
         plugin_ui_win = QMdiSubWindow()
         plugin_ui_win.setWidget(self.plugin_rack_widget.params_group)
-        plugin_ui_win.setWindowTitle("Plugin UI")
+        plugin_ui_title = self.plugin_rack_widget._groupbox_titles[self.plugin_rack_widget.params_group]
+        plugin_ui_win.setWindowTitle(plugin_ui_title)
         plugin_ui_win.setGeometry(840, 20, 500, 500)
         plugin_ui_win.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, False)  # Hide instead of close
         # Remove window flags that cause white boxes
@@ -583,8 +591,8 @@ class AmbianceMainWindow(QMainWindow):
         self.mdi_windows["Console Log"] = console_win
 
         self._window_titles = {
-            plugin_studio_win: "Plugin Studio",
-            plugin_ui_win: "Plugin UI",
+            plugin_studio_win: plugin_studio_title,
+            plugin_ui_win: plugin_ui_title,
             keyboard_win: "Instrument Keyboard",
             console_win: "Console Log",
         }
@@ -2221,3 +2229,7 @@ def main(argv: Optional[list[str]] = None) -> int:
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(main())
+
+
+
+

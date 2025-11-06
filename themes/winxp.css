@@ -126,18 +126,14 @@ QTabBar::tab:hover {
 /* Window decorations - Windows XP style */
 QMdiSubWindow {
     background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-        stop:0 #0054e3,
-        stop:0.5 #0c8ce3,
-        stop:1 #1ca1ec);
-    border: 3px solid #0054e3;
-    border-radius: 0px;
-    padding: 0px;
-    /* Classic XP 3D beveled border using box-shadow for pixelated effect */
-    box-shadow:
-        inset 1px 1px 0px #5fa2ff,
-        inset 2px 2px 0px #8fc7ff,
-        inset -1px -1px 0px #003c74,
-        inset -2px -2px 0px #00254d;
+        stop:0 #0053b5,
+        stop:0.45 #0c84d1,
+        stop:1 #1ca0f0);
+    border: 2px solid #003a82;
+    border-top: 2px solid #5fa2ff;
+    border-left: 2px solid #5fa2ff;
+    border-radius: 8px 8px 6px 6px;
+    padding: 4px;
 }
 QMdiSubWindow::title {
     background: transparent;
@@ -166,20 +162,16 @@ QMdiSubWindow > QMenu {
 }
 QMdiSubWindow QWidget#qt_scrollarea_viewport {
     background: #ece9d8;
-    border: 2px solid #808080;
-    border-radius: 0px;
-    padding: 8px;
-    /* Classic XP sunken border using box-shadow */
-    box-shadow:
-        inset 1px 1px 0px #808080,
-        inset -1px -1px 0px #ffffff;
+    border: 1px solid #c4b8a8;
+    border-radius: 6px;
+    padding: 10px;
 }
 /* Window control buttons - Windows XP style */
 QMdiSubWindow::close-button, QMdiSubWindow::minimize-button, QMdiSubWindow::maximize-button {
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
         stop:0 rgba(255, 255, 255, 200), stop:1 rgba(200, 220, 255, 180));
     border: 1px solid rgba(255, 255, 255, 150);
-    border-radius: 2px;
+    border-radius: 6px;
     width: 16px;
     height: 16px;
 }
