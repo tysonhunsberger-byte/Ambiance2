@@ -1,7 +1,7 @@
 /* Flat Dark Theme */
 
 QMainWindow, QWidget {
-    background: #121212;
+    background: #222222;
     color: #f0f0f0;
 }
 QPushButton {
@@ -9,15 +9,15 @@ QPushButton {
     color: #fff;
     border: 1px solid #666;
     border-radius: 4px;
-    padding: 8px 16px;
-    min-height: 24px;
+    padding: 4px 12px;
+    min-height: 18px;
 }
 QPushButton:hover {
     background: #3a3a3a;
     border-color: #888;
 }
 QPushButton:pressed {
-    background: #1a1a1a;
+    background: #1b1b1b;
 }
 QComboBox {
     background: #2a2a2a;
@@ -58,7 +58,7 @@ QSpinBox, QSlider {
     border: 1px solid #666;
 }
 QMdiArea#desktop {
-    background: #0a0a0a;
+    background: transparent;
 }
 /* Window decorations - Flat style */
 QMdiSubWindow {
@@ -69,10 +69,20 @@ QMdiSubWindow::title {
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
         stop:0 #3a3a3a, stop:1 #2a2a2a);
     color: #fff;
+    selection-background-color: transparent;
+    selection-color: #fff;
     padding: 4px;
     font-weight: bold;
     text-align: left;
     padding-left: 8px;
+}
+
+QMdiSubWindow::title:inactive {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #323232, stop:1 #272727);
+    color: #cccccc;
+    selection-background-color: transparent;
+    selection-color: #cccccc;
 }
 QMdiSubWindow > QMenu {
     background: transparent;
@@ -116,4 +126,42 @@ QWidget#taskbar QPushButton:hover {
 QWidget#taskbar QPushButton:checked {
     background: #555;
     border: 1px solid #777;
+}
+
+QWidget#toolbar QPushButton#emergencyStopButton {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #ff5c5c, stop:1 #c92424);
+    color: #ffffff;
+    border: 1px solid #8f1b1b;
+    border-radius: 6px;
+    padding: 2px 12px;
+    min-height: 18px;
+}
+QWidget#toolbar QPushButton#emergencyStopButton:pressed {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #d43737, stop:1 #8f1010);
+}
+
+QPushButton#sessionSaveButton,
+QPushButton#sessionLoadButton {
+    background: #2a2a2a;
+    color: #f5f5f5;
+    border: 1px solid #555;
+    border-radius: 3px;
+    padding: 2px 8px;
+    min-height: 20px;
+}
+QPushButton#sessionSaveButton:hover,
+QPushButton#sessionLoadButton:hover {
+    background: #343434;
+}
+QPushButton#sessionSaveButton:pressed,
+QPushButton#sessionLoadButton:pressed {
+    background: #1f1f1f;
+}
+
+QMdiArea {
+    background: transparent;
+}
+
+QMdiArea QWidget#wallpaper_viewport {
+    background: transparent;
 }

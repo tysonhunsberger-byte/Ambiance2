@@ -9,25 +9,35 @@ QMainWindow, QWidget {
 QPushButton {
     background: #c0c0c0;
     color: #000;
-    border: 2px outset #c0c0c0;
+    border-width: 2px;
+    border-style: solid;
     border-top-color: #ffffff;
     border-left-color: #ffffff;
     border-bottom-color: #000000;
     border-right-color: #000000;
     padding: 4px 12px;
     min-height: 18px;
+    /* Inner bevel using box-shadow */
+    box-shadow:
+        inset 1px 1px 0px #dfdfdf,
+        inset -1px -1px 0px #808080;
 }
 QPushButton:hover {
     background: #c0c0c0;
 }
 QPushButton:pressed {
-    border: 2px inset #c0c0c0;
+    border-width: 2px;
+    border-style: solid;
     border-top-color: #000000;
     border-left-color: #000000;
     border-bottom-color: #ffffff;
     border-right-color: #ffffff;
     padding-left: 5px;
     padding-top: 5px;
+    /* Inverted inner bevel for pressed state */
+    box-shadow:
+        inset 1px 1px 0px #808080,
+        inset -1px -1px 0px #dfdfdf;
 }
 QComboBox {
     background: #fff;
@@ -128,9 +138,78 @@ QTabBar::tab:selected {
     background: #c0c0c0;
     border-bottom: 2px solid #c0c0c0;
 }
-QMdiArea#desktop {
-    background: #008080;  /* Classic teal desktop */
+/* Toolbar styling */
+QWidget#toolbar {
+    background: #c0c0c0;
+    border-bottom: 2px outset #c0c0c0;
+    border-bottom-color: #ffffff;
+    padding: 2px 8px 2px 8px;
 }
+QWidget#toolbar QComboBox {
+    background: #ffffff;
+    border: 2px inset #c0c0c0;
+    border-top-color: #808080;
+    border-left-color: #808080;
+    border-bottom-color: #ffffff;
+    border-right-color: #ffffff;
+    padding: 2px 6px;
+    min-height: 20px;
+    margin-bottom: 2px;
+}
+QWidget#toolbar QPushButton {
+    background: #c0c0c0;
+    color: #000000;
+    border-width: 2px;
+    border-style: solid;
+    border-top-color: #ffffff;
+    border-left-color: #ffffff;
+    border-bottom-color: #808080;
+    border-right-color: #808080;
+    padding: 2px 10px;
+    min-height: 20px;
+    margin: 0 4px;
+    font-weight: bold;
+    /* Inner bevel using box-shadow */
+    box-shadow:
+        inset 1px 1px 0px #dfdfdf,
+        inset -1px -1px 0px #404040;
+}
+QWidget#toolbar QPushButton:pressed {
+    border-width: 2px;
+    border-style: solid;
+    border-top-color: #000000;
+    border-left-color: #000000;
+    border-bottom-color: #ffffff;
+    border-right-color: #ffffff;
+    padding-top: 3px;
+    padding-left: 11px;
+    /* Inverted inner bevel for pressed state */
+    box-shadow:
+        inset 1px 1px 0px #808080,
+        inset -1px -1px 0px #dfdfdf;
+}
+QWidget#toolbar QPushButton#emergencyStopButton {
+    background: #c04040;
+    color: #ffffff;
+    border: 2px outset #c04040;
+    border-top-color: #ff9090;
+    border-left-color: #ff9090;
+    border-bottom-color: #6a1010;
+    border-right-color: #6a1010;
+    min-height: 18px;
+    padding: 2px 12px;
+    margin-bottom: 2px;
+}
+QWidget#toolbar QPushButton#emergencyStopButton:pressed {
+    border: 2px inset #c04040;
+    border-top-color: #6a1010;
+    border-left-color: #6a1010;
+    border-bottom-color: #ff9090;
+    border-right-color: #ff9090;
+    padding-top: 3px;
+    padding-left: 15px;
+}
+
 /* Window decorations - Windows 98 style */
 QMdiSubWindow {
     background: #c0c0c0;
@@ -141,14 +220,22 @@ QMdiSubWindow {
     border-right-color: #808080;
 }
 QMdiSubWindow::title {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-        stop:0 #000080, stop:1 #1084d0);
-    color: #fff;
-    padding: 2px;
-    padding-left: 8px;
+    background: #c0c0c0;
+    color: #000000;
+    padding: 2px 8px;
     font-weight: bold;
     font-size: 11px;
-    text-align: left;
+    border-bottom: none;
+    selection-background-color: transparent;
+    selection-color: #000000;
+}
+QMdiSubWindow::title:inactive {
+    background: #c0c0c0;
+    color: #404040;
+    padding: 2px 8px;
+    border-bottom: none;
+    selection-background-color: transparent;
+    selection-color: #404040;
 }
 QMdiSubWindow > QMenu {
     background: transparent;
@@ -156,7 +243,12 @@ QMdiSubWindow > QMenu {
     max-height: 0px;
 }
 QMdiSubWindow QWidget#qt_scrollarea_viewport {
-    background: transparent;
+    background: #ffffff;
+    border: 2px inset #ffffff;
+    border-top-color: #808080;
+    border-left-color: #808080;
+    border-bottom-color: #ffffff;
+    border-right-color: #ffffff;
 }
 /* Window control buttons - Windows 98 style */
 QMdiSubWindow::close-button, QMdiSubWindow::minimize-button, QMdiSubWindow::maximize-button {
@@ -185,23 +277,92 @@ QWidget#taskbar {
 QWidget#taskbar QPushButton {
     background: #c0c0c0;
     color: #000;
-    border: 2px outset #c0c0c0;
+    border-width: 2px;
+    border-style: solid;
     border-top-color: #ffffff;
     border-left-color: #ffffff;
     border-bottom-color: #000000;
     border-right-color: #000000;
     padding: 4px 8px;
     text-align: left;
+    /* Inner bevel using box-shadow */
+    box-shadow:
+        inset 1px 1px 0px #dfdfdf,
+        inset -1px -1px 0px #808080;
+}
+QWidget#taskbar QPushButton#startButton {
+    min-width: 90px;
+    font-weight: bold;
+    color: #000000;
+    padding-left: 18px;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #4dbd4a, stop:1 #2a7d29);
+    border: 2px outset #2f7f2d;
+    border-top-color: #6be36a;
+    border-left-color: #6be36a;
+    border-bottom-color: #1c521b;
+    border-right-color: #1c521b;
+}
+QWidget#taskbar QPushButton#startButton:hover {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #5fd55d, stop:1 #338f33);
+}
+QWidget#taskbar QPushButton#startButton:pressed {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #2a7d29, stop:1 #185218);
+    border: 2px inset #2f7f2d;
+    border-top-color: #1c521b;
+    border-left-color: #1c521b;
+    border-bottom-color: #6be36a;
+    border-right-color: #6be36a;
+    padding-left: 20px;
+    padding-top: 2px;
 }
 QWidget#taskbar QPushButton:hover {
     background: #c0c0c0;
 }
 QWidget#taskbar QPushButton:pressed, QWidget#taskbar QPushButton:checked {
-    border: 2px inset #c0c0c0;
+    border-width: 2px;
+    border-style: solid;
     border-top-color: #000000;
     border-left-color: #000000;
     border-bottom-color: #ffffff;
     border-right-color: #ffffff;
     padding-left: 5px;
     padding-top: 5px;
+    /* Inverted inner bevel for pressed state */
+    box-shadow:
+        inset 1px 1px 0px #808080,
+        inset -1px -1px 0px #dfdfdf;
+}
+
+QPushButton#sessionSaveButton,
+QPushButton#sessionLoadButton {
+    background: #c0c0c0;
+    color: #000000;
+    border: 2px outset #c0c0c0;
+    border-top-color: #ffffff;
+    border-left-color: #ffffff;
+    border-bottom-color: #808080;
+    border-right-color: #808080;
+    padding: 2px 10px;
+    min-height: 20px;
+}
+QPushButton#sessionSaveButton:pressed,
+QPushButton#sessionLoadButton:pressed {
+    border: 2px inset #c0c0c0;
+    border-top-color: #000000;
+    border-left-color: #000000;
+    border-bottom-color: #ffffff;
+    border-right-color: #ffffff;
+    padding-left: 11px;
+    padding-top: 3px;
+}
+
+QMdiArea {
+    background: transparent;
+}
+
+QMdiArea QWidget#wallpaper_viewport {
+    background: transparent;
 }

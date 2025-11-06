@@ -25,7 +25,7 @@ import time
 os.environ.setdefault("QT_API", "pyqt6")
 
 from qtpy.QtCore import Qt, QTimer, QObject
-from qtpy.QtGui import QTextCursor, QWindow, QMouseEvent
+from qtpy.QtGui import QTextCursor, QWindow, QMouseEvent, QColor, QPalette, QPixmap, QBrush, QIcon
 from qtpy.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -46,6 +46,7 @@ from qtpy.QtWidgets import (
     QScrollArea,
     QSpinBox,
     QTextEdit,
+    QMdiArea,
 )
 
 # Windows-specific imports for window embedding
@@ -94,6 +95,83 @@ except Exception as e:  # pragma: no cover
     WEBENGINE_IMPORT_ERROR = str(e)
 
 
+class WallpaperMdiArea(QMdiArea):
+    """QMdiArea subclass that manages wallpapers via background brushes."""
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self._wallpaper_pixmap: Optional[QPixmap] = None
+        self._wallpaper_color: QColor = QColor("#0f1218")
+        self._needs_refresh = True
+        self._wallpaper_offset = 0.5
+        viewport = self.viewport()
+        viewport.setObjectName("wallpaper_viewport")
+        viewport.setAutoFillBackground(True)
+        viewport.setBackgroundRole(QPalette.ColorRole.Window)
+        viewport.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, True)
+        viewport.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, False)
+        self.setAutoFillBackground(False)
+
+    def apply_wallpaper(self, image_path: Optional[Path], color: QColor) -> None:
+        """Store wallpaper pixmap/color and update the background brush."""
+        pixmap: Optional[QPixmap] = None
+        if image_path:
+            if image_path.exists():
+                loaded = QPixmap(str(image_path))
+                if not loaded.isNull():
+                    pixmap = loaded
+                else:
+                    print(f"[WALLPAPER] Failed to load pixmap data from {image_path}")
+            else:
+                print(f"[WALLPAPER] Wallpaper path missing on disk: {image_path}")
+
+        self._wallpaper_pixmap = pixmap
+        self._wallpaper_color = color
+        self._needs_refresh = True
+        self._refresh_wallpaper_brush()
+
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        super().resizeEvent(event)
+        self._needs_refresh = True
+        self._refresh_wallpaper_brush()
+
+    def _refresh_wallpaper_brush(self) -> None:
+        """Apply the current wallpaper to the QMdiArea background."""
+        if not self._needs_refresh:
+            return
+
+        viewport = self.viewport()
+        size = viewport.size()
+
+        if self._wallpaper_pixmap and not size.isEmpty():
+            scaled = self._wallpaper_pixmap.scaled(
+                size,
+                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            if scaled.height() > size.height() or scaled.width() > size.width():
+                available_y = max(0, scaled.height() - size.height())
+                top = int(max(0.0, min(1.0, self._wallpaper_offset)) * available_y)
+                available_x = max(0, scaled.width() - size.width())
+                left = available_x // 2
+                cropped = scaled.copy(left, top, size.width(), size.height())
+                self.setBackground(QBrush(cropped))
+            else:
+                self.setBackground(QBrush(scaled))
+        else:
+            self.setBackground(QBrush(self._wallpaper_color))
+
+        viewport.update()
+        self._needs_refresh = False
+
+    def set_wallpaper_offset(self, offset: float) -> None:
+        """Adjust vertical alignment (0=top, 1=bottom)."""
+        self._wallpaper_offset = max(0.0, min(1.0, offset))
+        self._needs_refresh = True
+        self._refresh_wallpaper_brush()
+
+
 class AmbianceMainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -112,13 +190,12 @@ class AmbianceMainWindow(QMainWindow):
         layout.addWidget(self.toolbar)
 
         # Desktop area with MDI (Multiple Document Interface)
-        from qtpy.QtWidgets import QMdiArea
-        self.desktop = QMdiArea()
+        self.desktop = WallpaperMdiArea(self)
         self.desktop.setObjectName("desktop")  # For stylesheet targeting
-        self.desktop.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        self.desktop.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.desktop.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.desktop.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.desktop.setViewMode(QMdiArea.ViewMode.SubWindowView)  # SubWindow mode
-        self.desktop.setAutoFillBackground(True)  # Enable custom background
+        self.desktop.setActivationOrder(QMdiArea.WindowOrder.ActivationHistoryOrder)  # Click to bring to front
 
         layout.addWidget(self.desktop)
 
@@ -130,7 +207,7 @@ class AmbianceMainWindow(QMainWindow):
         self.taskbar = QWidget()
         self.taskbar.setObjectName("taskbar")  # For stylesheet targeting
         self.taskbar_layout = QHBoxLayout(self.taskbar)
-        self.taskbar_layout.setContentsMargins(4, 4, 4, 4)
+        self.taskbar_layout.setContentsMargins(0, 0, 6, 0)
         self.taskbar_layout.setSpacing(4)
         self.taskbar.setFixedHeight(40)
 
@@ -202,14 +279,11 @@ class AmbianceMainWindow(QMainWindow):
     def _create_toolbar(self) -> QWidget:
         """Create the main toolbar similar to HTML UI."""
         toolbar = QWidget()
-        # Removed inline stylesheet to allow theme control
+        toolbar.setObjectName("toolbar")
+        toolbar.setFixedHeight(26)
         layout = QHBoxLayout(toolbar)
-        layout.setSpacing(10)
-
-        # Start Audio button (placeholder for future audio engine integration)
-        self.start_audio_btn = QPushButton("Start Audio")
-        self.start_audio_btn.setToolTip("Initialize audio engine")
-        layout.addWidget(self.start_audio_btn)
+        layout.setContentsMargins(8, 1, 8, 1)
+        layout.setSpacing(4)
 
         # Theme picker - dynamically populated from themes directory
         theme_label = QLabel("Theme:")
@@ -226,24 +300,12 @@ class AmbianceMainWindow(QMainWindow):
 
         layout.addStretch()
 
-        # Save/Load session buttons
-        self.save_btn = QPushButton("Save Session")
-        self.save_btn.setToolTip("Save current plugin rack and parameters")
-        layout.addWidget(self.save_btn)
-
-        self.load_btn = QPushButton("Load Session")
-        self.load_btn.setToolTip("Load a saved session")
-        layout.addWidget(self.load_btn)
-
-        # Status label
-        self.status_label = QLabel("Ready")
-        # Removed inline stylesheet to allow theme control
-        layout.addWidget(self.status_label)
-
-        # Keyboard focus indicator
-        self.focus_indicator = QLabel("⌨️ Press ESC to stop all notes")
-        # Removed inline stylesheet to allow theme control
-        layout.addWidget(self.focus_indicator)
+        self.emergency_btn = QPushButton("Emergency Stop")
+        self.emergency_btn.setObjectName("emergencyStopButton")
+        self.emergency_btn.setToolTip("Panic: send all-notes-off and reset plugin rack")
+        self.emergency_btn.setMaximumHeight(22)
+        self.emergency_btn.clicked.connect(self._handle_emergency_stop)
+        layout.addWidget(self.emergency_btn)
 
         return toolbar
 
@@ -256,64 +318,170 @@ class AmbianceMainWindow(QMainWindow):
 
     def _apply_theme(self, theme: str) -> None:
         """Apply a visual theme to the application by loading CSS file."""
-        # Check if theme exists
         if theme not in self.available_themes:
             print(f"[WARNING] Theme '{theme}' not found, using flat")
-            theme = 'flat'
+            theme = "flat"
 
         theme_info = self.available_themes.get(theme)
         if not theme_info:
             print("[WARNING] No themes available!")
             return
 
-        # Load CSS file
-        css_path = theme_info['path']
+        css_path = theme_info["path"]
         try:
-            with open(css_path, 'r', encoding='utf-8') as f:
+            with open(css_path, "r", encoding="utf-8") as f:
                 css_content = f.read()
 
-            # Replace variables in CSS
-            # Scan for all {filename} patterns and replace with full paths
             import re
-            def replace_path(match):
+
+            def replace_path(match: re.Match[str]) -> str:
                 filename = match.group(1)
-                full_path = str(_ROOT / filename).replace("\\", "/")
+                full_path = (_ROOT / filename).resolve().as_posix()
                 return full_path
 
-            css_content = re.sub(r'\{([^}]+)\}', replace_path, css_content)
-
-            # Apply stylesheet
+            css_content = re.sub(r"\{([^}\n]+)\}", replace_path, css_content)
             self.setStyleSheet(css_content)
             print(f"[THEME] Applied theme: {theme_info['name']}")
 
-            # Debug: Print first 200 chars of CSS
-            if len(css_content) > 200:
-                print(f"[DEBUG] CSS preview: {css_content[:200]}...")
-            else:
-                print(f"[DEBUG] CSS content: {css_content}")
+            preview = css_content[:200]
+            print(f"[DEBUG] CSS preview: {preview}..." if len(css_content) > 200 else f"[DEBUG] CSS content: {preview}")
 
-        except Exception as e:
-            print(f"[ERROR] Error loading theme: {e}")
+        except Exception as exc:
+            print(f"[ERROR] Error loading theme: {exc}")
             import traceback
+
             traceback.print_exc()
             return
 
-        # Force desktop background to refresh
-        if hasattr(self, 'desktop'):
+        self._apply_theme_palette(theme)
+        self._apply_theme_wallpaper(theme)
+
+        if hasattr(self, "desktop"):
             self.desktop.update()
             self.desktop.repaint()
-
-            # Refresh all MDI windows to update their styling
             for window in self.desktop.subWindowList():
                 window.update()
                 window.repaint()
 
+        self._update_start_button_style(self.current_theme)
+        if self.plugin_rack_widget and hasattr(self.plugin_rack_widget, "apply_theme_titles"):
+            self.plugin_rack_widget.apply_theme_titles(theme)
+        self._apply_window_titles(theme)
+
+    def _handle_emergency_stop(self) -> None:
+        """Send a quick panic to silence all plugins."""
+        if self.plugin_rack_widget and hasattr(self.plugin_rack_widget, "_emergency_all_notes_off"):
+            try:
+                self.plugin_rack_widget._emergency_all_notes_off()
+            except Exception as exc:  # pragma: no cover - safety net
+                print(f"[PANIC] Emergency stop failed: {exc}")
+        QApplication.beep()
+
+    def _apply_theme_palette(self, theme: str) -> None:
+        """Adjust the global palette so basic widgets inherit theme colors."""
+        app = QApplication.instance()
+        if app is None:
+            return
+
+        palettes = {
+            "flat": {
+                "window": "#222222",
+                "base": "#1a1a1a",
+                "alt": "#2a2a2a",
+                "button": "#303030",
+                "text": "#f3f5fa",
+                "window_text": "#f3f5fa",
+                "button_text": "#f3f5fa",
+                "highlight": "#3164ff",
+                "highlighted_text": "#ffffff",
+            },
+            "win7": {
+                "window": "#edf1f8",
+                "base": "#ffffff",
+                "alt": "#f5f7fb",
+                "button": "#fefefe",
+                "text": "#1a1f28",
+                "window_text": "#1a1f28",
+                "button_text": "#1a1f28",
+                "highlight": "#3a8bf3",
+                "highlighted_text": "#ffffff",
+            },
+            "winxp": {
+                "window": "#ece9d8",
+                "base": "#ffffff",
+                "alt": "#f2efe0",
+                "button": "#f7f3e4",
+                "text": "#000000",
+                "window_text": "#000000",
+                "button_text": "#000000",
+                "highlight": "#316ac5",
+                "highlighted_text": "#ffffff",
+            },
+            "win98": {
+                "window": "#c0c0c0",
+                "base": "#ffffff",
+                "alt": "#d8d8d8",
+                "button": "#c0c0c0",
+                "text": "#000000",
+                "window_text": "#000000",
+                "button_text": "#000000",
+                "highlight": "#000080",
+                "highlighted_text": "#ffffff",
+            },
+        }
+
+        colors = palettes.get(theme, palettes["flat"])
+        palette = QPalette()
+        palette.setColor(QPalette.ColorRole.Window, QColor(colors["window"]))
+        palette.setColor(QPalette.ColorRole.Base, QColor(colors["base"]))
+        palette.setColor(QPalette.ColorRole.AlternateBase, QColor(colors["alt"]))
+        palette.setColor(QPalette.ColorRole.Button, QColor(colors["button"]))
+        palette.setColor(QPalette.ColorRole.Text, QColor(colors["text"]))
+        palette.setColor(QPalette.ColorRole.WindowText, QColor(colors["window_text"]))
+        palette.setColor(QPalette.ColorRole.ButtonText, QColor(colors["button_text"]))
+        palette.setColor(QPalette.ColorRole.Highlight, QColor(colors["highlight"]))
+        palette.setColor(QPalette.ColorRole.HighlightedText, QColor(colors["highlighted_text"]))
+        palette.setColor(QPalette.ColorRole.ToolTipBase, QColor(colors["base"]))
+        palette.setColor(QPalette.ColorRole.ToolTipText, QColor(colors["text"]))
+        app.setPalette(palette)
+
+    def _apply_theme_wallpaper(self, theme: str) -> None:
+        """Configure wallpaper image and fallback color for the current theme."""
+        if not isinstance(self.desktop, WallpaperMdiArea):
+            return
+
+        wallpaper_map = {
+            "winxp": _ROOT / "bliss.jpg",
+            "win7": _ROOT / "win7.jpg",
+        }
+        fallback_colors = {
+            "winxp": "#70a0d0",
+            "win7": "#c7dafa",
+            "win98": "#008080",
+            "flat": "#222222",
+        }
+        offset_map = {
+            "winxp": 0.04,
+            "win7": 0.12,
+        }
+
+        image_path: Optional[Path] = wallpaper_map.get(theme)
+        if image_path and not image_path.exists():
+            print(f"[THEME] Wallpaper file missing for {theme}: {image_path}")
+            image_path = None
+
+        color_name = fallback_colors.get(theme, fallback_colors["flat"])
+        fill_color = QColor(color_name)
+        self.desktop.set_wallpaper_offset(offset_map.get(theme, 0.5))
+        self.desktop.apply_wallpaper(image_path, fill_color)
+
     def _window_close_event_filter(self, window):
-        """Event filter to intercept close button and minimize instead."""
+        """Event filter to intercept close button and minimize instead, and handle activation."""
         class WindowEventFilter(QObject):
-            def __init__(self, parent_window):
+            def __init__(self, parent_window, main_window):
                 super().__init__()
                 self.parent_window = parent_window
+                self.main_window = main_window
 
             def eventFilter(self, obj, event):
                 if event.type() == event.Type.Close:
@@ -321,9 +489,14 @@ class AmbianceMainWindow(QMainWindow):
                     self.parent_window.hide()
                     event.ignore()
                     return True
+                elif event.type() == event.Type.MouseButtonPress:
+                    # Bring window to front when clicked
+                    self.main_window.desktop.setActiveSubWindow(self.parent_window)
+                    self.parent_window.raise_()
+                    return False  # Allow event to propagate
                 return False
 
-        filter_obj = WindowEventFilter(window)
+        filter_obj = WindowEventFilter(window, self)
         window.installEventFilter(filter_obj)
         # Store reference so it doesn't get garbage collected
         if not hasattr(self, '_window_filters'):
@@ -369,7 +542,7 @@ class AmbianceMainWindow(QMainWindow):
         )
         self._window_close_event_filter(plugin_ui_win)
         self.desktop.addSubWindow(plugin_ui_win)
-        plugin_ui_win.show()
+        plugin_ui_win.hide()  # Hidden by default until plugin is loaded
         self.mdi_windows["Plugin UI"] = plugin_ui_win
 
         # Keyboard Window
@@ -385,7 +558,7 @@ class AmbianceMainWindow(QMainWindow):
         )
         self._window_close_event_filter(keyboard_win)
         self.desktop.addSubWindow(keyboard_win)
-        keyboard_win.show()
+        keyboard_win.hide()  # Hidden by default until plugin is loaded
         self.keyboard_window = keyboard_win
         self.mdi_windows["Instrument Keyboard"] = keyboard_win
 
@@ -397,7 +570,7 @@ class AmbianceMainWindow(QMainWindow):
         log_layout.addWidget(self.plugin_rack_widget.log_viewer)
         console_win.setWidget(log_widget)
         console_win.setWindowTitle("Console Log")
-        console_win.setGeometry(840, 540, 500, 200)
+        console_win.setGeometry(840, 490, 500, 250)  # Adjusted height for XP border visibility
         console_win.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, False)  # Hide instead of close
         # Remove window flags that cause white boxes
         console_win.setWindowFlags(
@@ -408,6 +581,15 @@ class AmbianceMainWindow(QMainWindow):
         self.desktop.addSubWindow(console_win)
         console_win.show()
         self.mdi_windows["Console Log"] = console_win
+
+        self._window_titles = {
+            plugin_studio_win: "Plugin Studio",
+            plugin_ui_win: "Plugin UI",
+            keyboard_win: "Instrument Keyboard",
+            console_win: "Console Log",
+        }
+
+        self._apply_window_titles(self.current_theme)
 
         # Create taskbar buttons now that windows exist
         self._populate_taskbar()
@@ -434,10 +616,13 @@ class AmbianceMainWindow(QMainWindow):
         self._taskbar_buttons = {}
 
         # Add Start button (Windows-style)
-        start_btn = QPushButton("Start")
-        start_btn.setFixedWidth(80)
+        start_btn = QPushButton()
+        start_btn.setObjectName("startButton")
         start_btn.setToolTip("Start Menu")
+        start_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.start_button = start_btn
         self.taskbar_layout.addWidget(start_btn)
+        self._update_start_button_style(self.current_theme)
 
         # Add separator
         self.taskbar_layout.addSpacing(8)
@@ -476,6 +661,117 @@ class AmbianceMainWindow(QMainWindow):
         self.clock_timer = QTimer(self)
         self.clock_timer.timeout.connect(lambda: self.clock_label.setText(time.strftime("%H:%M")))
         self.clock_timer.start(60000)  # Update every minute
+
+    def _apply_window_titles(self, theme: str) -> None:
+        if not hasattr(self, "_window_titles"):
+            return
+        hide = theme == "win7"
+        for window, title in self._window_titles.items():
+            window.setWindowTitle("" if hide else title)
+            if hasattr(self, "_taskbar_buttons") and window in self._taskbar_buttons:
+                button = self._taskbar_buttons[window]
+                button.setText(title)
+
+    def _update_start_button_style(self, theme: str) -> None:
+        if not hasattr(self, "start_button"):
+            return
+
+        button = self.start_button
+        theme = theme or "flat"
+        button.setCursor(Qt.CursorShape.PointingHandCursor)
+
+        default_height = 40
+        default_margins = (0, 0, 6, 0)
+        metrics_map = {
+            "winxp": {"height": 32, "margins": (0, 0, 8, 0)},
+            "win7": {"height": default_height, "margins": default_margins},
+            "win98": {"height": default_height, "margins": (0, 2, 6, 2)},
+        }
+        metrics = metrics_map.get(theme, {"height": default_height, "margins": default_margins})
+        if hasattr(self, "taskbar"):
+            self.taskbar.setFixedHeight(metrics["height"])
+            self.taskbar.updateGeometry()
+        if hasattr(self, "taskbar_layout"):
+            self.taskbar_layout.setContentsMargins(*metrics["margins"])
+            self.taskbar_layout.update()
+
+        assets = {
+            "winxp": (_ROOT / "winxpstart.png", ""),
+            "win7": (_ROOT / "resources/start/win7_start.png", ""),
+            "win98": (_ROOT / "resources/start/win98_start.png", "margin-bottom: 2px;"),
+        }
+
+        asset = assets.get(theme)
+        if asset:
+            path, extra = asset
+            if path.exists():
+                pixmap = QPixmap(str(path))
+                if not pixmap.isNull():
+                    # Check for separate state images
+                    hover_path = None
+                    pressed_path = None
+                    if theme in ["winxp", "win98"]:
+                        hover_path = path.parent / f"{path.stem}hover.png"
+                        pressed_path = path.parent / f"{path.stem}pressed.png"
+
+                    size = pixmap.size()
+
+                    # Build stylesheet with border-image for different states
+                    # For XP, make button extend to full taskbar height
+                    if theme == "winxp":
+                        taskbar_height = self.taskbar.height() if hasattr(self, "taskbar") else 32
+                        stylesheet_parts = [
+                            "QPushButton#startButton {",
+                            f"  padding: 0; margin: 0; border: none; background: transparent;",
+                            f"  min-width: {size.width()}px; min-height: {taskbar_height}px;",
+                            f"  max-width: {size.width()}px; max-height: {taskbar_height}px;",
+                            f"  border-image: url({path.as_posix()}) 0 0 0 0 stretch stretch;",
+                            f"  {extra}",
+                            "}"
+                        ]
+                    else:
+                        stylesheet_parts = [
+                            "QPushButton#startButton {",
+                            f"  padding: 0; margin: 0; border: none; background: transparent;",
+                            f"  min-width: {size.width()}px; min-height: {size.height()}px;",
+                            f"  max-width: {size.width()}px; max-height: {size.height()}px;",
+                            f"  border-image: url({path.as_posix()}) 0 0 0 0 stretch stretch;",
+                            f"  {extra}",
+                            "}"
+                        ]
+
+                    # Add hover state if image exists
+                    if hover_path and hover_path.exists():
+                        stylesheet_parts.extend([
+                            "QPushButton#startButton:hover {",
+                            f"  border-image: url({hover_path.as_posix()}) 0 0 0 0 stretch stretch;",
+                            "}"
+                        ])
+
+                    # Add pressed state if image exists
+                    if pressed_path and pressed_path.exists():
+                        stylesheet_parts.extend([
+                            "QPushButton#startButton:pressed {",
+                            f"  border-image: url({pressed_path.as_posix()}) 0 0 0 0 stretch stretch;",
+                            "  padding-left: 1px; padding-top: 1px;",
+                            "}"
+                        ])
+
+                    button.setMinimumSize(size)
+                    button.setMaximumSize(size)
+                    button.setIcon(QIcon())
+                    button.setStyleSheet("\n".join(stylesheet_parts))
+                    button.setText("")
+                    return
+            else:
+                print(f"[THEME] Start button icon missing for {theme}: {path}")
+
+        button.setIcon(QIcon())
+        button.setStyleSheet("")
+        button.setMinimumHeight(24)
+        button.setMinimumWidth(90)
+        button.setText("Start")
+
 
     def _activate_window(self, window) -> None:
         """Toggle window visibility when taskbar button is clicked."""
@@ -645,22 +941,34 @@ class PluginRackWidget(QFrame):
 
         self.refresh_btn = QPushButton("Refresh")
         self.refresh_btn.clicked.connect(self.refresh)
+        self.refresh_btn.setMaximumHeight(22)
         top_row.addWidget(self.refresh_btn)
 
-        self.host_status = QLabel("Ready")
-        # Removed inline stylesheet to allow theme control
-        top_row.addWidget(self.host_status)
+        self.save_session_btn = QPushButton("Save")
+        self.save_session_btn.setObjectName("sessionSaveButton")
+        self.save_session_btn.setMaximumHeight(22)
+        top_row.addWidget(self.save_session_btn)
+
+        self.load_session_btn = QPushButton("Load")
+        self.load_session_btn.setObjectName("sessionLoadButton")
+        self.load_session_btn.setMaximumHeight(22)
+        top_row.addWidget(self.load_session_btn)
+
+        self.host_status = QLabel()
+        self.host_status.setVisible(False)
 
         header_layout.addLayout(top_row)
+
+        self._display_host_status("")
 
         # Main content area: discovered plugins (left) and plugin chain (right)
         content_row = QHBoxLayout()
         header_layout.addLayout(content_row)
 
         # Left: discovered plugins
-        discover_group = QGroupBox("Discovered Plugins")
-        discover_group.setStyleSheet("QGroupBox { font-size: 16px; }")
-        discover_layout = QVBoxLayout(discover_group)
+        self.discover_group = QGroupBox("Discovered Plugins")
+        self.discover_group.setStyleSheet("QGroupBox { font-size: 16px; }")
+        discover_layout = QVBoxLayout(self.discover_group)
         self.plugins_list = QListWidget()
         self.plugins_list.setStyleSheet("QListWidget { min-height: 200px; }")
         discover_layout.addWidget(self.plugins_list)
@@ -671,12 +979,12 @@ class PluginRackWidget(QFrame):
         add_btn_row.addWidget(self.add_plugin_btn)
         discover_layout.addLayout(add_btn_row)
 
-        content_row.addWidget(discover_group, 1)
+        content_row.addWidget(self.discover_group, 1)
 
         # Right: plugin chain
-        chain_group = QGroupBox("Plugin Chain")
-        chain_group.setStyleSheet("QGroupBox { font-size: 16px; }")
-        chain_layout = QVBoxLayout(chain_group)
+        self.chain_group = QGroupBox("Plugin Chain")
+        self.chain_group.setStyleSheet("QGroupBox { font-size: 16px; }")
+        chain_layout = QVBoxLayout(self.chain_group)
         self.chain_list = QListWidget()
         self.chain_list.setStyleSheet("QListWidget { min-height: 200px; }")
         self.chain_list.currentRowChanged.connect(self._on_chain_selection)
@@ -701,7 +1009,13 @@ class PluginRackWidget(QFrame):
 
         chain_layout.addLayout(chain_btn_row)
 
-        content_row.addWidget(chain_group, 1)
+        content_row.addWidget(self.chain_group, 1)
+
+        self._groupbox_titles = {
+            self.header_group: "Plugin Studio",
+            self.discover_group: "Discovered Plugins",
+            self.chain_group: "Plugin Chain",
+        }
 
         # Don't add header_group to layout - it will be used in MDI window
         # outer.addWidget(self.header_group)
@@ -715,6 +1029,7 @@ class PluginRackWidget(QFrame):
         self.params_group = QGroupBox("Plugin UI")
         # Removed inline stylesheet to allow theme control
         self.param_layout = QVBoxLayout(self.params_group)
+        self._groupbox_titles[self.params_group] = "Plugin UI"
         self.param_layout.setContentsMargins(4, 20, 4, 4)
 
         # Create a scrollable container for plugin UI
@@ -808,7 +1123,7 @@ class PluginRackWidget(QFrame):
         # Initial state
         self.refresh()
         # Defer Carla init until needed to avoid startup hangs
-        self.host_status.setText(self.host_status.text() or "Carla idle")
+        self._display_host_status(self.host_status.text() or "Carla idle")
 
         # Embedding retry timer
         self._embed_retry_timer: Optional[QTimer] = None
@@ -1219,19 +1534,40 @@ class PluginRackWidget(QFrame):
                 self._embed_retry_count = 0
                 self._start_embed_retry()
 
+                # Show plugin UI window
+                parent_window = self.parent()
+                if parent_window and hasattr(parent_window, 'mdi_windows'):
+                    if "Plugin UI" in parent_window.mdi_windows:
+                        parent_window.mdi_windows["Plugin UI"].show()
+                        parent_window.mdi_windows["Plugin UI"].raise_()
+
                 # Show keyboard if plugin is an instrument
                 try:
                     status = self.carla.status()
                     caps = status.get("capabilities", {})
                     is_instrument = caps.get("instrument", False) or caps.get("midi", False)
                     self.keyboard.setVisible(is_instrument)
+
+                    # Show/hide keyboard window based on instrument capability
+                    if parent_window and hasattr(parent_window, 'mdi_windows'):
+                        if "Instrument Keyboard" in parent_window.mdi_windows:
+                            if is_instrument:
+                                parent_window.mdi_windows["Instrument Keyboard"].show()
+                                parent_window.mdi_windows["Instrument Keyboard"].raise_()
+                            else:
+                                parent_window.mdi_windows["Instrument Keyboard"].hide()
+
                     self._log(f"Plugin is instrument: {is_instrument}")
                 except Exception as e:
                     self._log(f"Error checking instrument: {e}")
                     self.keyboard.setVisible(False)
+                    # Hide keyboard window on error
+                    if parent_window and hasattr(parent_window, 'mdi_windows'):
+                        if "Instrument Keyboard" in parent_window.mdi_windows:
+                            parent_window.mdi_windows["Instrument Keyboard"].hide()
         except Exception as exc:
             self._log(f"Load error: {exc}")
-            self.host_status.setText(f"Load error: {exc}")
+            self._display_host_status(f"Load error: {exc}")
             self.keyboard.setVisible(False)
 
     # --- Carla integration
@@ -1247,20 +1583,30 @@ class PluginRackWidget(QFrame):
             self._update_host_status()
         except Exception as exc:
             self.carla = None
-            self.host_status.setText(f"Carla unavailable: {exc}")
+            self._display_host_status(f"Carla unavailable: {exc}")
+
+    def _display_host_status(self, message: str) -> None:
+        if hasattr(self, "host_status"):
+            self.host_status.setText(message)
+            self.host_status.setVisible(bool(message))
+
+    def apply_theme_titles(self, theme: str) -> None:
+        blank = theme == "win7"
+        for group_box, title in self._groupbox_titles.items():
+            group_box.setTitle("" if blank else title)
 
     def _update_host_status(self) -> None:
         if not self.carla:
             if not CARLA_AVAILABLE:
-                self.host_status.setText(
+                self._display_host_status(
                     f"Carla not available: {globals().get('_CARLA_IMPORT_ERROR','import error')}"
                 )
             return
         try:
             _ = self.carla.status(include_parameters=False)
-            self.host_status.setText("Carla ready")
+            self._display_host_status("Carla ready")
         except Exception as exc:
-            self.host_status.setText(f"Carla error: {exc}")
+            self._display_host_status(f"Carla error: {exc}")
 
     def _ensure_carla(self) -> bool:
         if self.carla:
@@ -1276,7 +1622,7 @@ class PluginRackWidget(QFrame):
             return True
         except Exception as exc:
             self.carla = None
-            self.host_status.setText(f"Carla unavailable: {exc}")
+            self._display_host_status(f"Carla unavailable: {exc}")
             return False
 
 
@@ -1290,7 +1636,7 @@ class PluginRackWidget(QFrame):
             self._embed_retry_count = 0
             self._start_embed_retry()
         except Exception as exc:
-            self.host_status.setText(f"Show UI error: {exc}")
+            self._display_host_status(f"Show UI error: {exc}")
 
     def unload_host(self) -> None:
         if not self.carla:
@@ -1315,8 +1661,16 @@ class PluginRackWidget(QFrame):
             self.plugin_ui_container.setMinimumSize(400, 400)
             self._current_loaded_path = None
             self.keyboard.setVisible(False)
+
+            # Hide plugin UI and keyboard windows when unloading
+            parent_window = self.parent()
+            if parent_window and hasattr(parent_window, 'mdi_windows'):
+                if "Plugin UI" in parent_window.mdi_windows:
+                    parent_window.mdi_windows["Plugin UI"].hide()
+                if "Instrument Keyboard" in parent_window.mdi_windows:
+                    parent_window.mdi_windows["Instrument Keyboard"].hide()
         except Exception as exc:
-            self.host_status.setText(f"Unload error: {exc}")
+            self._display_host_status(f"Unload error: {exc}")
 
     # --- Plugin UI Embedding
     def _start_embed_retry(self) -> None:

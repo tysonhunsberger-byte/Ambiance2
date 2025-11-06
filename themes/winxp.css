@@ -1,5 +1,4 @@
 /* Windows XP Theme */
-/* Note: {bliss_path} will be replaced with actual image path */
 
 QMainWindow, QWidget {
     background: #ece9d8;
@@ -124,27 +123,41 @@ QTabBar::tab:hover {
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
         stop:0 #fff5cc, stop:1 #ffe7a2);
 }
-QMdiArea#desktop {
-    background: url({bliss_path});
-    background-repeat: no-repeat;
-    background-position: center;
-}
 /* Window decorations - Windows XP style */
 QMdiSubWindow {
-    background: #ece9d8;
-    border: 1px solid #0054e3;
-    border-radius: 8px 8px 0 0;
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #0054e3,
+        stop:0.5 #0c8ce3,
+        stop:1 #1ca1ec);
+    border: 3px solid #0054e3;
+    border-radius: 0px;
+    padding: 0px;
+    /* Classic XP 3D beveled border using box-shadow for pixelated effect */
+    box-shadow:
+        inset 1px 1px 0px #5fa2ff,
+        inset 2px 2px 0px #8fc7ff,
+        inset -1px -1px 0px #003c74,
+        inset -2px -2px 0px #00254d;
 }
 QMdiSubWindow::title {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-        stop:0 #0997ff, stop:0.5 #0053ee, stop:1 #0050e6);
-    color: #fff;
-    padding: 4px;
-    padding-left: 8px;
+    background: transparent;
+    color: #ffffff;
+    selection-background-color: transparent;
+    selection-color: #ffffff;
+    padding: 3px 16px;
     font-weight: bold;
     font-size: 11px;
-    border-radius: 8px 8px 0 0;
-    text-align: left;
+    border-radius: 0px;
+    border-bottom: none;
+}
+
+QMdiSubWindow::title:inactive {
+    background: transparent;
+    color: #ebf2ff;
+    selection-background-color: transparent;
+    selection-color: #ffffff;
+    padding: 3px 16px;
+    border-bottom: none;
 }
 QMdiSubWindow > QMenu {
     background: transparent;
@@ -152,7 +165,14 @@ QMdiSubWindow > QMenu {
     max-height: 0px;
 }
 QMdiSubWindow QWidget#qt_scrollarea_viewport {
-    background: transparent;
+    background: #ece9d8;
+    border: 2px solid #808080;
+    border-radius: 0px;
+    padding: 8px;
+    /* Classic XP sunken border using box-shadow */
+    box-shadow:
+        inset 1px 1px 0px #808080,
+        inset -1px -1px 0px #ffffff;
 }
 /* Window control buttons - Windows XP style */
 QMdiSubWindow::close-button, QMdiSubWindow::minimize-button, QMdiSubWindow::maximize-button {
@@ -174,28 +194,115 @@ QMdiSubWindow::minimize-button:hover, QMdiSubWindow::maximize-button:hover {
 QMdiSubWindow::close-button:pressed, QMdiSubWindow::minimize-button:pressed, QMdiSubWindow::maximize-button:pressed {
     background: rgba(150, 180, 220, 200);
 }
+/* Toolbar styling */
+QWidget#toolbar {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #3888e9, stop:1 #1941a5);
+    border-bottom: 1px solid #3168d5;
+    padding: 2px 10px;
+}
+QWidget#toolbar QLabel {
+    color: #f5f8ff;
+    font-weight: 600;
+}
+QWidget#toolbar QComboBox {
+    background: rgba(255, 255, 255, 0.95);
+    color: #0e1f52;
+    border: 1px solid #0d2e79;
+    border-radius: 3px;
+    padding: 2px 6px;
+    min-height: 20px;
+}
+QWidget#toolbar QPushButton {
+    background: rgba(255, 255, 255, 0.2);
+    color: #f5f8ff;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    border-radius: 4px;
+    padding: 2px 10px;
+    min-height: 20px;
+    margin: 0 4px;
+    font-weight: 600;
+}
+QWidget#toolbar QPushButton:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+QWidget#toolbar QPushButton:pressed {
+    background: rgba(20, 60, 150, 0.55);
+    border-color: rgba(12, 32, 96, 0.8);
+}
+QWidget#toolbar QPushButton#emergencyStopButton {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #ff7a7a, stop:1 #d93434);
+    color: #ffffff;
+    border: 1px solid #8f1c1c;
+    border-radius: 6px;
+    padding: 2px 12px;
+    min-height: 18px;
+}
+QWidget#toolbar QPushButton#emergencyStopButton:pressed {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #d93434, stop:1 #9b1b1b);
+}
+
 /* Taskbar styling - Windows XP style */
 QWidget#taskbar {
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-        stop:0 #245edb, stop:0.5 #3f8cf3, stop:1 #1941a5);
-    border-top: 1px solid #0831d9;
+        stop:0 #3888e9, stop:1 #1941a5);
+    border-top: 1px solid #3168d5;
+    padding: 0px 8px 0px 0px;
 }
 QWidget#taskbar QPushButton {
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-        stop:0 #3d95ff, stop:0.5 #2179d9, stop:1 #1162c5);
-    color: #fff;
-    border: 1px solid #0831d9;
+        stop:0 #4892f7, stop:1 #3980f4);
+    color: #ffffff;
+    border: 1px solid #3168d5;
     border-radius: 3px;
-    padding: 5px 10px;
+    padding: 2px 10px;
+    min-height: 20px;
+    margin: 1px 4px 1px 0;
     text-align: left;
 }
 QWidget#taskbar QPushButton:hover {
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-        stop:0 #5fb5ff, stop:0.5 #3d95ff, stop:1 #2179d9);
-    border: 1px solid #fff;
+        stop:0 #8bc0ff, stop:1 #5d98f5);
+    border: 1px solid #8bc0ff;
 }
 QWidget#taskbar QPushButton:checked {
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-        stop:0 #1162c5, stop:0.5 #2179d9, stop:1 #3d95ff);
-    border: 1px solid #003c74;
+        stop:0 #2057bb, stop:1 #143b88);
+    border: 1px solid #082a71;
+}
+/* Start button styling is handled in Python code via image */
+QWidget#taskbar QLabel#clockLabel {
+    color: #f5f8ff;
+    padding: 2px 8px;
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+QPushButton#sessionSaveButton,
+QPushButton#sessionLoadButton {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #5fa9ff, stop:1 #2a6fcd);
+    color: #ffffff;
+    border: 1px solid #0b3996;
+    border-radius: 3px;
+    padding: 4px 10px;
+    min-height: 24px;
+}
+QPushButton#sessionSaveButton:pressed,
+QPushButton#sessionLoadButton:pressed {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #2a6fcd, stop:1 #1a4ba2);
+    padding-left: 8px;
+    padding-top: 4px;
+}
+
+QMdiArea {
+    background: transparent;
+}
+
+QMdiArea QWidget#wallpaper_viewport {
+    background: transparent;
 }

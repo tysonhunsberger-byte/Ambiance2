@@ -13,7 +13,7 @@ QPushButton {
 }
 
 QMdiArea#desktop {
-    background: #0a0a0a;
+    background: transparent;
 }
 
 QMdiSubWindow {
