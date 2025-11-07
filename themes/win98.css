@@ -194,29 +194,32 @@ QWidget#toolbar QPushButton#emergencyStopButton:pressed {
 }
 QMdiSubWindow {
     background: #c0c0c0;
-    border: 2px outset #c0c0c0;
+    border-style: solid;
+    border-width: 2px;
     border-top-color: #ffffff;
     border-left-color: #ffffff;
     border-bottom-color: #808080;
     border-right-color: #808080;
+    border-radius: 0px;
 }
 QMdiSubWindow::title {
-    background: #c0c0c0;
-    color: #000000;
-    padding: 2px 8px;
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #000080, stop:1 #1084d0);
+    color: #ffffff;
+    padding: 3px 10px;
     font-weight: bold;
     font-size: 11px;
     border-bottom: none;
     selection-background-color: transparent;
-    selection-color: #000000;
+    selection-color: #ffffff;
 }
 QMdiSubWindow::title:inactive {
-    background: #c0c0c0;
-    color: #404040;
-    padding: 2px 8px;
+    background: #7f7f7f;
+    color: #d7d7d7;
+    padding: 3px 10px;
     border-bottom: none;
     selection-background-color: transparent;
-    selection-color: #404040;
+    selection-color: #d7d7d7;
 }
 QMdiSubWindow > QMenu {
     background: transparent;
@@ -241,6 +244,7 @@ QMdiSubWindow::close-button, QMdiSubWindow::minimize-button, QMdiSubWindow::maxi
     border-radius: 2px;
     width: 16px;
     height: 14px;
+    padding: 0;
 }
 QMdiSubWindow::close-button:pressed, QMdiSubWindow::minimize-button:pressed, QMdiSubWindow::maximize-button:pressed {
     border: 2px inset #c0c0c0;
@@ -248,6 +252,7 @@ QMdiSubWindow::close-button:pressed, QMdiSubWindow::minimize-button:pressed, QMd
     border-left-color: #808080;
     border-bottom-color: #ffffff;
     border-right-color: #ffffff;
+    padding: 0;
 }
 QWidget#taskbar {
     background: #c0c0c0;

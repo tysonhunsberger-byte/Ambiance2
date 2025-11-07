@@ -25,7 +25,7 @@ import time
 os.environ.setdefault("QT_API", "pyqt6")
 
 from qtpy.QtCore import Qt, QTimer, QObject
-from qtpy.QtGui import QTextCursor, QWindow, QMouseEvent, QColor, QPalette, QPixmap, QBrush, QIcon
+from qtpy.QtGui import QTextCursor, QWindow, QMouseEvent, QColor, QPalette, QPixmap, QBrush, QIcon, QFont
 from qtpy.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -93,6 +93,8 @@ except Exception as e:  # pragma: no cover
     QWebEngineView = None  # type: ignore
     WEBENGINE_AVAILABLE = False
     WEBENGINE_IMPORT_ERROR = str(e)
+
+from ambiance.theming import ThemeManager
 
 
 class WallpaperMdiArea(QMdiArea):
@@ -185,6 +187,10 @@ class AmbianceMainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
+        # Theme management
+        self.theme_manager = ThemeManager(_ROOT)
+        self.current_theme = self.theme_manager.default_theme
+
         # Add toolbar at top
         self.toolbar = self._create_toolbar()
         layout.addWidget(self.toolbar)
@@ -215,9 +221,6 @@ class AmbianceMainWindow(QMainWindow):
 
         # Store reference to plugin rack widget
         self.plugin_rack_widget = None
-
-        # Track current theme before constructing dependent widgets
-        self.current_theme = "flat"
 
         if PluginRackManager is not None:
             self.plugin_rack_widget = PluginRackWidget(self)
@@ -265,20 +268,12 @@ class AmbianceMainWindow(QMainWindow):
 
     def _scan_themes(self) -> dict:
         """Scan themes directory and return available themes."""
-        themes_dir = _ROOT / "themes"
         themes = {}
-
-        if themes_dir.exists():
-            for css_file in sorted(themes_dir.glob("*.css")):
-                # Theme name is filename without extension
-                theme_id = css_file.stem
-                # Display name: capitalize and replace hyphens/underscores with spaces
-                display_name = theme_id.replace('-', ' ').replace('_', ' ').title()
-                themes[theme_id] = {
-                    'id': theme_id,
-                    'name': display_name,
-                    'path': css_file
-                }
+        for definition in self.theme_manager.list_themes():
+            themes[definition.theme_id] = {
+                'id': definition.theme_id,
+                'name': definition.display_name,
+            }
 
         return themes
 
@@ -301,6 +296,10 @@ class AmbianceMainWindow(QMainWindow):
         for theme_id, theme_info in self.available_themes.items():
             self.theme_combo.addItem(theme_info['name'], theme_id)
 
+        default_index = self.theme_combo.findData(self.current_theme)
+        if default_index != -1:
+            self.theme_combo.setCurrentIndex(default_index)
+
         self.theme_combo.currentIndexChanged.connect(self._on_theme_changed)
         layout.addWidget(self.theme_combo)
 
@@ -318,36 +317,28 @@ class AmbianceMainWindow(QMainWindow):
     def _on_theme_changed(self, index: int) -> None:
         """Handle theme selection change."""
         theme_id = self.theme_combo.itemData(index)
-        if theme_id and theme_id in self.available_themes:
+        if theme_id and theme_id in self.theme_manager.theme_ids():
             self.current_theme = theme_id
             self._apply_theme(self.current_theme)
 
     def _apply_theme(self, theme: str) -> None:
         """Apply a visual theme to the application by loading CSS file."""
-        if theme not in self.available_themes:
-            print(f"[WARNING] Theme '{theme}' not found, using flat")
-            theme = "flat"
+        requested_theme = theme
+        if theme not in self.theme_manager.theme_ids():
+            print(f"[WARNING] Theme '{theme}' not found, using default")
+            theme = self.theme_manager.default_theme
+        self.current_theme = theme
+        if theme != requested_theme and hasattr(self, "theme_combo"):
+            index = self.theme_combo.findData(theme)
+            if index != -1 and index != self.theme_combo.currentIndex():
+                self.theme_combo.blockSignals(True)
+                self.theme_combo.setCurrentIndex(index)
+                self.theme_combo.blockSignals(False)
 
-        theme_info = self.available_themes.get(theme)
-        if not theme_info:
-            print("[WARNING] No themes available!")
-            return
-
-        css_path = theme_info["path"]
         try:
-            with open(css_path, "r", encoding="utf-8") as f:
-                css_content = f.read()
-
-            import re
-
-            def replace_path(match: re.Match[str]) -> str:
-                filename = match.group(1)
-                full_path = (_ROOT / filename).resolve().as_posix()
-                return full_path
-
-            css_content = re.sub(r"\{([^}\n]+)\}", replace_path, css_content)
-            self.setStyleSheet(css_content)
-            print(f"[THEME] Applied theme: {theme_info['name']}")
+            css_content = self.theme_manager.apply(theme, self)
+            definition = self.theme_manager.get_definition(theme)
+            print(f"[THEME] Applied theme: {definition.display_name}")
 
             preview = css_content[:200]
             print(f"[DEBUG] CSS preview: {preview}..." if len(css_content) > 200 else f"[DEBUG] CSS content: {preview}")
@@ -361,6 +352,7 @@ class AmbianceMainWindow(QMainWindow):
 
         self._apply_theme_palette(theme)
         self._apply_theme_wallpaper(theme)
+        self._apply_theme_resolution(theme)
 
         if hasattr(self, "desktop"):
             self.desktop.update()
@@ -373,6 +365,7 @@ class AmbianceMainWindow(QMainWindow):
         if self.plugin_rack_widget and hasattr(self.plugin_rack_widget, "apply_theme_titles"):
             self.plugin_rack_widget.apply_theme_titles(theme)
         self._apply_window_titles(theme)
+        self._apply_strudel_theme()
 
     def _handle_emergency_stop(self) -> None:
         """Send a quick panic to silence all plugins."""
@@ -389,67 +382,23 @@ class AmbianceMainWindow(QMainWindow):
         if app is None:
             return
 
-        palettes = {
-            "flat": {
-                "window": "#222222",
-                "base": "#1a1a1a",
-                "alt": "#2a2a2a",
-                "button": "#303030",
-                "text": "#f3f5fa",
-                "window_text": "#f3f5fa",
-                "button_text": "#f3f5fa",
-                "highlight": "#3164ff",
-                "highlighted_text": "#ffffff",
-            },
-            "win7": {
-                "window": "#edf1f8",
-                "base": "#ffffff",
-                "alt": "#f5f7fb",
-                "button": "#fefefe",
-                "text": "#1a1f28",
-                "window_text": "#1a1f28",
-                "button_text": "#1a1f28",
-                "highlight": "#3a8bf3",
-                "highlighted_text": "#ffffff",
-            },
-            "winxp": {
-                "window": "#ece9d8",
-                "base": "#ffffff",
-                "alt": "#f2efe0",
-                "button": "#f7f3e4",
-                "text": "#000000",
-                "window_text": "#000000",
-                "button_text": "#000000",
-                "highlight": "#316ac5",
-                "highlighted_text": "#ffffff",
-            },
-            "win98": {
-                "window": "#c0c0c0",
-                "base": "#ffffff",
-                "alt": "#d8d8d8",
-                "button": "#c0c0c0",
-                "text": "#000000",
-                "window_text": "#000000",
-                "button_text": "#000000",
-                "highlight": "#000080",
-                "highlighted_text": "#ffffff",
-            },
-        }
+        tokens = self.theme_manager.tokens_for(theme)
+        if not tokens:
+            return
 
-        colors = palettes.get(theme, palettes["flat"])
-        palette = QPalette()
-        palette.setColor(QPalette.ColorRole.Window, QColor(colors["window"]))
-        palette.setColor(QPalette.ColorRole.Base, QColor(colors["base"]))
-        palette.setColor(QPalette.ColorRole.AlternateBase, QColor(colors["alt"]))
-        palette.setColor(QPalette.ColorRole.Button, QColor(colors["button"]))
-        palette.setColor(QPalette.ColorRole.Text, QColor(colors["text"]))
-        palette.setColor(QPalette.ColorRole.WindowText, QColor(colors["window_text"]))
-        palette.setColor(QPalette.ColorRole.ButtonText, QColor(colors["button_text"]))
-        palette.setColor(QPalette.ColorRole.Highlight, QColor(colors["highlight"]))
-        palette.setColor(QPalette.ColorRole.HighlightedText, QColor(colors["highlighted_text"]))
-        palette.setColor(QPalette.ColorRole.ToolTipBase, QColor(colors["base"]))
-        palette.setColor(QPalette.ColorRole.ToolTipText, QColor(colors["text"]))
+        palette = app.palette()
+        palette.setColor(QPalette.ColorRole.Window, QColor(tokens.window))
+        palette.setColor(QPalette.ColorRole.Base, QColor(tokens.base))
+        palette.setColor(QPalette.ColorRole.AlternateBase, QColor(tokens.alt))
+        palette.setColor(QPalette.ColorRole.Button, QColor(tokens.button))
+        palette.setColor(QPalette.ColorRole.WindowText, QColor(tokens.text))
+        palette.setColor(QPalette.ColorRole.ButtonText, QColor(tokens.button_text))
+        palette.setColor(QPalette.ColorRole.Text, QColor(tokens.text))
+        palette.setColor(QPalette.ColorRole.Highlight, QColor(tokens.highlight))
+        palette.setColor(QPalette.ColorRole.HighlightedText, QColor(tokens.highlight_text))
         app.setPalette(palette)
+        if tokens.font_family:
+            app.setFont(QFont(tokens.font_family, tokens.font_size))
 
     def _apply_theme_wallpaper(self, theme: str) -> None:
         """Configure wallpaper image and fallback color for the current theme."""
@@ -480,6 +429,19 @@ class AmbianceMainWindow(QMainWindow):
         fill_color = QColor(color_name)
         self.desktop.set_wallpaper_offset(offset_map.get(theme, 0.5))
         self.desktop.apply_wallpaper(image_path, fill_color)
+
+    def _apply_theme_resolution(self, theme: str) -> None:
+        metrics = self.theme_manager.metrics_for(theme)
+        if not metrics or not metrics.preferred_resolution:
+            return
+        width, height = metrics.preferred_resolution
+        self.resize(width, height)
+        screen = QApplication.primaryScreen()
+        if screen:
+            geo = screen.availableGeometry()
+            x = geo.x() + (geo.width() - width) // 2
+            y = geo.y() + (geo.height() - height) // 2
+            self.move(max(geo.x(), x), max(geo.y(), y))
 
     def _window_close_event_filter(self, window):
         """Event filter to intercept close button and minimize instead, and handle activation."""
@@ -606,13 +568,24 @@ class AmbianceMainWindow(QMainWindow):
         """Populate the taskbar with buttons for each window."""
         import time
 
-        # Disconnect old signal connections if they exist
-        if hasattr(self, '_taskbar_buttons'):
-            for window, btn in self._taskbar_buttons.items():
-                try:
-                    window.windowStateChanged.disconnect()
-                except:
-                    pass
+        # Stop and remove existing clock timer before rebuilding the taskbar
+        if hasattr(self, "clock_timer"):
+            try:
+                self.clock_timer.stop()
+            except Exception:
+                pass
+            try:
+                self.clock_timer.deleteLater()
+            except Exception:
+                pass
+            del self.clock_timer
+
+        if hasattr(self, "clock_label"):
+            try:
+                self.clock_label.deleteLater()
+            except Exception:
+                pass
+            del self.clock_label
 
         # Clear existing taskbar contents
         while self.taskbar_layout.count():
@@ -622,6 +595,8 @@ class AmbianceMainWindow(QMainWindow):
 
         # Store window-to-button mapping
         self._taskbar_buttons = {}
+        if not hasattr(self, "_monitored_windows"):
+            self._monitored_windows = set()
 
         # Add Start button (Windows-style)
         start_btn = QPushButton()
@@ -644,23 +619,38 @@ class AmbianceMainWindow(QMainWindow):
 
             # Store button reference
             self._taskbar_buttons[window] = btn
+            window_id = id(window)
 
             # Connect button to activate window
-            btn.clicked.connect(lambda checked, w=window: self._activate_window(w))
+            btn.clicked.connect(partial(self._on_taskbar_button_clicked, window))
 
-            # Track window state changes - use a method instead of lambda
-            window.windowStateChanged.connect(lambda old_state, new_state, w=window: self._on_window_state_changed(w, new_state))
+            # Track window state changes once per window
+            if not hasattr(self, "_window_state_monitors"):
+                self._window_state_monitors = set()
+            if window_id not in self._window_state_monitors:
+                window.windowStateChanged.connect(self._handle_window_state_changed)
+                self._window_state_monitors.add(window_id)
 
             # Install event filter to catch hide/show events
-            window.installEventFilter(self)
+            if window_id not in self._monitored_windows:
+                window.installEventFilter(self)
+                self._monitored_windows.add(window_id)
+
+            if not hasattr(self, "_destroyed_monitors"):
+                self._destroyed_monitors = set()
+            if window_id not in self._destroyed_monitors:
+                window.destroyed.connect(partial(self._on_window_destroyed, window))
+                self._destroyed_monitors.add(window_id)
 
             self.taskbar_layout.addWidget(btn)
+            self._set_taskbar_button_state(window)
 
         # Add stretch to push clock to the right
         self.taskbar_layout.addStretch()
 
         # Add clock
         self.clock_label = QLabel(time.strftime("%H:%M"))
+        self.clock_label.setObjectName("clockLabel")
         self.clock_label.setFixedWidth(60)
         self.clock_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.taskbar_layout.addWidget(self.clock_label)
@@ -673,9 +663,9 @@ class AmbianceMainWindow(QMainWindow):
     def _apply_window_titles(self, theme: str) -> None:
         if not hasattr(self, "_window_titles"):
             return
-        hide = theme == "win7"
+        hide_title = theme == "win7"
         for window, title in self._window_titles.items():
-            window.setWindowTitle("" if hide else title)
+            window.setWindowTitle("" if hide_title else title)
             if hasattr(self, "_taskbar_buttons") and window in self._taskbar_buttons:
                 button = self._taskbar_buttons[window]
                 button.setText(title)
@@ -688,30 +678,27 @@ class AmbianceMainWindow(QMainWindow):
         theme = theme or "flat"
         button.setCursor(Qt.CursorShape.PointingHandCursor)
 
-        default_height = 40
-        default_margins = (0, 0, 6, 0)
-        metrics_map = {
-            "winxp": {"height": 32, "margins": (0, 0, 8, 0)},
-            "win7": {"height": default_height, "margins": default_margins},
-            "win98": {"height": default_height, "margins": (0, 2, 6, 2)},
-        }
-        metrics = metrics_map.get(theme, {"height": default_height, "margins": default_margins})
+        metrics = self.theme_manager.metrics_for(theme)
+        taskbar_height = metrics.taskbar_height if metrics else 36
+        taskbar_margins = metrics.taskbar_margins if metrics else (0, 0, 6, 0)
+        start_button_height = metrics.start_button_height if metrics else taskbar_height
+        extra_css = metrics.start_button_extra_css if metrics else ""
         if hasattr(self, "taskbar"):
-            self.taskbar.setFixedHeight(metrics["height"])
+            self.taskbar.setFixedHeight(taskbar_height)
             self.taskbar.updateGeometry()
         if hasattr(self, "taskbar_layout"):
-            self.taskbar_layout.setContentsMargins(*metrics["margins"])
+            self.taskbar_layout.setContentsMargins(*taskbar_margins)
             self.taskbar_layout.update()
 
         assets = {
-            "winxp": (_ROOT / "winxpstart.png", ""),
-            "win7": (_ROOT / "resources/start/win7_start.png", ""),
-            "win98": (_ROOT / "resources/start/win98_start.png", "margin-bottom: 2px;"),
+            "winxp": _ROOT / "resources/start/winxp_start.png",
+            "win7": _ROOT / "resources/start/win7_start.png",
+            "win98": _ROOT / "resources/start/win98_start.png",
         }
 
         asset = assets.get(theme)
         if asset:
-            path, extra = asset
+            path = asset
             if path.exists():
                 pixmap = QPixmap(str(path))
                 if not pixmap.isNull():
@@ -722,19 +709,29 @@ class AmbianceMainWindow(QMainWindow):
                         hover_path = path.parent / f"{path.stem}hover.png"
                         pressed_path = path.parent / f"{path.stem}pressed.png"
 
-                    size = pixmap.size()
+                    if hasattr(self.taskbar_layout, "contentsMargins"):
+                        margins = self.taskbar_layout.contentsMargins()
+                        available_height = max(24, taskbar_height - (margins.top() + margins.bottom()))
+                    else:
+                        available_height = max(24, taskbar_height)
+
+                    desired_height = max(24, min(available_height, start_button_height, pixmap.height()))
+                    scaled = pixmap.scaledToHeight(int(desired_height), Qt.TransformationMode.SmoothTransformation)
+                    if scaled.isNull():
+                        scaled = pixmap
+                    size = scaled.size()
 
                     # Build stylesheet with border-image for different states
                     # For XP, make button extend to full taskbar height
                     if theme == "winxp":
-                        taskbar_height = self.taskbar.height() if hasattr(self, "taskbar") else 32
+                        effective_height = start_button_height
                         stylesheet_parts = [
                             "QPushButton#startButton {",
                             f"  padding: 0; margin: 0; border: none; background: transparent;",
-                            f"  min-width: {size.width()}px; min-height: {taskbar_height}px;",
-                            f"  max-width: {size.width()}px; max-height: {taskbar_height}px;",
+                            f"  min-width: {size.width()}px; min-height: {effective_height}px;",
+                            f"  max-width: {size.width()}px; max-height: {effective_height}px;",
                             f"  border-image: url({path.as_posix()}) 0 0 0 0 stretch stretch;",
-                            f"  {extra}",
+                            f"  {extra_css}",
                             "}"
                         ]
                     else:
@@ -744,7 +741,7 @@ class AmbianceMainWindow(QMainWindow):
                             f"  min-width: {size.width()}px; min-height: {size.height()}px;",
                             f"  max-width: {size.width()}px; max-height: {size.height()}px;",
                             f"  border-image: url({path.as_posix()}) 0 0 0 0 stretch stretch;",
-                            f"  {extra}",
+                            f"  {extra_css}",
                             "}"
                         ]
 
@@ -765,8 +762,12 @@ class AmbianceMainWindow(QMainWindow):
                             "}"
                         ])
 
-                    button.setMinimumSize(size)
-                    button.setMaximumSize(size)
+                    if theme == "winxp":
+                        button.setMinimumSize(size.width(), start_button_height)
+                        button.setMaximumSize(size.width(), start_button_height)
+                    else:
+                        button.setMinimumSize(size)
+                        button.setMaximumSize(size)
                     button.setIcon(QIcon())
                     button.setStyleSheet("\n".join(stylesheet_parts))
                     button.setText("")
@@ -783,11 +784,28 @@ class AmbianceMainWindow(QMainWindow):
 
     def _activate_window(self, window) -> None:
         """Toggle window visibility when taskbar button is clicked."""
-        # If window is active and visible, minimize/hide it
-        if window.isVisible() and self.desktop.activeSubWindow() == window:
+        if window is None or not hasattr(self, "desktop"):
+            return
+
+        # Remove stale references if the window has been closed
+        try:
+            windows = self.desktop.subWindowList()
+        except Exception:
+            windows = []
+        if window not in windows and hasattr(self, "_taskbar_buttons"):
+            self._on_window_destroyed(window)
+            return
+
+        is_visible = window.isVisible() and not window.isMinimized()
+        is_active = self.desktop.activeSubWindow() == window
+
+        if is_visible and is_active:
             window.hide()
+        elif is_visible and not is_active:
+            window.raise_()
+            window.setFocus()
+            self.desktop.setActiveSubWindow(window)
         else:
-            # Show and activate the window
             window.show()
             if window.isMinimized():
                 window.showNormal()
@@ -795,30 +813,123 @@ class AmbianceMainWindow(QMainWindow):
             window.setFocus()
             self.desktop.setActiveSubWindow(window)
 
+        self._set_taskbar_button_state(window)
+
     def _on_window_state_changed(self, window, new_state) -> None:
         """Update taskbar button when window state changes."""
-        from qtpy.QtCore import Qt
-        # Look up the button for this window
-        if hasattr(self, '_taskbar_buttons') and window in self._taskbar_buttons:
-            btn = self._taskbar_buttons[window]
-            try:
-                # Button is checked if window is visible and not minimized
-                is_active = window.isVisible() and new_state != Qt.WindowState.WindowMinimized
-                btn.setChecked(is_active)
-            except RuntimeError:
-                # Button was deleted, ignore
-                pass
+        self._set_taskbar_button_state(window)
 
     def _on_window_visibility_changed(self, window, visible) -> None:
         """Update taskbar button when window visibility changes."""
+        self._set_taskbar_button_state(window)
+
+    def _set_taskbar_button_state(self, window) -> None:
         if hasattr(self, '_taskbar_buttons') and window in self._taskbar_buttons:
             btn = self._taskbar_buttons[window]
             try:
-                # Update button checked state based on visibility
+                visible = window.isVisible() and not window.isMinimized()
                 btn.setChecked(visible)
             except RuntimeError:
-                # Button was deleted, ignore
                 pass
+
+    def _on_taskbar_button_clicked(self, window, checked=False) -> None:
+        """Respond to taskbar button clicks and toggle the associated window."""
+        if window is None:
+            return
+        self._activate_window(window)
+
+    def _handle_window_state_changed(self, old_state, new_state) -> None:
+        """Normalize window state changes sent from QMdiSubWindow."""
+        window = self.sender()
+        if window is not None:
+            self._on_window_state_changed(window, new_state)
+
+    def _on_window_destroyed(self, window, obj=None) -> None:
+        """Remove references when an MDI window is destroyed."""
+        if hasattr(self, "_taskbar_buttons"):
+            btn = self._taskbar_buttons.pop(window, None)
+            if btn is not None:
+                try:
+                    btn.deleteLater()
+                except Exception:
+                    pass
+        window_id = id(window)
+        if hasattr(self, "_monitored_windows"):
+            self._monitored_windows.discard(window_id)
+        if hasattr(self, "_window_state_monitors"):
+            self._window_state_monitors.discard(window_id)
+        if hasattr(self, "_destroyed_monitors"):
+            self._destroyed_monitors.discard(window_id)
+
+    def _apply_strudel_theme(self) -> None:
+        window = getattr(self, "_strudel_window", None)
+        widget = window.widget() if window else None
+        if not widget:
+            return
+
+        widget.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+
+        theme_styles = {
+            "winxp": {
+                "widget": """
+                QWidget#strudelContainer {
+                    background-color: #ece9d8;
+                    border: 1px solid #c4b8a8;
+                    border-radius: 6px;
+                }
+                """,
+                "window": "",
+                "color": QColor("#ece9d8"),
+            },
+            "win7": {
+                "widget": """
+                QWidget#strudelContainer {
+                    background-color: rgba(249, 251, 254, 0.92);
+                    border: 1px solid rgba(164, 190, 232, 0.6);
+                    border-radius: 8px;
+                }
+                """,
+                "window": "",
+                "color": QColor(249, 251, 254),
+            },
+            "win98": {
+                "widget": """
+                QWidget#strudelContainer {
+                    background-color: #c0c0c0;
+                    border: 1px solid #808080;
+                }
+                """,
+                "window": "",
+                "color": QColor("#c0c0c0"),
+            },
+            "flat": {
+                "widget": """
+                QWidget#strudelContainer {
+                    background-color: #2a2a2a;
+                    border: 1px solid #3a3a3a;
+                    border-radius: 6px;
+                }
+                """,
+                "window": "",
+                "color": QColor("#2a2a2a"),
+            },
+        }
+
+        config = theme_styles.get(self.current_theme, {"widget": "", "window": "", "color": None})
+        widget_style = config.get("widget", "")
+        window_style = config.get("window", "")
+        widget.setStyleSheet(widget_style.strip() if widget_style else "")
+        if window:
+            window.setStyleSheet(window_style.strip() if window_style else "")
+
+        palette_color = config.get("color")
+        if palette_color:
+            palette = widget.palette()
+            palette.setColor(QPalette.ColorRole.Window, palette_color)
+            widget.setPalette(palette)
+            widget.setAutoFillBackground(True)
+        else:
+            widget.setAutoFillBackground(False)
 
     def _load_strudel_window(self) -> None:
         """Load Strudel in an MDI window."""
@@ -857,12 +968,17 @@ class AmbianceMainWindow(QMainWindow):
             # Connect to window state changes to fix rendering issues
             strudel_win.windowStateChanged.connect(lambda old, new: self._on_strudel_state_changed(strudel_widget, new))
 
+            self._apply_strudel_theme()
+
             # Don't show by default - user can open via menu/button
             # strudel_win.show()
 
             self._strudel_window = strudel_win
             self._strudel_widget = strudel_widget
             self._strudel_loaded = True
+
+            if hasattr(self, "_window_titles"):
+                self._window_titles[strudel_win] = "Strudel Live Coding"
 
             # Add to taskbar if we want it visible
             if hasattr(self, 'mdi_windows'):
@@ -2168,10 +2284,9 @@ class StrudelViewWidget(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.setObjectName("strudelContainer")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         v = QVBoxLayout(self)
-        hdr = QLabel("Strudel (embedded)")
-        hdr.setStyleSheet("font-size:16px; font-weight:600; margin:8px 0;")
-        v.addWidget(hdr)
 
         if not WEBENGINE_AVAILABLE:
             msg = QLabel(

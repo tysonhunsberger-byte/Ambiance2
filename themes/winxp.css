@@ -127,33 +127,45 @@ QTabBar::tab:hover {
 QMdiSubWindow {
     background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
         stop:0 #0053b5,
-        stop:0.45 #0c84d1,
-        stop:1 #1ca0f0);
-    border: 2px solid #003a82;
-    border-top: 2px solid #5fa2ff;
-    border-left: 2px solid #5fa2ff;
-    border-radius: 8px 8px 6px 6px;
-    padding: 4px;
+        stop:0.28 #0b6cdc,
+        stop:0.62 #0f83ef,
+        stop:1 #26a4ff);
+    border: 2px solid #0b4fb6;
+    border-top: 2px solid #7ec2ff;
+    border-left: 2px solid #7ec2ff;
+    border-radius: 9px 9px 6px 6px;
+    padding: 6px;
 }
 QMdiSubWindow::title {
-    background: transparent;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #2688ff,
+        stop:0.32 #1170dd,
+        stop:0.68 #0c4db2,
+        stop:1 #06378f);
     color: #ffffff;
     selection-background-color: transparent;
     selection-color: #ffffff;
-    padding: 3px 16px;
+    padding: 7px 18px;
     font-weight: bold;
     font-size: 11px;
-    border-radius: 0px;
+    border-radius: 6px 6px 0 0;
+    border: 1px solid #093774;
     border-bottom: none;
+    text-shadow: 0 0 6px rgba(255, 255, 255, 0.55);
 }
 
 QMdiSubWindow::title:inactive {
-    background: transparent;
-    color: #ebf2ff;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #b8cce8,
+        stop:1 #7fa2cf);
+    color: #243d70;
     selection-background-color: transparent;
-    selection-color: #ffffff;
-    padding: 3px 16px;
+    selection-color: #243d70;
+    padding: 4px 18px;
+    border: 1px solid #6783b8;
     border-bottom: none;
+    border-radius: 6px 6px 0 0;
+    text-shadow: none;
 }
 QMdiSubWindow > QMenu {
     background: transparent;
@@ -161,15 +173,24 @@ QMdiSubWindow > QMenu {
     max-height: 0px;
 }
 QMdiSubWindow QWidget#qt_scrollarea_viewport {
+    background: #fbfaf5;
+    border: 1px solid #c4b8a8;
+    border-top: 1px solid #ffffff;
+    border-left: 1px solid #f5efe5;
+    border-radius: 0px 0px 7px 7px;
+    padding: 12px;
+}
+
+QWidget#strudelContainer {
     background: #ece9d8;
     border: 1px solid #c4b8a8;
     border-radius: 6px;
-    padding: 10px;
+    padding: 8px;
 }
 /* Window control buttons - Windows XP style */
 QMdiSubWindow::close-button, QMdiSubWindow::minimize-button, QMdiSubWindow::maximize-button {
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-        stop:0 rgba(255, 255, 255, 200), stop:1 rgba(200, 220, 255, 180));
+        stop:0 rgba(248, 253, 255, 0.95), stop:1 rgba(186, 211, 244, 0.85));
     border: 1px solid rgba(255, 255, 255, 150);
     border-radius: 6px;
     width: 16px;
@@ -177,14 +198,18 @@ QMdiSubWindow::close-button, QMdiSubWindow::minimize-button, QMdiSubWindow::maxi
 }
 QMdiSubWindow::close-button:hover {
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-        stop:0 #ff6666, stop:1 #cc0000);
+        stop:0 rgba(255, 228, 228, 0.96), stop:1 rgba(255, 148, 148, 0.88));
+    border: 1px solid rgba(204, 0, 0, 0.85);
 }
 QMdiSubWindow::minimize-button:hover, QMdiSubWindow::maximize-button:hover {
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-        stop:0 rgba(255, 255, 255, 220), stop:1 rgba(180, 210, 255, 200));
+        stop:0 rgba(225, 242, 255, 0.96), stop:1 rgba(155, 199, 255, 0.88));
+    border: 1px solid rgba(110, 170, 255, 0.7);
 }
 QMdiSubWindow::close-button:pressed, QMdiSubWindow::minimize-button:pressed, QMdiSubWindow::maximize-button:pressed {
-    background: rgba(150, 180, 220, 200);
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 rgba(150, 180, 220, 0.9), stop:1 rgba(120, 150, 200, 0.9));
+    border: 1px solid rgba(40, 90, 160, 0.8);
 }
 /* Toolbar styling */
 QWidget#toolbar {
@@ -261,8 +286,9 @@ QWidget#taskbar QPushButton:hover {
 }
 QWidget#taskbar QPushButton:checked {
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-        stop:0 #2057bb, stop:1 #143b88);
-    border: 1px solid #082a71;
+        stop:0 #4892f7, stop:1 #3980f4);
+    color: #ffffff;
+    border: 1px solid #3168d5;
 }
 /* Start button styling is handled in Python code via image */
 QWidget#taskbar QLabel#clockLabel {

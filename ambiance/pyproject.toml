@@ -14,6 +14,7 @@ dependencies = []
 [project.optional-dependencies]
 cli = ["typer>=0.9.0"]
 numpy = ["numpy>=1.21"]
+themes = ["cssutils>=2.11.1"]
 
 [tool.setuptools]
 package-dir = {"" = "src"}

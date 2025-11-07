@@ -1,0 +1,36 @@
+/* Generated from CSS via css_to_qss.py (prototype). */
+
+QMdiSubWindow {
+    font-size: 11px;
+    background-color: #ece9d8;
+    padding: 0 0 3px;
+}
+
+QMdiSubWindow::title {
+    font-size: 13px;
+    background-color: #000;
+    padding: 3px 5px 3px 3px;
+    font-weight: 700;
+    color: #fff;
+    font-family: Trebuchet MS;
+    background: qlineargradient(x1:0.5, y1:0, x2:0.5, y2:1, stop:0 #0997ff, stop:0.08 #0053ee, stop:0.4 #0050ee, stop:0.88 #06f, stop:0.93 #06f, stop:0.95 #005bff, stop:0.96 #003dd7, stop:1 #003dd7);
+    padding-left: 3px;
+}
+
+QMdiSubWindow::close-button {
+    padding: 0;
+    background-color: #0050ee;
+    border: none;
+}
+
+QMdiSubWindow::minimize-button {
+    padding: 0;
+    background-color: #0050ee;
+    border: none;
+}
+
+QMdiSubWindow::maximize-button {
+    padding: 0;
+    background-color: #0050ee;
+    border: none;
+}
