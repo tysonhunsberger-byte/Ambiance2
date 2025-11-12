@@ -11,20 +11,66 @@ from __future__ import annotations
 import os
 import sys
 import logging
-from pathlib import Path
+import json
+from collections import deque
+from pathlib import Path, PurePosixPath
 from typing import Optional, TYPE_CHECKING
+
+os.environ.setdefault("JACK_NO_START_SERVER", "1")
 
 if TYPE_CHECKING:
     from ambiance.integrations.carla_host import CarlaVSTHost
 import threading
 import http.server
 import socketserver
+from http import HTTPStatus
 from functools import partial
 import time
+import base64
+import mimetypes
+import posixpath
+from urllib.parse import urlparse, unquote, urljoin
+from urllib.request import Request, urlopen
+from urllib.error import URLError, HTTPError
 
 os.environ.setdefault("QT_API", "pyqt6")
 
-from qtpy.QtCore import Qt, QTimer, QObject
+LOGGER = logging.getLogger("ambiance.ui")
+
+STRUDEL_REMOTE_BASE = "https://strudel.cc/"
+STRUDEL_PROXY_PREFIX = "/strudel-live"
+STRUDEL_PROXY_TIMEOUT = 12
+STRUDEL_PROXY_USER_AGENT = "AmbianceStrudelProxy/1.0"
+STRUDEL_PROXY_HEADER_BLOCKLIST = {
+    "content-encoding",
+    "transfer-encoding",
+    "connection",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "te",
+    "trailer",
+    "upgrade",
+    "x-frame-options",
+    "content-security-policy",
+    "strict-transport-security",
+}
+STRUDEL_PROXY_ASSET_PREFIXES = (
+    "/_astro/",
+    "/icons/",
+    "/img/",
+    "/fonts/",
+    "/assets/",
+)
+STRUDEL_PROXY_ASSET_EXACT = (
+    "/favicon.ico",
+    "/manifest.webmanifest",
+    "/robots.txt",
+    "/rss.xml",
+    "/make-scrollable-code-focusable.js",
+)
+
+from qtpy.QtCore import Qt, QTimer, QObject, Signal, Slot, QUrl, QPointF, QPoint
 from qtpy.QtGui import QTextCursor, QWindow, QMouseEvent, QColor, QPalette, QPixmap, QBrush, QIcon, QFont
 from qtpy.QtWidgets import (
     QApplication,
@@ -47,6 +93,8 @@ from qtpy.QtWidgets import (
     QSpinBox,
     QTextEdit,
     QMdiArea,
+    QMdiSubWindow,
+    QMessageBox,
 )
 
 # Windows-specific imports for window embedding
@@ -87,14 +135,17 @@ except Exception as _ce:  # pragma: no cover
 
 # Optional WebEngine (informational only here)
 try:  # pragma: no cover
-    from qtpy.QtWebEngineWidgets import QWebEngineView  # type: ignore
+    from qtpy.QtWebEngineWidgets import QWebEngineView, QWebEngineSettings  # type: ignore
+    from qtpy.QtWebChannel import QWebChannel  # type: ignore
     WEBENGINE_AVAILABLE = True
 except Exception as e:  # pragma: no cover
     QWebEngineView = None  # type: ignore
+    QWebChannel = None  # type: ignore
     WEBENGINE_AVAILABLE = False
     WEBENGINE_IMPORT_ERROR = str(e)
 
 from ambiance.theming import ThemeManager
+from ambiance.strudel_proxy import StrudelProxy
 
 
 class WallpaperMdiArea(QMdiArea):
@@ -174,6 +225,246 @@ class WallpaperMdiArea(QMdiArea):
         self._refresh_wallpaper_brush()
 
 
+class PluginStudioBridge(QObject):
+    """Qt WebChannel bridge that exposes plugin data/operations to WebEngine UI."""
+
+    stateUpdated = Signal(str)
+    hostStatusChanged = Signal(str)
+
+    def __init__(self, rack_widget: "PluginRackWidget") -> None:
+        super().__init__()
+        self._rack = rack_widget
+        self._rack.stateChanged.connect(self._forward_state)
+        self._rack.hostStatusChanged.connect(self.hostStatusChanged.emit)
+
+    def _forward_state(self, state: dict) -> None:
+        try:
+            payload = json.dumps(state)
+        except Exception as exc:  # pragma: no cover - defensive
+            payload = json.dumps({"error": f"serialize_failed: {exc}"})
+        try:
+            plugins = state.get("plugins", [])
+            print(f"[WEB] Plugin state -> {len(plugins)} plugins, chain={len(state.get('chain', []))}")
+        except Exception:
+            pass
+        self.stateUpdated.emit(payload)
+
+    @Slot()
+    def requestInitialState(self) -> None:
+        self._forward_state(self._rack.serialize_state())
+
+    @Slot()
+    def refreshPlugins(self) -> None:
+        self._rack.refresh()
+
+    @Slot(str)
+    def addPluginByPath(self, path: str) -> None:
+        self._rack.add_plugin_by_path(path)
+
+    @Slot(int)
+    def removeChainIndex(self, index: int) -> None:
+        self._rack.remove_chain_index(index)
+
+    @Slot(int)
+    def loadChainIndex(self, index: int) -> None:
+        self._rack.load_chain_index(index)
+
+    @Slot(int)
+    def focusChainIndex(self, index: int) -> None:
+        self._rack.select_chain_index(index)
+
+    @Slot()
+    def saveSession(self) -> None:
+        if hasattr(self._rack, "save_session"):
+            self._rack.save_session()
+
+    @Slot()
+    def loadSession(self) -> None:
+        if hasattr(self._rack, "load_session"):
+            self._rack.load_session()
+
+
+class PluginUIBridge(QObject):
+    """Bridge that surfaces current plugin info + host controls to WebEngine UI."""
+
+    stateUpdated = Signal(str)
+    hostStatusChanged = Signal(str)
+    pluginChanged = Signal(str)
+
+    def __init__(self, rack_widget: "PluginRackWidget") -> None:
+        super().__init__()
+        self._rack = rack_widget
+        self._rack.stateChanged.connect(self._forward_state)
+        self._rack.hostStatusChanged.connect(self.hostStatusChanged.emit)
+        self._rack.currentPluginChanged.connect(self._forward_plugin)
+
+    def _forward_state(self, state: dict) -> None:
+        try:
+            payload = json.dumps(state)
+        except Exception as exc:  # pragma: no cover
+            payload = json.dumps({"error": f"serialize_failed: {exc}"})
+        self.stateUpdated.emit(payload)
+
+    def _forward_plugin(self, descriptor: dict) -> None:
+        try:
+            payload = json.dumps(descriptor)
+        except Exception:
+            payload = json.dumps({"path": descriptor or None})
+        self.pluginChanged.emit(payload)
+
+    @Slot()
+    def requestInitialState(self) -> None:
+        self._forward_state(self._rack.serialize_state())
+
+    @Slot()
+    def showNativeUI(self) -> None:
+        self._rack.show_host_ui()
+
+    @Slot()
+    def unloadPlugin(self) -> None:
+        self._rack.unload_host()
+
+    @Slot(int)
+    def loadChainIndex(self, index: int) -> None:
+        self._rack.load_chain_index(index)
+
+
+class DesktopBridge(QObject):
+    """Bridge exposing desktop/theme state and receiving global commands."""
+
+    stateUpdated = Signal(str)
+
+    def __init__(self, window: "AmbianceMainWindow") -> None:
+        super().__init__()
+        self._window = window
+
+    def emit_state(self) -> None:
+        state = self._window._compose_desktop_state()
+        try:
+            payload = json.dumps(state)
+        except Exception as exc:  # pragma: no cover
+            payload = json.dumps({"error": f"desktop_state_failed: {exc}"})
+        self.stateUpdated.emit(payload)
+
+    @Slot()
+    def requestInitialState(self) -> None:
+        self.emit_state()
+
+    @Slot(str)
+    def setTheme(self, theme: str) -> None:
+        self._window.apply_theme_from_bridge(theme)
+
+    @Slot(float, float, float, float)
+    def updateNativeViewport(self, x: float, y: float, width: float, height: float) -> None:
+        self._window.update_native_viewport_geometry(x, y, width, height)
+
+    @Slot()
+    def emergencyStop(self) -> None:
+        self._window._handle_emergency_stop()
+
+    @Slot(str)
+    def toggleWindow(self, window_id: str) -> None:
+        self._window.toggle_window_from_bridge(window_id)
+
+    @Slot(str)
+    def focusWindow(self, window_id: str) -> None:
+        self._window.focus_window(window_id)
+
+
+class ConsoleBridge(QObject):
+    """Bridge that streams log output to the Web desktop."""
+
+    logLine = Signal(str)
+    historyReady = Signal(str)
+
+    def __init__(self, rack_widget: "PluginRackWidget") -> None:
+        super().__init__()
+        self._rack = rack_widget
+        self._rack.logMessage.connect(self.logLine.emit)
+
+    @Slot()
+    def requestHistory(self) -> None:
+        try:
+            payload = json.dumps({"lines": self._rack.get_log_history()})
+        except Exception as exc:
+            payload = json.dumps({"error": f"log_history_failed: {exc}"})
+        self.historyReady.emit(payload)
+
+
+class KeyboardBridge(QObject):
+    """Bridge that exposes MIDI keyboard controls to the Web desktop."""
+
+    stateUpdated = Signal(str)
+
+    def __init__(self, rack_widget: "PluginRackWidget") -> None:
+        super().__init__()
+        self._rack = rack_widget
+        self._rack.keyboardStateChanged.connect(self._forward_state)
+
+    def _forward_state(self, state: dict) -> None:
+        try:
+            payload = json.dumps(state)
+        except Exception as exc:
+            payload = json.dumps({"error": f"keyboard_state_failed: {exc}"})
+        self.stateUpdated.emit(payload)
+
+    @Slot(int)
+    def noteOn(self, note: int) -> None:
+        self._rack.trigger_note_on(int(note))
+
+    @Slot(int)
+    def noteOff(self, note: int) -> None:
+        self._rack.trigger_note_off(int(note))
+
+    @Slot(int)
+    def setVelocity(self, value: int) -> None:
+        self._rack.set_keyboard_velocity(value)
+
+    @Slot(int)
+    def setOctave(self, value: int) -> None:
+        self._rack.set_keyboard_octave(value)
+
+    @Slot()
+    def requestState(self) -> None:
+        self._forward_state(self._rack.serialize_keyboard_state())
+
+
+class StrudelBridge(QObject):
+    """Bridge controlling the Strudel web window."""
+
+    stateUpdated = Signal(str)
+
+    def __init__(self, window: "AmbianceMainWindow") -> None:
+        super().__init__()
+        self._window = window
+
+    def emit_state(self, state: dict) -> None:
+        try:
+            payload = json.dumps(state)
+        except Exception as exc:
+            payload = json.dumps({"error": f"strudel_state_failed: {exc}"})
+        self.stateUpdated.emit(payload)
+
+    @Slot()
+    def requestState(self) -> None:
+        self._window._emit_strudel_state()
+
+    @Slot()
+    def open(self) -> None:
+        self._window._show_strudel()
+
+    @Slot()
+    def close(self) -> None:
+        self._window._hide_strudel()
+
+    @Slot()
+    def reload(self) -> None:
+        self._window._reload_strudel()
+
+    @Slot(str)
+    def navigate(self, url: str) -> None:
+        self._window._navigate_strudel(url)
+
 class AmbianceMainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -202,22 +493,40 @@ class AmbianceMainWindow(QMainWindow):
         self.desktop.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.desktop.setViewMode(QMdiArea.ViewMode.SubWindowView)  # SubWindow mode
         self.desktop.setActivationOrder(QMdiArea.WindowOrder.ActivationHistoryOrder)  # Click to bring to front
+        try:
+            self.desktop.setOption(QMdiArea.Option.DontMaximizeSubWindowOnActivation, True)
+        except Exception:
+            pass
 
         layout.addWidget(self.desktop)
 
         # Initialize Strudel state (will be loaded on demand)
         self._strudel_loaded = False
-        self._strudel_window = None
+        self._strudel_visible = False
+        self._strudel_home_url = "https://strudel.cc/"
+        self._strudel_url: Optional[str] = None
+        self._strudel_remote_url: Optional[str] = self._strudel_home_url
+        self._strudel_error: Optional[str] = None
+        self._desktop_base_url: Optional[str] = None
+        self._strudel_proxy_base: Optional[str] = None
+        self._strudel_proxy_service: Optional[StrudelProxy] = None
+        self._strudel_proxy_port: Optional[int] = None
+        self._strudel_reload_token = 0
 
-        # Taskbar at bottom (will be populated after windows are created)
-        self.taskbar = QWidget()
-        self.taskbar.setObjectName("taskbar")  # For stylesheet targeting
-        self.taskbar_layout = QHBoxLayout(self.taskbar)
-        self.taskbar_layout.setContentsMargins(0, 0, 6, 0)
-        self.taskbar_layout.setSpacing(4)
-        self.taskbar.setFixedHeight(36)
+        # Virtual resolution + zoom handling
+        self._theme_resolution: tuple[int, int] | None = None
+        self._desktop_zoom_factor: float = 1.0
 
-        layout.addWidget(self.taskbar)
+        # Taskbar/legacy UI placeholders (actual chrome lives in Web desktop)
+        self.taskbar = None
+        self.taskbar_layout = None
+        self.start_button = None
+        self.clock_label = None
+        self.clock_timer = None
+        self._taskbar_buttons: dict = {}
+        self._monitored_windows: set[int] = set()
+        self._window_state_monitors: set[int] = set()
+        self._destroyed_monitors: set[int] = set()
 
         # Store reference to plugin rack widget
         self.plugin_rack_widget = None
@@ -226,6 +535,34 @@ class AmbianceMainWindow(QMainWindow):
             self.plugin_rack_widget = PluginRackWidget(self)
             # Hide the main widget since we only use its children in MDI windows
             self.plugin_rack_widget.hide()
+
+        # Desktop bridge + plugin bridges
+        self.desktop_bridge = DesktopBridge(self)
+        self.plugin_studio_bridge = (
+            PluginStudioBridge(self.plugin_rack_widget) if self.plugin_rack_widget else None
+        )
+        self.plugin_ui_bridge = (
+            PluginUIBridge(self.plugin_rack_widget) if self.plugin_rack_widget else None
+        )
+        self.console_bridge = (
+            ConsoleBridge(self.plugin_rack_widget) if self.plugin_rack_widget else None
+        )
+        self.keyboard_bridge = (
+            KeyboardBridge(self.plugin_rack_widget) if self.plugin_rack_widget else None
+        )
+        self.strudel_bridge = StrudelBridge(self)
+        self._desktop_wallpaper_state: dict[str, object] = {
+            "image": None,
+            "color": "#222222",
+            "offset": 0.5,
+        }
+        self._theme_change_from_bridge = False
+        self._carla_warmup_timer: QTimer | None = None
+        self.web_desktop_active = False
+        self._native_viewport_rect = (0.0, 0.0, 0.0, 0.0)
+
+        self.plugin_studio_webview = None
+        self.plugin_ui_webview = None
 
         # Apply initial theme
         self._apply_theme(self.current_theme)
@@ -239,15 +576,13 @@ class AmbianceMainWindow(QMainWindow):
         # Install application-level event filter to catch keyboard events
         QApplication.instance().installEventFilter(self)
 
-        # Load Strudel on startup (hidden by default for no lag when user opens it)
-        QTimer.singleShot(1000, self._load_strudel_window)
 
     def eventFilter(self, obj, event):
         """Catch keyboard events and forward to PluginRackWidget, also track window visibility."""
         # Handle keyboard events
         if event.type() == event.Type.KeyPress or event.type() == event.Type.KeyRelease:
-            # Forward keyboard events to plugin rack widget if it exists and has a keyboard
-            if self.plugin_rack_widget and self.plugin_rack_widget.keyboard.isVisible():
+            # Forward keyboard events to plugin rack widget if keyboard mode is enabled
+            if self.plugin_rack_widget and self.plugin_rack_widget.is_keyboard_enabled():
                 if event.type() == event.Type.KeyPress:
                     self.plugin_rack_widget.keyPressEvent(event)
                     if event.isAccepted():
@@ -265,6 +600,10 @@ class AmbianceMainWindow(QMainWindow):
                 self._on_window_visibility_changed(obj, False)
 
         return super().eventFilter(obj, event)
+
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        super().resizeEvent(event)
+        self._refresh_desktop_zoom()
 
     def _scan_themes(self) -> dict:
         """Scan themes directory and return available themes."""
@@ -302,6 +641,13 @@ class AmbianceMainWindow(QMainWindow):
 
         self.theme_combo.currentIndexChanged.connect(self._on_theme_changed)
         layout.addWidget(self.theme_combo)
+
+        self.strudel_btn = QPushButton("Strudel")
+        self.strudel_btn.setObjectName("strudelButton")
+        self.strudel_btn.setToolTip("Toggle Strudel live coding window")
+        self.strudel_btn.setMaximumHeight(22)
+        self.strudel_btn.clicked.connect(self._toggle_strudel_window)
+        layout.addWidget(self.strudel_btn)
 
         layout.addStretch()
 
@@ -364,8 +710,6 @@ class AmbianceMainWindow(QMainWindow):
         self._update_start_button_style(self.current_theme)
         if self.plugin_rack_widget and hasattr(self.plugin_rack_widget, "apply_theme_titles"):
             self.plugin_rack_widget.apply_theme_titles(theme)
-        self._apply_window_titles(theme)
-        self._apply_strudel_theme()
 
     def _handle_emergency_stop(self) -> None:
         """Send a quick panic to silence all plugins."""
@@ -405,9 +749,10 @@ class AmbianceMainWindow(QMainWindow):
         if not isinstance(self.desktop, WallpaperMdiArea):
             return
 
+        wallpapers_root = _ROOT / "resources" / "wallpapers"
         wallpaper_map = {
-            "winxp": _ROOT / "bliss.jpg",
-            "win7": _ROOT / "win7.jpg",
+            "winxp": wallpapers_root / "bliss.jpg",
+            "win7": wallpapers_root / "win7.jpg",
         }
         fallback_colors = {
             "winxp": "#70a0d0",
@@ -427,21 +772,214 @@ class AmbianceMainWindow(QMainWindow):
 
         color_name = fallback_colors.get(theme, fallback_colors["flat"])
         fill_color = QColor(color_name)
-        self.desktop.set_wallpaper_offset(offset_map.get(theme, 0.5))
-        self.desktop.apply_wallpaper(image_path, fill_color)
+
+        if not self.web_desktop_active and isinstance(self.desktop, WallpaperMdiArea):
+            self.desktop.set_wallpaper_offset(offset_map.get(theme, 0.5))
+            self.desktop.apply_wallpaper(image_path, fill_color)
+
+        wallpaper_url = None
+        if image_path:
+            base_url = getattr(self, "_desktop_base_url", None)
+            if base_url:
+                wallpaper_url = f"{base_url}wallpapers/{image_path.name}"
+            else:
+                wallpaper_url = self._encode_wallpaper_data(image_path)
+        self._desktop_wallpaper_state = {
+            "image": wallpaper_url,
+            "color": color_name,
+            "offset": offset_map.get(theme, 0.5),
+        }
+        self._notify_desktop_bridge()
 
     def _apply_theme_resolution(self, theme: str) -> None:
         metrics = self.theme_manager.metrics_for(theme)
-        if not metrics or not metrics.preferred_resolution:
+        if metrics and metrics.preferred_resolution:
+            width, height = metrics.preferred_resolution
+            self._theme_resolution = (int(width), int(height))
+        else:
+            self._theme_resolution = None
+        self._refresh_desktop_zoom()
+
+    def _refresh_desktop_zoom(self) -> None:
+        """Scale the web desktop instead of resizing the entire window."""
+        target = getattr(self, "_theme_resolution", None)
+        view = getattr(self, "web_desktop_view", None)
+        if not target:
+            self._desktop_zoom_factor = 1.0
+            if view:
+                view.setZoomFactor(1.0)
             return
-        width, height = metrics.preferred_resolution
-        self.resize(width, height)
-        screen = QApplication.primaryScreen()
-        if screen:
-            geo = screen.availableGeometry()
-            x = geo.x() + (geo.width() - width) // 2
-            y = geo.y() + (geo.height() - height) // 2
-            self.move(max(geo.x(), x), max(geo.y(), y))
+        target_w, target_h = target
+        if target_w <= 0 or target_h <= 0:
+            return
+        actual_w = max(1, self.width())
+        actual_h = max(1, self.height())
+        zoom = min(1.0, actual_w / target_w, actual_h / target_h)
+        self._desktop_zoom_factor = zoom
+        if view:
+            view.setZoomFactor(zoom)
+
+    def _ensure_desktop_http_server(self) -> Optional[str]:
+        root_dir = _ROOT / "resources" / "webdesktop"
+        if not root_dir.exists():
+            return None
+
+        mounts: dict[str, Path] = {}
+        node_modules = _ROOT / "node_modules"
+        if node_modules.exists():
+            mounts["/vendor/"] = node_modules
+        start_dir = _ROOT / "resources" / "start"
+        if start_dir.exists():
+            mounts["/start/"] = start_dir
+        wallpapers_dir = _ROOT / "resources" / "wallpapers"
+        if wallpapers_dir.exists():
+            mounts["/wallpapers/"] = wallpapers_dir
+
+        global _desktop_http_server
+        if _desktop_http_server is None:
+            _desktop_http_server = StaticHTTPServer(root_dir, mounts=mounts)
+
+        try:
+            port = _desktop_http_server.start()
+        except Exception as exc:
+            print(f"[WEB] Failed to start desktop HTTP server: {exc}")
+            return None
+
+        self._desktop_base_url = f"http://127.0.0.1:{port}/"
+        return self._desktop_base_url
+
+    def _collect_window_state(self) -> list[dict[str, object]]:
+        windows: list[dict[str, object]] = []
+        mdi_windows = getattr(self, "mdi_windows", {})
+        plugin_ui = mdi_windows.get("Plugin UI") if isinstance(mdi_windows, dict) else None
+        if plugin_ui is not None:
+            visible = plugin_ui.isVisible()
+            if hasattr(plugin_ui, "isMinimized"):
+                try:
+                    visible = visible and not plugin_ui.isMinimized()
+                except Exception:
+                    pass
+            windows.append({
+                "id": "plugin_ui",
+                "name": "Plugin UI",
+                "visible": bool(visible),
+            })
+        windows.append({
+            "id": "strudel",
+            "name": "Strudel",
+            "visible": bool(self._strudel_visible),
+        })
+        return windows
+
+    def _compose_desktop_state(self) -> dict[str, object]:
+        return {
+            "theme": self.current_theme,
+            "wallpaper": self._desktop_wallpaper_state,
+            "themes": [
+                {"id": theme_id, "name": info["name"]}
+                for theme_id, info in getattr(self, "available_themes", {}).items()
+            ],
+            "windows": self._collect_window_state(),
+        }
+
+    def _notify_desktop_bridge(self) -> None:
+        if getattr(self, "desktop_bridge", None):
+            self.desktop_bridge.emit_state()
+
+    @staticmethod
+    def _encode_wallpaper_data(image_path: Path) -> Optional[str]:
+        try:
+            data = image_path.read_bytes()
+        except OSError:
+            return None
+        mime, _ = mimetypes.guess_type(str(image_path))
+        mime = mime or "image/png"
+        encoded = base64.b64encode(data).decode("ascii")
+        return f"data:{mime};base64,{encoded}"
+
+    def apply_theme_from_bridge(self, theme: str) -> None:
+        if not theme or theme == self.current_theme:
+            return
+        if theme not in self.theme_manager.theme_ids():
+            return
+        previous_flag = self._theme_change_from_bridge
+        self._theme_change_from_bridge = True
+        try:
+            if hasattr(self, "theme_combo"):
+                index = self.theme_combo.findText(theme)
+                if index >= 0:
+                    self.theme_combo.setCurrentIndex(index)
+                    return
+            self._apply_theme(theme)
+        finally:
+            self._theme_change_from_bridge = previous_flag
+
+    def update_native_viewport_geometry(self, x: float, y: float, width: float, height: float) -> None:
+        self._native_viewport_rect = (x, y, width, height)
+        self._sync_native_ui_geometry()
+
+    def _sync_native_ui_geometry(self) -> None:
+        if not hasattr(self, "mdi_windows"):
+            return
+        plugin_window = self.mdi_windows.get("Plugin UI")
+        if not plugin_window:
+            return
+        rect = getattr(self, "_native_viewport_rect", (0.0, 0.0, 0.0, 0.0))
+        if not rect or rect[2] <= 0 or rect[3] <= 0:
+            return
+
+        parent_widget = plugin_window.parentWidget()
+        view = getattr(self, "web_desktop_view", None)
+        origin_x = 0
+        origin_y = 0
+        if parent_widget is not None and view is not None:
+            top_left = view.mapTo(parent_widget, QPoint(0, 0))
+            origin_x = top_left.x()
+            origin_y = top_left.y()
+        elif hasattr(self, "web_desktop_window") and self.web_desktop_window:
+            g = self.web_desktop_window.geometry()
+            origin_x = g.x()
+            origin_y = g.y()
+
+        x = int(origin_x + rect[0])
+        y = int(origin_y + rect[1])
+        w = max(200, int(rect[2]))
+        h = max(150, int(rect[3]))
+        plugin_window.setGeometry(x, y, w, h)
+        if plugin_window.isVisible():
+            plugin_window.raise_()
+        if self.plugin_rack_widget:
+            self.plugin_rack_widget.resize_plugin_viewport(w, h)
+
+    def _set_plugin_ui_visible(self, visible: bool) -> None:
+        if not hasattr(self, "mdi_windows"):
+            return
+        window = self.mdi_windows.get("Plugin UI")
+        if not window:
+            return
+        try:
+            from qtpy.QtWidgets import QMdiSubWindow  # Local import to avoid circular deps
+        except Exception:  # pragma: no cover
+            QMdiSubWindow = None  # type: ignore
+
+        if QMdiSubWindow is not None and isinstance(window, QMdiSubWindow):
+            if visible:
+                window.show()
+                if window.isMinimized():
+                    window.showNormal()
+                window.raise_()
+                window.setFocus()
+                self.desktop.setActiveSubWindow(window)
+            else:
+                window.hide()
+        else:
+            if visible:
+                window.show()
+                window.raise_()
+                self._sync_native_ui_geometry()
+            else:
+                window.hide()
+        self._notify_desktop_bridge()
 
     def _window_close_event_filter(self, window):
         """Event filter to intercept close button and minimize instead, and handle activation."""
@@ -455,6 +993,8 @@ class AmbianceMainWindow(QMainWindow):
                 if event.type() == event.Type.Close:
                     # Minimize instead of closing
                     self.parent_window.hide()
+                    if hasattr(self.main_window, "_notify_desktop_bridge"):
+                        self.main_window._notify_desktop_bridge()
                     event.ignore()
                     return True
                 elif event.type() == event.Type.MouseButtonPress:
@@ -471,207 +1011,154 @@ class AmbianceMainWindow(QMainWindow):
             self._window_filters = []
         self._window_filters.append(filter_obj)
 
+    def _handle_web_console(self, level, message, line_number, source_id):
+        """Forward WebEngine console output to stdout for easier debugging."""
+        try:
+            level_name = level.name  # Enum in Qt 6
+        except AttributeError:
+            try:
+                level_name = str(int(level))
+            except Exception:
+                level_name = str(level)
+        print(f"[WEB-CONSOLE][{level_name}] {message} ({source_id}:{line_number})")
+
+    def _create_web_desktop_window(self):
+        """Create the full-screen WebEngine-powered desktop subwindow."""
+        from qtpy.QtWidgets import QMdiSubWindow, QWidget, QVBoxLayout
+
+        if not (WEBENGINE_AVAILABLE and QWebEngineView and QWebChannel):
+            return None
+
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        view = QWebEngineView(container)
+        view.setObjectName("webDesktopView")
+        view.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
+        view.setAcceptDrops(False)
+        try:
+            settings = view.settings()
+            settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
+            settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessFileUrls, True)
+            settings.setAttribute(QWebEngineSettings.WebAttribute.AllowRunningInsecureContent, True)
+        except Exception:
+            pass
+        layout.addWidget(view)
+        self.web_desktop_view = view
+        self._refresh_desktop_zoom()
+
+        channel = QWebChannel(view.page())
+        if self.desktop_bridge:
+            channel.registerObject("DesktopBridge", self.desktop_bridge)
+        if self.plugin_studio_bridge:
+            channel.registerObject("PluginStudioBridge", self.plugin_studio_bridge)
+        if self.plugin_ui_bridge:
+            channel.registerObject("PluginUIBridge", self.plugin_ui_bridge)
+        if getattr(self, "console_bridge", None):
+            channel.registerObject("ConsoleBridge", self.console_bridge)
+        if getattr(self, "keyboard_bridge", None):
+            channel.registerObject("KeyboardBridge", self.keyboard_bridge)
+        if getattr(self, "strudel_bridge", None):
+            channel.registerObject("StrudelBridge", self.strudel_bridge)
+        view.page().setWebChannel(channel)
+        try:
+            view.page().javaScriptConsoleMessage.connect(self._handle_web_console)
+        except Exception:
+            pass
+
+        base_url = self._ensure_desktop_http_server()
+        html_path = _ROOT / "resources" / "webdesktop" / "index.html"
+        if base_url:
+            view.load(QUrl(f"{base_url}index.html"))
+        elif html_path.exists():
+            view.load(QUrl.fromLocalFile(str(html_path)))
+        else:  # pragma: no cover - fallback
+            view.setHtml("<h3>Missing webdesktop/index.html</h3>")
+
+        outer = self
+
+        class _StrudelWindow(QMdiSubWindow):
+            def closeEvent(self, event):  # type: ignore[override]
+                outer._hide_strudel()
+                event.ignore()
+
+        subwindow = _StrudelWindow()
+        subwindow.setWidget(container)
+        subwindow.setWindowTitle("")
+        subwindow.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, False)
+        subwindow.setWindowFlags(
+            Qt.WindowType.SubWindow
+            | Qt.WindowType.CustomizeWindowHint
+            | Qt.WindowType.FramelessWindowHint
+        )
+        subwindow.setStyleSheet("background: transparent; border: 0px;")
+        self.desktop.addSubWindow(subwindow)
+        subwindow.showMaximized()
+        subwindow.lower()
+        self.web_desktop_active = True
+        if isinstance(self.desktop, WallpaperMdiArea):
+            self.desktop.apply_wallpaper(None, QColor("#000000"))
+        if getattr(self, "taskbar", None):
+            self.taskbar.hide()
+        if hasattr(self, "toolbar") and self.toolbar:
+            self.toolbar.hide()
+        if not self._strudel_loaded:
+            self._ensure_strudel_server()
+        self._notify_desktop_bridge()
+        self._emit_strudel_state()
+        return subwindow
+
+    def _create_plugin_ui_widget(self) -> QWidget:
+        """Return the QWidget used for the Plugin UI window."""
+        if not self.plugin_rack_widget:
+            return QWidget()
+        return self.plugin_rack_widget.plugin_ui_holder
+
+    def _create_plugin_ui_overlay(self) -> QWidget:
+        """Create a frameless overlay that hosts the native plugin viewport."""
+        plugin_widget = self._create_plugin_ui_widget()
+        overlay_parent = self.desktop.viewport() if hasattr(self, "desktop") else self
+        overlay = QWidget(overlay_parent)
+        overlay.setObjectName("plugin_ui_overlay")
+        overlay.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        overlay.setStyleSheet("background: transparent; border: 0px;")
+        layout = QVBoxLayout(overlay)
+        layout.setContentsMargins(0, 0, 0, 0)
+        plugin_widget.setParent(overlay)
+        layout.addWidget(plugin_widget)
+        overlay.hide()
+        return overlay
+
     def _create_desktop_windows(self) -> None:
         """Create moveable windows on the desktop for each component."""
-        from qtpy.QtWidgets import QMdiSubWindow
-
         if not self.plugin_rack_widget:
             return
 
-        # Store window references for taskbar
+        # Store window references for taskbar/state reporting
         self.mdi_windows = {}
 
-        # Plugin Studio Window (Plugin discovery and chain)
-        plugin_studio_win = QMdiSubWindow()
-        plugin_studio_win.setWidget(self.plugin_rack_widget.header_group)
-        plugin_studio_title = self.plugin_rack_widget._groupbox_titles[self.plugin_rack_widget.header_group]
-        plugin_studio_win.setWindowTitle(plugin_studio_title)
-        plugin_studio_win.setGeometry(20, 20, 800, 400)
-        plugin_studio_win.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, False)  # Hide instead of close
-        # Remove window flags that cause white boxes
-        plugin_studio_win.setWindowFlags(
-            Qt.WindowType.SubWindow | Qt.WindowType.CustomizeWindowHint |
-            Qt.WindowType.WindowTitleHint | Qt.WindowType.WindowMinMaxButtonsHint
-        )
-        self._window_close_event_filter(plugin_studio_win)
-        self.desktop.addSubWindow(plugin_studio_win)
-        plugin_studio_win.show()
-        self.mdi_windows["Plugin Studio"] = plugin_studio_win
+        # Web desktop layer
+        self.web_desktop_window = self._create_web_desktop_window()
 
-        # Plugin UI Window
-        plugin_ui_win = QMdiSubWindow()
-        plugin_ui_win.setWidget(self.plugin_rack_widget.params_group)
-        plugin_ui_title = self.plugin_rack_widget._groupbox_titles[self.plugin_rack_widget.params_group]
-        plugin_ui_win.setWindowTitle(plugin_ui_title)
-        plugin_ui_win.setGeometry(840, 20, 500, 500)
-        plugin_ui_win.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, False)  # Hide instead of close
-        # Remove window flags that cause white boxes
-        plugin_ui_win.setWindowFlags(
-            Qt.WindowType.SubWindow | Qt.WindowType.CustomizeWindowHint |
-            Qt.WindowType.WindowTitleHint | Qt.WindowType.WindowMinMaxButtonsHint
-        )
-        self._window_close_event_filter(plugin_ui_win)
-        self.desktop.addSubWindow(plugin_ui_win)
-        plugin_ui_win.hide()  # Hidden by default until plugin is loaded
-        self.mdi_windows["Plugin UI"] = plugin_ui_win
+        # Plugin UI overlay that mirrors the native viewport anchor
+        plugin_ui_overlay = self._create_plugin_ui_overlay()
+        self.plugin_ui_overlay = plugin_ui_overlay
+        self.mdi_windows["Plugin UI"] = plugin_ui_overlay
 
-        # Keyboard Window
-        keyboard_win = QMdiSubWindow()
-        keyboard_win.setWidget(self.plugin_rack_widget.keyboard)
-        keyboard_win.setWindowTitle("Instrument Keyboard")
-        keyboard_win.setGeometry(20, 440, 800, 375)  # Increased height by 50%
-        keyboard_win.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, False)  # Hide instead of close
-        # Remove window flags that cause white boxes
-        keyboard_win.setWindowFlags(
-            Qt.WindowType.SubWindow | Qt.WindowType.CustomizeWindowHint |
-            Qt.WindowType.WindowTitleHint | Qt.WindowType.WindowMinMaxButtonsHint
-        )
-        self._window_close_event_filter(keyboard_win)
-        self.desktop.addSubWindow(keyboard_win)
-        keyboard_win.hide()  # Hidden by default until plugin is loaded
-        self.keyboard_window = keyboard_win
-        self.mdi_windows["Instrument Keyboard"] = keyboard_win
+        self._sync_native_ui_geometry()
 
-        # Console Log Window
-        console_win = QMdiSubWindow()
-        log_widget = QWidget()
-        log_layout = QVBoxLayout(log_widget)
-        log_layout.setContentsMargins(4, 4, 4, 4)
-        log_layout.addWidget(self.plugin_rack_widget.log_viewer)
-        console_win.setWidget(log_widget)
-        console_win.setWindowTitle("Console Log")
-        console_win.setGeometry(840, 490, 500, 250)  # Adjusted height for XP border visibility
-        console_win.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, False)  # Hide instead of close
-        # Remove window flags that cause white boxes
-        console_win.setWindowFlags(
-            Qt.WindowType.SubWindow | Qt.WindowType.CustomizeWindowHint |
-            Qt.WindowType.WindowTitleHint | Qt.WindowType.WindowMinMaxButtonsHint
-        )
-        self._window_close_event_filter(console_win)
-        self.desktop.addSubWindow(console_win)
-        console_win.show()
-        self.mdi_windows["Console Log"] = console_win
-
-        self._window_titles = {
-            plugin_studio_win: plugin_studio_title,
-            plugin_ui_win: plugin_ui_title,
-            keyboard_win: "Instrument Keyboard",
-            console_win: "Console Log",
-        }
-
-        self._apply_window_titles(self.current_theme)
-
-        # Create taskbar buttons now that windows exist
+        # Create taskbar buttons now that windows exist (legacy stub)
         self._populate_taskbar()
+        self._notify_desktop_bridge()
 
     def _populate_taskbar(self) -> None:
-        """Populate the taskbar with buttons for each window."""
-        import time
-
-        # Stop and remove existing clock timer before rebuilding the taskbar
-        if hasattr(self, "clock_timer"):
-            try:
-                self.clock_timer.stop()
-            except Exception:
-                pass
-            try:
-                self.clock_timer.deleteLater()
-            except Exception:
-                pass
-            del self.clock_timer
-
-        if hasattr(self, "clock_label"):
-            try:
-                self.clock_label.deleteLater()
-            except Exception:
-                pass
-            del self.clock_label
-
-        # Clear existing taskbar contents
-        while self.taskbar_layout.count():
-            item = self.taskbar_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-
-        # Store window-to-button mapping
+        """Legacy stub: web desktop manages taskbar UI."""
         self._taskbar_buttons = {}
-        if not hasattr(self, "_monitored_windows"):
-            self._monitored_windows = set()
-
-        # Add Start button (Windows-style)
-        start_btn = QPushButton()
-        start_btn.setObjectName("startButton")
-        start_btn.setToolTip("Start Menu")
-        start_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.start_button = start_btn
-        self.taskbar_layout.addWidget(start_btn)
-        self._update_start_button_style(self.current_theme)
-
-        # Add separator
-        self.taskbar_layout.addSpacing(8)
-
-        # Add button for each window
-        for window_name, window in self.mdi_windows.items():
-            btn = QPushButton(window_name)
-            btn.setMinimumWidth(120)
-            btn.setCheckable(True)
-            btn.setToolTip(f"Click to show/hide {window_name}")
-
-            # Store button reference
-            self._taskbar_buttons[window] = btn
-            window_id = id(window)
-
-            # Connect button to activate window
-            btn.clicked.connect(partial(self._on_taskbar_button_clicked, window))
-
-            # Track window state changes once per window
-            if not hasattr(self, "_window_state_monitors"):
-                self._window_state_monitors = set()
-            if window_id not in self._window_state_monitors:
-                window.windowStateChanged.connect(self._handle_window_state_changed)
-                self._window_state_monitors.add(window_id)
-
-            # Install event filter to catch hide/show events
-            if window_id not in self._monitored_windows:
-                window.installEventFilter(self)
-                self._monitored_windows.add(window_id)
-
-            if not hasattr(self, "_destroyed_monitors"):
-                self._destroyed_monitors = set()
-            if window_id not in self._destroyed_monitors:
-                window.destroyed.connect(partial(self._on_window_destroyed, window))
-                self._destroyed_monitors.add(window_id)
-
-            self.taskbar_layout.addWidget(btn)
-            self._set_taskbar_button_state(window)
-
-        # Add stretch to push clock to the right
-        self.taskbar_layout.addStretch()
-
-        # Add clock
-        self.clock_label = QLabel(time.strftime("%H:%M"))
-        self.clock_label.setObjectName("clockLabel")
-        self.clock_label.setFixedWidth(60)
-        self.clock_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.taskbar_layout.addWidget(self.clock_label)
-
-        # Update clock every minute
-        self.clock_timer = QTimer(self)
-        self.clock_timer.timeout.connect(lambda: self.clock_label.setText(time.strftime("%H:%M")))
-        self.clock_timer.start(60000)  # Update every minute
-
-    def _apply_window_titles(self, theme: str) -> None:
-        if not hasattr(self, "_window_titles"):
-            return
-        hide_title = theme == "win7"
-        for window, title in self._window_titles.items():
-            window.setWindowTitle("" if hide_title else title)
-            if hasattr(self, "_taskbar_buttons") and window in self._taskbar_buttons:
-                button = self._taskbar_buttons[window]
-                button.setText(title)
 
     def _update_start_button_style(self, theme: str) -> None:
-        if not hasattr(self, "start_button"):
+        if not hasattr(self, "start_button") or self.start_button is None:
             return
 
         button = self.start_button
@@ -683,98 +1170,6 @@ class AmbianceMainWindow(QMainWindow):
         taskbar_margins = metrics.taskbar_margins if metrics else (0, 0, 6, 0)
         start_button_height = metrics.start_button_height if metrics else taskbar_height
         extra_css = metrics.start_button_extra_css if metrics else ""
-        if hasattr(self, "taskbar"):
-            self.taskbar.setFixedHeight(taskbar_height)
-            self.taskbar.updateGeometry()
-        if hasattr(self, "taskbar_layout"):
-            self.taskbar_layout.setContentsMargins(*taskbar_margins)
-            self.taskbar_layout.update()
-
-        assets = {
-            "winxp": _ROOT / "resources/start/winxp_start.png",
-            "win7": _ROOT / "resources/start/win7_start.png",
-            "win98": _ROOT / "resources/start/win98_start.png",
-        }
-
-        asset = assets.get(theme)
-        if asset:
-            path = asset
-            if path.exists():
-                pixmap = QPixmap(str(path))
-                if not pixmap.isNull():
-                    # Check for separate state images
-                    hover_path = None
-                    pressed_path = None
-                    if theme in ["winxp", "win98"]:
-                        hover_path = path.parent / f"{path.stem}hover.png"
-                        pressed_path = path.parent / f"{path.stem}pressed.png"
-
-                    if hasattr(self.taskbar_layout, "contentsMargins"):
-                        margins = self.taskbar_layout.contentsMargins()
-                        available_height = max(24, taskbar_height - (margins.top() + margins.bottom()))
-                    else:
-                        available_height = max(24, taskbar_height)
-
-                    desired_height = max(24, min(available_height, start_button_height, pixmap.height()))
-                    scaled = pixmap.scaledToHeight(int(desired_height), Qt.TransformationMode.SmoothTransformation)
-                    if scaled.isNull():
-                        scaled = pixmap
-                    size = scaled.size()
-
-                    # Build stylesheet with border-image for different states
-                    # For XP, make button extend to full taskbar height
-                    if theme == "winxp":
-                        effective_height = start_button_height
-                        stylesheet_parts = [
-                            "QPushButton#startButton {",
-                            f"  padding: 0; margin: 0; border: none; background: transparent;",
-                            f"  min-width: {size.width()}px; min-height: {effective_height}px;",
-                            f"  max-width: {size.width()}px; max-height: {effective_height}px;",
-                            f"  border-image: url({path.as_posix()}) 0 0 0 0 stretch stretch;",
-                            f"  {extra_css}",
-                            "}"
-                        ]
-                    else:
-                        stylesheet_parts = [
-                            "QPushButton#startButton {",
-                            f"  padding: 0; margin: 0; border: none; background: transparent;",
-                            f"  min-width: {size.width()}px; min-height: {size.height()}px;",
-                            f"  max-width: {size.width()}px; max-height: {size.height()}px;",
-                            f"  border-image: url({path.as_posix()}) 0 0 0 0 stretch stretch;",
-                            f"  {extra_css}",
-                            "}"
-                        ]
-
-                    # Add hover state if image exists
-                    if hover_path and hover_path.exists():
-                        stylesheet_parts.extend([
-                            "QPushButton#startButton:hover {",
-                            f"  border-image: url({hover_path.as_posix()}) 0 0 0 0 stretch stretch;",
-                            "}"
-                        ])
-
-                    # Add pressed state if image exists
-                    if pressed_path and pressed_path.exists():
-                        stylesheet_parts.extend([
-                            "QPushButton#startButton:pressed {",
-                            f"  border-image: url({pressed_path.as_posix()}) 0 0 0 0 stretch stretch;",
-                            "  padding-left: 1px; padding-top: 1px;",
-                            "}"
-                        ])
-
-                    if theme == "winxp":
-                        button.setMinimumSize(size.width(), start_button_height)
-                        button.setMaximumSize(size.width(), start_button_height)
-                    else:
-                        button.setMinimumSize(size)
-                        button.setMaximumSize(size)
-                    button.setIcon(QIcon())
-                    button.setStyleSheet("\n".join(stylesheet_parts))
-                    button.setText("")
-                    return
-            else:
-                print(f"[THEME] Start button icon missing for {theme}: {path}")
-
         button.setIcon(QIcon())
         button.setStyleSheet("")
         button.setMinimumHeight(24)
@@ -796,8 +1191,15 @@ class AmbianceMainWindow(QMainWindow):
             self._on_window_destroyed(window)
             return
 
+        plugin_window = None
+        if hasattr(self, "mdi_windows"):
+            plugin_window = self.mdi_windows.get("Plugin UI")
         is_visible = window.isVisible() and not window.isMinimized()
         is_active = self.desktop.activeSubWindow() == window
+
+        if window is plugin_window:
+            self._set_plugin_ui_visible(not (is_visible and is_active))
+            return
 
         if is_visible and is_active:
             window.hide()
@@ -814,6 +1216,7 @@ class AmbianceMainWindow(QMainWindow):
             self.desktop.setActiveSubWindow(window)
 
         self._set_taskbar_button_state(window)
+        self._notify_desktop_bridge()
 
     def _on_window_state_changed(self, window, new_state) -> None:
         """Update taskbar button when window state changes."""
@@ -861,162 +1264,144 @@ class AmbianceMainWindow(QMainWindow):
         if hasattr(self, "_destroyed_monitors"):
             self._destroyed_monitors.discard(window_id)
 
-    def _apply_strudel_theme(self) -> None:
-        window = getattr(self, "_strudel_window", None)
-        widget = window.widget() if window else None
-        if not widget:
-            return
-
-        widget.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-
-        theme_styles = {
-            "winxp": {
-                "widget": """
-                QWidget#strudelContainer {
-                    background-color: #ece9d8;
-                    border: 1px solid #c4b8a8;
-                    border-radius: 6px;
-                }
-                """,
-                "window": "",
-                "color": QColor("#ece9d8"),
-            },
-            "win7": {
-                "widget": """
-                QWidget#strudelContainer {
-                    background-color: rgba(249, 251, 254, 0.92);
-                    border: 1px solid rgba(164, 190, 232, 0.6);
-                    border-radius: 8px;
-                }
-                """,
-                "window": "",
-                "color": QColor(249, 251, 254),
-            },
-            "win98": {
-                "widget": """
-                QWidget#strudelContainer {
-                    background-color: #c0c0c0;
-                    border: 1px solid #808080;
-                }
-                """,
-                "window": "",
-                "color": QColor("#c0c0c0"),
-            },
-            "flat": {
-                "widget": """
-                QWidget#strudelContainer {
-                    background-color: #2a2a2a;
-                    border: 1px solid #3a3a3a;
-                    border-radius: 6px;
-                }
-                """,
-                "window": "",
-                "color": QColor("#2a2a2a"),
-            },
+    def _serialize_strudel_state(self) -> dict:
+        return {
+            "loaded": bool(self._strudel_loaded),
+            "visible": bool(self._strudel_visible),
+            "url": self._strudel_url,
+            "displayUrl": self._strudel_remote_url or self._strudel_home_url,
+            "error": self._strudel_error,
+            "homeUrl": self._strudel_home_url,
+            "proxyBase": self._strudel_proxy_base,
+            "reloadToken": self._strudel_reload_token,
         }
 
-        config = theme_styles.get(self.current_theme, {"widget": "", "window": "", "color": None})
-        widget_style = config.get("widget", "")
-        window_style = config.get("window", "")
-        widget.setStyleSheet(widget_style.strip() if widget_style else "")
-        if window:
-            window.setStyleSheet(window_style.strip() if window_style else "")
+    def _emit_strudel_state(self) -> None:
+        if getattr(self, "strudel_bridge", None):
+            self.strudel_bridge.emit_state(self._serialize_strudel_state())
+        self._notify_desktop_bridge()
 
-        palette_color = config.get("color")
-        if palette_color:
-            palette = widget.palette()
-            palette.setColor(QPalette.ColorRole.Window, palette_color)
-            widget.setPalette(palette)
-            widget.setAutoFillBackground(True)
+    def _ensure_strudel_server(self) -> Optional[str]:
+        """Resolve Strudel URLs (prefer local bundle, fall back to hosted site)."""
+        proxy_base = self._ensure_strudel_proxy()
+        if proxy_base:
+            self._strudel_proxy_base = proxy_base if proxy_base.endswith("/") else f"{proxy_base}/"
+            self._strudel_url = self._build_strudel_proxy_url(self._strudel_home_url)
         else:
-            widget.setAutoFillBackground(False)
+            self._strudel_proxy_base = None
+            self._strudel_url = self._strudel_home_url
+        self._strudel_remote_url = self._strudel_home_url
+        self._strudel_loaded = True
+        self._strudel_error = None
+        return self._strudel_url
 
-    def _load_strudel_window(self) -> None:
-        """Load Strudel in an MDI window."""
-        if self._strudel_loaded:
-            # If already loaded, just show the window
-            if self._strudel_window:
-                self._strudel_window.show()
-                self._strudel_window.raise_()
-                self.desktop.setActiveSubWindow(self._strudel_window)
-            return
-
+    def _ensure_strudel_proxy(self) -> Optional[str]:
+        if self._strudel_proxy_service and self._strudel_proxy_port:
+            return f"http://127.0.0.1:{self._strudel_proxy_port}/"
+        root_dir = _ROOT / "resources" / "strudel" / "dist"
+        if not root_dir.exists():
+            LOGGER.warning("Strudel bundle missing at %s (falling back to remote content)", root_dir)
         try:
-            from qtpy.QtWidgets import QMdiSubWindow
+            proxy = StrudelProxy(root_dir=root_dir)
+            port = proxy.start()
+        except Exception as exc:  # pragma: no cover - startup failure
+            LOGGER.error("Failed to start Strudel proxy: %s", exc)
+            return None
+        self._strudel_proxy_service = proxy
+        self._strudel_proxy_port = port
+        return f"http://127.0.0.1:{port}/"
 
-            # Create Strudel widget
-            strudel_widget = StrudelViewWidget(self)
+    def _stop_strudel_proxy(self) -> None:
+        if self._strudel_proxy_service:
+            try:
+                self._strudel_proxy_service.stop()
+            except Exception as exc:  # pragma: no cover - shutdown failure
+                LOGGER.warning("Error stopping Strudel proxy: %s", exc)
+            finally:
+                self._strudel_proxy_service = None
+                self._strudel_proxy_port = None
 
-            # Create MDI window for Strudel
-            strudel_win = QMdiSubWindow()
-            strudel_win.setWidget(strudel_widget)
-            strudel_win.setWindowTitle("Strudel Live Coding")
-            strudel_win.setGeometry(100, 100, 1000, 600)
+    def _show_strudel(self) -> None:
+        if not self._strudel_loaded:
+            if not self._ensure_strudel_server():
+                self._emit_strudel_state()
+                return
+        self._strudel_visible = True
+        self._emit_strudel_state()
 
-            # Prevent window from being deleted when closed - just hide it instead
-            strudel_win.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, False)
+    def _hide_strudel(self) -> None:
+        self._strudel_visible = False
+        self._emit_strudel_state()
 
-            # Remove window flags that cause white boxes
-            strudel_win.setWindowFlags(
-                Qt.WindowType.SubWindow | Qt.WindowType.CustomizeWindowHint |
-                Qt.WindowType.WindowTitleHint | Qt.WindowType.WindowMinMaxButtonsHint
-            )
-            self._window_close_event_filter(strudel_win)
+    def _reload_strudel(self) -> None:
+        self._strudel_reload_token += 1
+        self._emit_strudel_state()
 
-            self.desktop.addSubWindow(strudel_win)
+    def _navigate_strudel(self, url: str) -> None:
+        if not url:
+            return
+        self._strudel_remote_url = url
+        self._strudel_url = self._build_strudel_proxy_url(url)
+        self._strudel_reload_token += 1
+        self._emit_strudel_state()
 
-            # Connect to window state changes to fix rendering issues
-            strudel_win.windowStateChanged.connect(lambda old, new: self._on_strudel_state_changed(strudel_widget, new))
-
-            self._apply_strudel_theme()
-
-            # Don't show by default - user can open via menu/button
-            # strudel_win.show()
-
-            self._strudel_window = strudel_win
-            self._strudel_widget = strudel_widget
-            self._strudel_loaded = True
-
-            if hasattr(self, "_window_titles"):
-                self._window_titles[strudel_win] = "Strudel Live Coding"
-
-            # Add to taskbar if we want it visible
-            if hasattr(self, 'mdi_windows'):
-                self.mdi_windows["Strudel Live Coding"] = strudel_win
-                self._populate_taskbar()
-
-        except Exception as exc:
-            QMessageBox.warning(self, "Strudel Error", f"Failed to load Strudel: {exc}")
-
-    def _on_strudel_state_changed(self, strudel_widget, new_state) -> None:
-        """Handle Strudel window state changes to fix rendering issues."""
-        from qtpy.QtCore import Qt
-        # Force a repaint when window is restored from minimized state
-        if new_state != Qt.WindowState.WindowMinimized:
-            if hasattr(strudel_widget, 'web') and strudel_widget.web:
-                # Force WebEngine to repaint
-                QTimer.singleShot(100, lambda: strudel_widget.web.update())
-                QTimer.singleShot(200, lambda: strudel_widget.web.repaint())
+    def _build_strudel_proxy_url(self, url: Optional[str]) -> str:
+        target = url or self._strudel_home_url
+        if not self._strudel_proxy_base:
+            return target
+        parsed = urlparse(target)
+        path = (parsed.path or "/").lstrip("/")
+        query = f"?{parsed.query}" if parsed.query else ""
+        base = self._strudel_proxy_base.rstrip("/")
+        combined = f"{base}/{path}" if path else f"{base}/"
+        return f"{combined}{query}"
 
     def _toggle_strudel_window(self) -> None:
         """Show or hide the Strudel window."""
-        if not self._strudel_loaded:
-            # Load if not loaded yet
-            self._load_strudel_window()
-            if self._strudel_window:
-                self._strudel_window.show()
-        elif self._strudel_window:
-            # Toggle visibility
-            if self._strudel_window.isVisible():
-                self._strudel_window.hide()
-            else:
-                self._strudel_window.show()
-                self._strudel_window.raise_()
-                self.desktop.setActiveSubWindow(self._strudel_window)
+        if self._strudel_visible:
+            self._hide_strudel()
+        else:
+            self._show_strudel()
+
+    def toggle_window_from_bridge(self, window_id: str) -> None:
+        if window_id == "plugin_ui":
+            current = self.mdi_windows.get("Plugin UI") if hasattr(self, "mdi_windows") else None
+            if not current:
+                return
+            visible = current.isVisible()
+            if hasattr(current, "isMinimized"):
+                try:
+                    visible = visible and not current.isMinimized()
+                except Exception:
+                    pass
+            self._set_plugin_ui_visible(not visible)
+        elif window_id == "strudel":
+            self._toggle_strudel_window()
+
+    def focus_window(self, window_id: str) -> None:
+        if window_id == "plugin_ui":
+            self._set_plugin_ui_visible(True)
+            window = self.mdi_windows.get("Plugin UI") if hasattr(self, "mdi_windows") else None
+            if window:
+                window.show()
+                window.raise_()
+                window.activateWindow()
+        elif window_id == "strudel":
+            self._show_strudel()
+
+    def closeEvent(self, event) -> None:  # type: ignore[override]
+        self._stop_strudel_proxy()
+        super().closeEvent(event)
 
 
 class PluginRackWidget(QFrame):
     """Plugin Rack UI with A/B lanes and optional Carla auditioning."""
+
+    stateChanged = Signal(dict)
+    hostStatusChanged = Signal(str)
+    currentPluginChanged = Signal(dict)
+    logMessage = Signal(str)
+    keyboardStateChanged = Signal(dict)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -1029,6 +1414,8 @@ class PluginRackWidget(QFrame):
         self.param_sliders: dict[object, dict[str, object]] = {}
         self._updating_from_host = False
         self._current_loaded_path: Optional[str] = None
+        self._log_history: deque[str] = deque(maxlen=500)
+        self._keyboard_enabled = False
 
         # Window embedding state
         self._embedded_original_parent: Optional[int] = None
@@ -1067,16 +1454,6 @@ class PluginRackWidget(QFrame):
         self.refresh_btn.clicked.connect(self.refresh)
         self.refresh_btn.setMaximumHeight(22)
         top_row.addWidget(self.refresh_btn)
-
-        self.save_session_btn = QPushButton("Save")
-        self.save_session_btn.setObjectName("sessionSaveButton")
-        self.save_session_btn.setMaximumHeight(22)
-        top_row.addWidget(self.save_session_btn)
-
-        self.load_session_btn = QPushButton("Load")
-        self.load_session_btn.setObjectName("sessionLoadButton")
-        self.load_session_btn.setMaximumHeight(22)
-        top_row.addWidget(self.load_session_btn)
 
         self.host_status = QLabel()
         self.host_status.setVisible(False)
@@ -1156,21 +1533,21 @@ class PluginRackWidget(QFrame):
         self._groupbox_titles[self.params_group] = "Plugin UI"
         self.param_layout.setContentsMargins(4, 20, 4, 4)
 
-        # Create a scrollable container for plugin UI
-        self.plugin_ui_scroll = QScrollArea()
-        self.plugin_ui_scroll.setWidgetResizable(True)
-        self.plugin_ui_scroll.setMinimumHeight(400)
-        # Removed inline stylesheet to allow theme control
-
         # Create a container widget that will host the external window
         self.plugin_ui_container = QWidget()
         self.plugin_ui_container.setMinimumSize(400, 400)
-        # Removed inline stylesheet to allow theme control
+        self.plugin_ui_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.plugin_ui_container.setStyleSheet("background: transparent; border: 0;")
         # Install event filter to handle resizing
         self.plugin_ui_container.installEventFilter(self)
 
-        self.plugin_ui_scroll.setWidget(self.plugin_ui_container)
-        self.param_layout.addWidget(self.plugin_ui_scroll)
+        self.plugin_ui_holder = QWidget()
+        self.plugin_ui_holder.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, False)
+        holder_layout = QVBoxLayout(self.plugin_ui_holder)
+        holder_layout.setContentsMargins(0, 0, 0, 0)
+        holder_layout.setSpacing(0)
+        holder_layout.addWidget(self.plugin_ui_container)
+        self.param_layout.addWidget(self.plugin_ui_holder)
 
         # Label for when no plugin is loaded (in container, not param_layout)
         self.no_plugin_label = QLabel("No plugin loaded", self.plugin_ui_container)
@@ -1207,6 +1584,8 @@ class PluginRackWidget(QFrame):
 
         # Connect octave spinner to update keyboard mapping
         self.keyboard.octave_spin.valueChanged.connect(self._update_keyboard_mapping)
+        self.keyboard.octave_spin.valueChanged.connect(lambda _value: self._emit_keyboard_state())
+        self.keyboard.velocity_slider.valueChanged.connect(lambda _value: self._emit_keyboard_state())
 
         # Don't add keyboard to viewport_layout - it will be used in MDI window
         # viewport_layout.addWidget(self.keyboard)
@@ -1215,6 +1594,9 @@ class PluginRackWidget(QFrame):
         self._mouse_is_pressed = False
         self._current_drag_note = None
         self._last_note_time = 0  # For debouncing
+        self._active_keyboard_notes: set[int] = set()
+
+        self._emit_keyboard_state()
 
         # Console log viewer
         self.log_group = QGroupBox("Console Log")
@@ -1243,6 +1625,7 @@ class PluginRackWidget(QFrame):
 
         # Plugin UI embedding state
         self._embedded_hwnd = None
+        self._carla_warmup_started = False
 
         # Initial state
         self.refresh()
@@ -1298,7 +1681,6 @@ class PluginRackWidget(QFrame):
             Qt.Key.Key_9: 73,   # C#5
             Qt.Key.Key_0: 75,   # D#5
         }
-        self._active_keyboard_notes = set()  # Track which notes are currently playing
 
         # Enable keyboard input - make sure we can receive keyboard events
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -1492,7 +1874,7 @@ class PluginRackWidget(QFrame):
             return
 
         # Check if this is a mapped piano key
-        if key in self._key_to_note and self.keyboard.isVisible() and self.carla:
+        if key in self._key_to_note and self.is_keyboard_enabled() and self.carla:
             note = self._key_to_note[key]
             # Only send note-on if not already playing
             if note not in self._active_keyboard_notes:
@@ -1517,7 +1899,7 @@ class PluginRackWidget(QFrame):
         key = event.key()
 
         # Check if this is a mapped piano key
-        if key in self._key_to_note and self.keyboard.isVisible():
+        if key in self._key_to_note and self.is_keyboard_enabled():
             note = self._key_to_note[key]
             # Always send note-off, even if we think it's not playing
             if note in self._active_keyboard_notes:
@@ -1552,6 +1934,22 @@ class PluginRackWidget(QFrame):
         except Exception as exc:
             self._log(f"⚠️ Error resizing embedded window: {exc}")
 
+    def resize_plugin_viewport(self, width: int, height: int) -> None:
+        """Ensure the plugin viewport matches the requested size."""
+        width = max(200, int(width))
+        height = max(150, int(height))
+        self.plugin_ui_container.setMinimumSize(width, height)
+        self.plugin_ui_container.resize(width, height)
+        if hasattr(self, "plugin_ui_holder"):
+            self.plugin_ui_holder.setMinimumSize(width, height + 8)
+        if hasattr(self, "params_group"):
+            margins = self.params_group.layout().contentsMargins()
+            extra = margins.top() + margins.bottom() + 20
+            self.params_group.setMinimumHeight(height + extra)
+        if hasattr(self, "param_layout"):
+            self.param_layout.invalidate()
+        self._resize_embedded_window()
+
     # Plugin chain data (simple list of plugin paths)
     @property
     def plugin_chain(self) -> list[str]:
@@ -1560,6 +1958,123 @@ class PluginRackWidget(QFrame):
             self.chain_list.item(i).data(Qt.UserRole)
             for i in range(self.chain_list.count())
         ]
+
+    def serialize_state(self) -> dict:
+        """Return a JSON-serialisable snapshot of plugin/card state."""
+        workspace_label = getattr(self, "workspace_label", None)
+        host_status_label = getattr(self, "host_status", None)
+        workspace_text = workspace_label.text() if workspace_label else ""
+        workspace = (workspace_text or "").replace("Workspace:", "").strip()
+        state = {
+            "workspace": workspace,
+            "plugins": self._collect_plugins(),
+            "chain": self._collect_chain(),
+            "hostStatus": host_status_label.text() if host_status_label else "",
+            "currentPluginPath": self._current_loaded_path,
+        }
+        return state
+
+    def _collect_plugins(self) -> list[dict]:
+        list_widget = getattr(self, "plugins_list", None)
+        if list_widget is None:
+            return []
+        plugins: list[dict] = []
+        for idx in range(list_widget.count()):
+            item = list_widget.item(idx)
+            data = item.data(Qt.UserRole) or {}
+            entry = {
+                "name": data.get("name") or item.text(),
+                "format": data.get("format"),
+                "path": str(data.get("path") or ""),
+                "index": idx,
+            }
+            plugins.append(entry)
+        return plugins
+
+    def _collect_chain(self) -> list[dict]:
+        chain_list = getattr(self, "chain_list", None)
+        if chain_list is None:
+            return []
+        chain: list[dict] = []
+        for idx in range(chain_list.count()):
+            item = chain_list.item(idx)
+            path_value = item.data(Qt.UserRole)
+            chain.append({
+                "label": item.text(),
+                "path": str(path_value or ""),
+                "index": idx,
+                "active": str(path_value or "") == (self._current_loaded_path or ""),
+            })
+        return chain
+
+    def _emit_state(self) -> None:
+        try:
+            state = self.serialize_state()
+        except Exception as exc:  # pragma: no cover
+            print(f"[PLUGIN STUDIO] Failed to serialize state: {exc}")
+            return
+        self.stateChanged.emit(state)
+
+    def get_log_history(self) -> list[str]:
+        return list(self._log_history)
+
+    def serialize_keyboard_state(self) -> dict:
+        return {
+            "octave": self.keyboard.octave_spin.value(),
+            "velocity": self.keyboard.velocity_slider.value(),
+            "activeNotes": sorted(self._active_keyboard_notes),
+            "enabled": bool(self._keyboard_enabled),
+        }
+    def _emit_keyboard_state(self) -> None:
+        if not hasattr(self, "keyboard"):
+            return
+        self.keyboardStateChanged.emit(self.serialize_keyboard_state())
+
+    def _set_keyboard_enabled(self, enabled: bool) -> None:
+        """Enable/disable keyboard logic without surfacing the legacy widget."""
+        self._keyboard_enabled = bool(enabled)
+        if hasattr(self, "keyboard"):
+            try:
+                self.keyboard.setVisible(False)
+            except Exception:
+                pass
+        self._emit_keyboard_state()
+
+    def is_keyboard_enabled(self) -> bool:
+        return bool(getattr(self, "_keyboard_enabled", False))
+
+    def add_plugin_by_path(self, path: str) -> bool:
+        """Add plugin to chain based on its absolute path."""
+        if not path:
+            return False
+        for idx in range(self.plugins_list.count()):
+            item = self.plugins_list.item(idx)
+            data = item.data(Qt.UserRole) or {}
+            if str(data.get("path")) == str(path):
+                self.plugins_list.setCurrentRow(idx)
+                self.add_selected_to_chain()
+                return True
+        self._log(f"Plugin path not found in discovery list: {path}")
+        return False
+
+    def remove_chain_index(self, index: int) -> bool:
+        if 0 <= index < self.chain_list.count():
+            self.chain_list.setCurrentRow(index)
+            self.remove_selected_from_chain()
+            return True
+        return False
+
+    def select_chain_index(self, index: int) -> bool:
+        if 0 <= index < self.chain_list.count():
+            self.chain_list.setCurrentRow(index)
+            return True
+        return False
+
+    def load_chain_index(self, index: int) -> bool:
+        if self.select_chain_index(index):
+            self._load_selected_plugin()
+            return True
+        return False
 
     # --- Data ops
     def refresh(self) -> None:
@@ -1587,6 +2102,7 @@ class PluginRackWidget(QFrame):
         # It's a simple ordered list maintained by add/remove operations
 
         self._update_host_status()
+        self._emit_state()
 
     def add_selected_to_chain(self) -> None:
         """Add selected plugin from discovered list to the plugin chain."""
@@ -1609,6 +2125,7 @@ class PluginRackWidget(QFrame):
         li.setData(Qt.UserRole, path)
         self.chain_list.addItem(li)
         self._log(f"Added to chain: {name}")
+        self._emit_state()
 
     def remove_selected_from_chain(self) -> None:
         """Remove selected plugin from the chain."""
@@ -1619,6 +2136,7 @@ class PluginRackWidget(QFrame):
             if item and item.data(Qt.UserRole) == self._current_loaded_path:
                 self.unload_host()
             self.chain_list.takeItem(row)
+            self._emit_state()
 
     def _on_chain_selection(self, row: int) -> None:
         """Handle selection change in the plugin chain list."""
@@ -1653,6 +2171,12 @@ class PluginRackWidget(QFrame):
                 self._current_loaded_path = str(path)
                 self._log("Plugin loaded successfully")
                 self._update_host_status()
+                descriptor = {
+                    "path": str(path),
+                    "name": Path(str(path)).stem if path else "Plugin",
+                }
+                self.currentPluginChanged.emit(descriptor)
+                self._emit_state()
 
                 # Try to embed the plugin UI with retry
                 self._embed_retry_count = 0
@@ -1660,39 +2184,23 @@ class PluginRackWidget(QFrame):
 
                 # Show plugin UI window
                 parent_window = self.parent()
-                if parent_window and hasattr(parent_window, 'mdi_windows'):
-                    if "Plugin UI" in parent_window.mdi_windows:
-                        parent_window.mdi_windows["Plugin UI"].show()
-                        parent_window.mdi_windows["Plugin UI"].raise_()
+                if parent_window and hasattr(parent_window, '_set_plugin_ui_visible'):
+                    parent_window._set_plugin_ui_visible(True)
 
-                # Show keyboard if plugin is an instrument
+                # Enable MIDI keyboard if plugin exposes instrument capabilities
                 try:
                     status = self.carla.status()
                     caps = status.get("capabilities", {})
                     is_instrument = caps.get("instrument", False) or caps.get("midi", False)
-                    self.keyboard.setVisible(is_instrument)
-
-                    # Show/hide keyboard window based on instrument capability
-                    if parent_window and hasattr(parent_window, 'mdi_windows'):
-                        if "Instrument Keyboard" in parent_window.mdi_windows:
-                            if is_instrument:
-                                parent_window.mdi_windows["Instrument Keyboard"].show()
-                                parent_window.mdi_windows["Instrument Keyboard"].raise_()
-                            else:
-                                parent_window.mdi_windows["Instrument Keyboard"].hide()
-
+                    self._set_keyboard_enabled(is_instrument)
                     self._log(f"Plugin is instrument: {is_instrument}")
                 except Exception as e:
                     self._log(f"Error checking instrument: {e}")
-                    self.keyboard.setVisible(False)
-                    # Hide keyboard window on error
-                    if parent_window and hasattr(parent_window, 'mdi_windows'):
-                        if "Instrument Keyboard" in parent_window.mdi_windows:
-                            parent_window.mdi_windows["Instrument Keyboard"].hide()
+                    self._set_keyboard_enabled(False)
         except Exception as exc:
             self._log(f"Load error: {exc}")
             self._display_host_status(f"Load error: {exc}")
-            self.keyboard.setVisible(False)
+            self._set_keyboard_enabled(False)
 
     # --- Carla integration
     def _init_carla(self) -> None:
@@ -1713,6 +2221,31 @@ class PluginRackWidget(QFrame):
         if hasattr(self, "host_status"):
             self.host_status.setText(message)
             self.host_status.setVisible(bool(message))
+        self.hostStatusChanged.emit(message)
+        self._emit_state()
+
+    def _schedule_carla_warmup(self) -> None:
+        if self._carla_warmup_started or not CARLA_AVAILABLE:
+            return
+        self._carla_warmup_started = True
+
+        def _warmup() -> None:
+            try:
+                if not self._ensure_carla():
+                    return
+                assert self.carla is not None
+                self.carla.warm_up_engine()
+                self._log("Carla backend warmed (engine ready)")
+            except Exception as exc:
+                self._log(f"Carla warmup failed: {exc}")
+            finally:
+                self._carla_warmup_timer = None
+
+        timer = QTimer(self)
+        timer.setSingleShot(True)
+        timer.timeout.connect(_warmup)
+        timer.start(500)
+        self._carla_warmup_timer = timer
 
     def apply_theme_titles(self, theme: str) -> None:
         blank = theme == "win7"
@@ -1780,19 +2313,17 @@ class PluginRackWidget(QFrame):
             self.carla.unload()
             self._update_host_status()
             self.no_plugin_label.setVisible(True)
-            self.plugin_ui_scroll.setVisible(False)
             # Reset container size
             self.plugin_ui_container.setMinimumSize(400, 400)
             self._current_loaded_path = None
-            self.keyboard.setVisible(False)
+            self._set_keyboard_enabled(False)
+            self.currentPluginChanged.emit({})
+            self._emit_state()
 
             # Hide plugin UI and keyboard windows when unloading
             parent_window = self.parent()
-            if parent_window and hasattr(parent_window, 'mdi_windows'):
-                if "Plugin UI" in parent_window.mdi_windows:
-                    parent_window.mdi_windows["Plugin UI"].hide()
-                if "Instrument Keyboard" in parent_window.mdi_windows:
-                    parent_window.mdi_windows["Instrument Keyboard"].hide()
+            if parent_window and hasattr(parent_window, '_set_plugin_ui_visible'):
+                parent_window._set_plugin_ui_visible(False)
         except Exception as exc:
             self._display_host_status(f"Unload error: {exc}")
 
@@ -1886,7 +2417,6 @@ class PluginRackWidget(QFrame):
             user32.ShowWindow(plugin_hwnd, 1)  # SW_SHOWNORMAL
 
             self.no_plugin_label.setVisible(False)
-            self.plugin_ui_scroll.setVisible(True)
 
             self._log("✅ Plugin UI embedded successfully")
 
@@ -1943,6 +2473,8 @@ class PluginRackWidget(QFrame):
 
         # Use fast path to bypass latency
         self._send_midi_fast(note, velocity_normalized)
+        self._active_keyboard_notes.add(int(note))
+        self._emit_keyboard_state()
 
     def _send_midi_note_off(self, note: int) -> None:
         """Send MIDI note-off to Carla immediately using fast path."""
@@ -1951,6 +2483,8 @@ class PluginRackWidget(QFrame):
 
         # Use fast path with velocity 0 = note off
         self._send_midi_fast(note, 0.0)
+        self._active_keyboard_notes.discard(int(note))
+        self._emit_keyboard_state()
 
     def _emergency_all_notes_off(self) -> None:
         """Emergency: Turn off all currently playing notes."""
@@ -1973,6 +2507,34 @@ class PluginRackWidget(QFrame):
         self._active_keyboard_notes.clear()
         self._current_drag_note = None
         self._mouse_is_pressed = False
+        self._emit_keyboard_state()
+
+    def trigger_note_on(self, note: int) -> None:
+        if not self.carla:
+            return
+        self._send_midi_note_on(int(note))
+
+    def trigger_note_off(self, note: int) -> None:
+        if not self.carla:
+            return
+        self._send_midi_note_off(int(note))
+
+    def set_keyboard_velocity(self, value: int) -> None:
+        clamped = max(0, min(127, int(value)))
+        self.keyboard.velocity_slider.setValue(clamped)
+        self._emit_keyboard_state()
+
+    def set_keyboard_octave(self, value: int) -> None:
+        clamped = max(self.keyboard.octave_spin.minimum(), min(self.keyboard.octave_spin.maximum(), int(value)))
+        self.keyboard.octave_spin.setValue(clamped)
+        self._emit_keyboard_state()
+
+    # --- Session stubs
+    def save_session(self) -> None:
+        self._log("Session save not implemented yet.")
+
+    def load_session(self) -> None:
+        self._log("Session load not implemented yet.")
 
         self._log("🛑 All notes off (emergency)")
 
@@ -2042,6 +2604,8 @@ class PluginRackWidget(QFrame):
         cursor = self.log_viewer.textCursor()
         cursor.movePosition(QTextCursor.End)
         self.log_viewer.setTextCursor(cursor)
+        self._log_history.append(message)
+        self.logMessage.emit(message)
 
 
 class InstrumentKeyboardWidget(QGroupBox):
@@ -2205,133 +2769,228 @@ class InstrumentKeyboardWidget(QGroupBox):
 
         # Note: Keyboard mapping is updated via direct signal connection in PluginRackWidget
 
+class StaticHTTPServer:
+    """Simple HTTP server for serving local assets (web desktop, Strudel, etc.)."""
 
-class StrudelPlaceholder(QWidget):
-    """Lightweight placeholder to avoid loading WebEngine at startup."""
-
-    def __init__(self, on_load, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        v = QVBoxLayout(self)
-        msg = QLabel("Strudel is not loaded. Click to load the embedded UI.")
-        msg.setWordWrap(True)
-        btn = QPushButton("Load Strudel")
-        btn.clicked.connect(on_load)
-        v.addWidget(msg)
-        v.addWidget(btn)
-
-class StrudelHTTPServer:
-    """Simple HTTP server for serving Strudel files with proper CORS headers."""
-
-    def __init__(self, directory: Path, port: int = 0):
-        self.directory = directory
+    def __init__(self, root: Path, mounts: Optional[dict[str, Path]] = None, fallback: Optional[Path] = None, port: int = 0):
+        self.root = Path(root).resolve()
+        self.mounts = self._normalize_mounts(mounts or {})
+        self.fallback = Path(fallback).resolve() if fallback else None
         self.port = port
-        self.server = None
-        self.thread = None
-        self.actual_port = None
+        self.strudel_proxy_prefix = STRUDEL_PROXY_PREFIX
+        self.strudel_remote_base = STRUDEL_REMOTE_BASE
+        self.strudel_proxy_timeout = STRUDEL_PROXY_TIMEOUT
+        self.strudel_proxy_user_agent = STRUDEL_PROXY_USER_AGENT
+        self.strudel_asset_prefixes = STRUDEL_PROXY_ASSET_PREFIXES
+        self.strudel_asset_exact = STRUDEL_PROXY_ASSET_EXACT
+        self.server: socketserver.TCPServer | None = None
+        self.thread: threading.Thread | None = None
+        self.actual_port: int | None = None
+
+    @staticmethod
+    def _normalize_mounts(mounts: dict[str, Path]) -> dict[str, Path]:
+        normalized: dict[str, Path] = {}
+        for prefix, directory in mounts.items():
+            clean = prefix.strip("/")
+            if not clean:
+                continue
+            normalized[f"/{clean}/"] = Path(directory).resolve()
+        return normalized
 
     def start(self) -> int:
         """Start the HTTP server in a background thread. Returns the port number."""
-        if self.server is not None:
+        if self.server is not None and self.actual_port is not None:
             return self.actual_port
 
-        class CORSHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
-            """HTTP handler with CORS headers enabled."""
+        root = self.root
+        mounts = self.mounts
+        fallback = self.fallback
+        strudel_proxy_prefix = self.strudel_proxy_prefix
+        strudel_remote_base = self.strudel_remote_base
+        strudel_proxy_timeout = self.strudel_proxy_timeout
+        strudel_proxy_user_agent = self.strudel_proxy_user_agent
+        strudel_asset_prefixes = self.strudel_asset_prefixes
+        strudel_asset_exact = self.strudel_asset_exact
 
-            def __init__(self, *args, directory=None, **kwargs):
-                super().__init__(*args, directory=str(directory), **kwargs)
+        class MultiRootHandler(http.server.SimpleHTTPRequestHandler):
+            def __init__(self, *args, **kwargs):
+                self._root = root
+                self._mounts = mounts
+                self._fallback = fallback
+                self._strudel_proxy_prefix = strudel_proxy_prefix
+                self._strudel_remote_base = strudel_remote_base
+                self._strudel_proxy_timeout = strudel_proxy_timeout
+                self._strudel_proxy_user_agent = strudel_proxy_user_agent
+                self._strudel_asset_prefixes = strudel_asset_prefixes
+                self._strudel_asset_exact = strudel_asset_exact
+                super().__init__(*args, directory=str(root), **kwargs)
 
-            def end_headers(self):
-                # Add CORS headers to allow Strudel to fetch resources
-                self.send_header('Access-Control-Allow-Origin', '*')
-                self.send_header('Access-Control-Allow-Methods', 'GET, OPTIONS')
-                self.send_header('Access-Control-Allow-Headers', '*')
-                self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate')
-                super().end_headers()
+            def do_GET(self):
+                if self._handle_strudel_proxy():
+                    return
+                super().do_GET()
 
-            def log_message(self, format, *args):
-                # Suppress HTTP server logs
+            def translate_path(self, path: str) -> str:
+                parsed = urlparse(path)
+                clean_path = unquote(parsed.path or "/")
+                if not clean_path.startswith("/"):
+                    clean_path = "/" + clean_path
+                for prefix, directory in self._mounts.items():
+                    if clean_path == prefix[:-1] or clean_path.startswith(prefix):
+                        rel = clean_path[len(prefix):].lstrip("/")
+                        return str((directory / rel).resolve())
+                rel = clean_path.lstrip("/")
+                candidate = (self._root / rel).resolve()
+                if candidate.exists():
+                    return str(candidate)
+                if self._fallback:
+                    fallback_candidate = (self._fallback / rel).resolve()
+                    if fallback_candidate.exists():
+                        return str(fallback_candidate)
+                return str(candidate)
+
+            def _handle_strudel_proxy(self) -> bool:
+                prefix = (self._strudel_proxy_prefix or "").rstrip("/")
+                if not prefix:
+                    return False
+                if not prefix.startswith("/"):
+                    prefix = f"/{prefix}"
+                parsed = urlparse(self.path)
+                path = parsed.path or "/"
+                if path == prefix or path == f"{prefix}/":
+                    self._proxy_strudel_request("/", parsed.query)
+                    return True
+                if path.startswith(f"{prefix}/"):
+                    relative = path[len(prefix):] or "/"
+                    self._proxy_strudel_request(relative, parsed.query)
+                    return True
+                if self._is_strudel_asset_path(path):
+                    self._proxy_strudel_request(path, parsed.query)
+                    return True
+                referer = self.headers.get("Referer", "")
+                host_header = self.headers.get("Host")
+                default_host = self.server.server_address[0]
+                default_port = self.server.server_address[1]
+                origin = f"http://{host_header or f'{default_host}:{default_port}'}"
+                referer_prefix = f"{origin}{prefix}/"
+                if not referer.startswith(referer_prefix):
+                    return False
+                accept = self.headers.get("Accept", "")
+                if self._should_redirect_to_prefix(path, accept):
+                    target = self._build_prefixed_path(path, parsed.query, prefix)
+                    self.send_response(HTTPStatus.FOUND)
+                    self.send_header("Location", target)
+                    self.end_headers()
+                    return True
+                self._proxy_strudel_request(path, parsed.query)
+                return True
+
+            def _is_strudel_asset_path(self, path: str) -> bool:
+                for prefix in self._strudel_asset_prefixes:
+                    if path.startswith(prefix):
+                        return True
+                return path in self._strudel_asset_exact
+
+            @staticmethod
+            def _should_redirect_to_prefix(path: str, accept: str) -> bool:
+                suffix = PurePosixPath(path).suffix.lower()
+                if not suffix:
+                    return True
+                if suffix in {".html", ".htm"}:
+                    return True
+                if "text/html" in accept:
+                    return True
+                return False
+
+            @staticmethod
+            def _build_prefixed_path(path: str, query: str, prefix: str) -> str:
+                base = prefix.rstrip("/")
+                suffix = path.lstrip("/")
+                proxied = f"{base}/" if not suffix else f"{base}/{suffix}"
+                if query:
+                    return f"{proxied}?{query}"
+                return proxied
+
+            def _proxy_strudel_request(self, remote_path: str, query: str) -> None:
+                clean = remote_path or "/"
+                if not clean.startswith("/"):
+                    clean = f"/{clean}"
+                upstream = urljoin(self._strudel_remote_base, clean)
+                if query:
+                    upstream = f"{upstream}?{query}"
+                self._stream_remote(upstream)
+
+            def _stream_remote(self, remote_url: str) -> None:
+                request = Request(
+                    remote_url,
+                    headers={
+                        "User-Agent": self._strudel_proxy_user_agent,
+                        "Accept": "*/*",
+                        "Accept-Encoding": "identity",
+                    },
+                )
+                try:
+                    with urlopen(request, timeout=self._strudel_proxy_timeout) as response:
+                        data = response.read()
+                        status = getattr(response, "status", response.getcode())
+                        self._write_proxy_response(status, response.headers, data)
+                except HTTPError as exc:
+                    body = exc.read()
+                    self._write_proxy_response(exc.code, exc.headers, body)
+                except URLError as exc:
+                    reason = getattr(exc, "reason", exc)
+                    print(f"[STRUDEL] Proxy fetch failed for {remote_url}: {reason}")
+                    self.send_error(HTTPStatus.BAD_GATEWAY, f"Strudel proxy failed: {reason}")
+
+            def _write_proxy_response(self, status: int, headers, body: bytes) -> None:
+                self.send_response(status)
+                content_type = headers.get("Content-Type", "application/octet-stream") if headers else "application/octet-stream"
+                self.send_header("Content-Type", content_type)
+                self.send_header("Content-Length", str(len(body)))
+                cache_control = headers.get("Cache-Control") if headers else None
+                self.send_header("Cache-Control", cache_control or "no-store")
+                if headers:
+                    for key, value in headers.items():
+                        lowered = key.lower()
+                        if lowered in STRUDEL_PROXY_HEADER_BLOCKLIST:
+                            continue
+                        if lowered in {"content-type", "content-length"}:
+                            continue
+                        self.send_header(key, value)
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, format: str, *args) -> None:
                 pass
 
-        handler = partial(CORSHTTPRequestHandler, directory=self.directory)
+        handler = partial(MultiRootHandler)
 
-        # Find an available port
-        with socketserver.TCPServer(("127.0.0.1", self.port), handler) as test_server:
-            self.actual_port = test_server.server_address[1]
+        class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+            allow_reuse_address = True
 
-        # Create the actual server
-        self.server = socketserver.TCPServer(("127.0.0.1", self.actual_port), handler)
-        self.server.allow_reuse_address = True
+        bind_port = self.port or 0
+        self.server = ThreadedTCPServer(("127.0.0.1", bind_port), handler)
+        self.actual_port = self.server.server_address[1]
 
-        # Start in background thread
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
 
         return self.actual_port
 
-    def stop(self):
+    def stop(self) -> None:
         """Stop the HTTP server."""
         if self.server:
             self.server.shutdown()
             self.server.server_close()
             self.server = None
+        if self.thread:
+            self.thread.join(timeout=1.0)
             self.thread = None
+        self.actual_port = None
 
-# Global Strudel HTTP server instance
-_strudel_http_server: Optional[StrudelHTTPServer] = None
 
-class StrudelViewWidget(QWidget):
-    """Embedded view for Strudel (bundled resources/strudel/dist)."""
+_desktop_http_server: Optional[StaticHTTPServer] = None
 
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setObjectName("strudelContainer")
-        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        v = QVBoxLayout(self)
-
-        if not WEBENGINE_AVAILABLE:
-            msg = QLabel(
-                "Qt WebEngine not available. Install PyQt6-WebEngine to enable the embedded browser UI."
-            )
-            msg.setWordWrap(True)
-            v.addWidget(msg)
-            return
-
-        try:
-            from qtpy.QtWebEngineWidgets import QWebEngineView  # type: ignore
-            from qtpy.QtCore import QUrl
-        except Exception as exc:  # pragma: no cover
-            fallback = QLabel(f"WebEngine import failed: {exc}")
-            fallback.setWordWrap(True)
-            v.addWidget(fallback)
-            return
-
-        self.web = QWebEngineView(self)
-        v.addWidget(self.web, 1)
-
-        # Check if Strudel directory exists
-        target = _ROOT / "resources" / "strudel" / "dist"
-        if not target.exists():
-            v.addWidget(QLabel("No local Strudel directory found."))
-            return
-
-        # Start HTTP server for Strudel
-        global _strudel_http_server
-        if _strudel_http_server is None:
-            _strudel_http_server = StrudelHTTPServer(target)
-
-        try:
-            port = _strudel_http_server.start()
-            url = f"http://127.0.0.1:{port}/"
-
-            status = QLabel(f"Strudel server running on port {port}")
-            status.setStyleSheet("color: #9aa; font-size: 11px;")
-            v.insertWidget(1, status)
-
-            self.web.load(QUrl(url))
-        except Exception as exc:
-            error_msg = QLabel(f"Failed to start Strudel server: {exc}")
-            error_msg.setWordWrap(True)
-            v.addWidget(error_msg)
 
 
 def main(argv: Optional[list[str]] = None) -> int:
@@ -2344,7 +3003,6 @@ def main(argv: Optional[list[str]] = None) -> int:
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(main())
-
 
 
 

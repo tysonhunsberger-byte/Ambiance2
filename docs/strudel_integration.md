@@ -20,11 +20,28 @@ Ambiance only needs the compiled web bundle and a small message bridge so patter
    cd strudel
    pnpm install
    ```
-3. **Build the web package**:
+3. **Build + sync the bundle**:
    ```bash
-   pnpm --filter strudel-web build
+   # from the Ambiance root
+   python tools/sync_strudel.py --source ../strudel
    ```
-   The compiled assets land in `packages/web/dist`.  Copy that directory into Ambiance, e.g. `ambiance/resources/strudel/dist`.
+   The helper script runs `pnpm --filter ./website build` for you (unless you pass `--no-build`) and copies `website/dist` into `resources/strudel/dist`.  If you already have a built `dist` folder, you can point `--source` directly to it and the script will simply copy the assets.  Add `--install` if the repo still needs `pnpm install`, and use `--pnpm C:\path\to\pnpm.exe` if pnpm is not on `PATH`.
+
+## 3. Run the standalone Strudel proxy
+
+The Qt shell no longer embeds Strudel through the legacy iframe hack.  Instead, Ambiance boots a lightweight HTTP proxy that serves `resources/strudel/dist` at `http://127.0.0.1:<port>/` and falls back to https://strudel.cc/ whenever a file is missing.  You can run the proxy manually while developing:
+
+```bash
+python -m ambiance.strudel_proxy --root resources/strudel/dist --port 58145
+```
+
+Key behaviors:
+
+- **Local-first.**  Requests hit the built bundle inside `resources/strudel/dist`.  If you delete a file or haven’t synced yet, the proxy streams the live site instead so you can keep working.
+- **Iframe-safe headers.**  Response headers that usually block embedding (`X-Frame-Options`, CSP, etc.) are stripped so the WebEngine view can display every page.
+- **Zero config for the desktop.**  When the Qt shell starts, it autostarts the proxy on a random localhost port and points the Strudel window at it.  Killing the app shuts the proxy down.
+
+You can adjust the remote fallback (e.g. to a staging build) via `--remote https://staging.strudel.cc/`.
 
 ## 3. Embed the UI in Qt
 

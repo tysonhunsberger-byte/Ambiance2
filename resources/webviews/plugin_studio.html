@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>Plugin Studio Prototype</title>
+    <style>
+        :root {
+            font-family: "Segoe UI", "Tahoma", sans-serif;
+            color: #0f1c33;
+        }
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            margin: 0;
+            background: linear-gradient(180deg, rgba(255,255,255,0.95), rgba(230,240,255,0.85));
+            color: inherit;
+        }
+        header {
+            padding: 12px 18px;
+            background: rgba(255,255,255,0.85);
+            border-bottom: 1px solid rgba(120,160,210,0.35);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        header .workspace {
+            flex: 1;
+            font-weight: 600;
+        }
+        header button {
+            border: 1px solid rgba(70, 120, 200, 0.6);
+            background: linear-gradient(180deg, #f8fcff, #d8e8ff);
+            color: #123465;
+            border-radius: 6px;
+            padding: 6px 14px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        header button:active {
+            transform: translateY(1px);
+        }
+        main {
+            display: flex;
+            gap: 16px;
+            padding: 16px;
+        }
+        section.panel {
+            flex: 1;
+            background: rgba(255,255,255,0.9);
+            border: 1px solid rgba(120,160,210,0.45);
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            min-height: 260px;
+        }
+        section.panel h2 {
+            margin: 0;
+            padding: 12px 16px 8px 16px;
+            font-size: 15px;
+            color: #1a3c72;
+        }
+        .list {
+            overflow: auto;
+            flex: 1;
+            padding: 0 16px 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .card {
+            border: 1px solid rgba(85, 130, 195, 0.35);
+            border-radius: 10px;
+            padding: 10px 12px;
+            background: rgba(248, 252, 255, 0.9);
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            align-items: center;
+        }
+        .card.active {
+            border-color: rgba(42, 108, 215, 0.9);
+            box-shadow: inset 0 0 0 1px rgba(255,255,255,0.7);
+        }
+        .card h3 {
+            margin: 0;
+            font-size: 14px;
+        }
+        .card span {
+            display: block;
+            font-size: 12px;
+            color: #436096;
+        }
+        .card button {
+            border: none;
+            border-radius: 18px;
+            padding: 6px 16px;
+            font-weight: 600;
+            cursor: pointer;
+            background: linear-gradient(180deg, #bce2ff, #7ab5f2);
+            color: #0d2144;
+        }
+        .card button.secondary {
+            background: linear-gradient(180deg, #ffe4e4, #ffb0b0);
+            color: #751e1e;
+        }
+        footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 18px 14px;
+            font-size: 13px;
+            color: #21406a;
+        }
+    </style>
+    <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+    <script>
+        let bridge = null;
+        let state = { plugins: [], chain: [], workspace: "", hostStatus: "" };
+
+        function initChannel() {
+            if (typeof qt === "undefined") {
+                document.getElementById("hostStatus").textContent = "Qt WebChannel unavailable";
+                return;
+            }
+            new QWebChannel(qt.webChannelTransport, channel => {
+                bridge = channel.objects.PluginStudioBridge;
+                bridge.stateUpdated.connect(handleState);
+                bridge.hostStatusChanged.connect(updateHostStatus);
+                bridge.requestInitialState();
+            });
+        }
+
+        function handleState(payload) {
+            try {
+                state = JSON.parse(payload) || state;
+            } catch (err) {
+                console.error("Failed to parse state", err);
+            }
+            render();
+        }
+
+        function updateHostStatus(message) {
+            document.getElementById("hostStatus").textContent = message || "";
+        }
+
+        function render() {
+            document.getElementById("workspace").textContent = state.workspace || "";
+            updateHostStatus(state.hostStatus || "");
+            renderPluginList();
+            renderChain();
+        }
+
+        function renderPluginList() {
+            const mount = document.getElementById("pluginList");
+            mount.innerHTML = "";
+            if (!state.plugins.length) {
+                mount.innerHTML = "<p>No plugins discovered. Refresh to scan workspace.</p>";
+                return;
+            }
+            state.plugins.forEach(plugin => {
+                const card = document.createElement("div");
+                card.className = "card";
+                const text = document.createElement("div");
+                const title = document.createElement("h3");
+                title.textContent = plugin.name || "(untitled)";
+                const meta = document.createElement("span");
+                meta.textContent = `${plugin.format || "?"} | ${plugin.path || ""}`;
+                text.appendChild(title);
+                text.appendChild(meta);
+                const btn = document.createElement("button");
+                btn.textContent = "Add to chain";
+                btn.addEventListener("click", () => bridge && bridge.addPluginByPath(plugin.path || ""));
+                card.appendChild(text);
+                card.appendChild(btn);
+                mount.appendChild(card);
+            });
+        }
+
+        function renderChain() {
+            const mount = document.getElementById("chainList");
+            mount.innerHTML = "";
+            if (!state.chain.length) {
+                mount.innerHTML = "<p>Chain empty. Add plugins to configure routing.</p>";
+                return;
+            }
+            state.chain.forEach(entry => {
+                const card = document.createElement("div");
+                card.className = "card" + (entry.active ? " active" : "");
+                const text = document.createElement("div");
+                const title = document.createElement("h3");
+                title.textContent = entry.label || entry.path;
+                const meta = document.createElement("span");
+                meta.textContent = entry.path || "";
+                text.appendChild(title);
+                text.appendChild(meta);
+                const buttonGroup = document.createElement("div");
+
+                const loadBtn = document.createElement("button");
+                loadBtn.textContent = entry.active ? "Loaded" : "Load";
+                loadBtn.addEventListener("click", () => bridge && bridge.loadChainIndex(entry.index));
+                buttonGroup.appendChild(loadBtn);
+
+                const removeBtn = document.createElement("button");
+                removeBtn.className = "secondary";
+                removeBtn.textContent = "Remove";
+                removeBtn.addEventListener("click", () => bridge && bridge.removeChainIndex(entry.index));
+                buttonGroup.appendChild(removeBtn);
+
+                card.appendChild(text);
+                card.appendChild(buttonGroup);
+                mount.appendChild(card);
+            });
+        }
+
+        function triggerRefresh() {
+            bridge && bridge.refreshPlugins();
+        }
+
+        window.addEventListener("DOMContentLoaded", initChannel);
+    </script>
+</head>
+<body>
+    <header>
+        <div class="workspace" id="workspace">Workspace: ...</div>
+        <button onclick="triggerRefresh()">Refresh</button>
+    </header>
+    <main>
+        <section class="panel">
+            <h2>Discovered Plugins</h2>
+            <div class="list" id="pluginList"></div>
+        </section>
+        <section class="panel">
+            <h2>Plugin Chain</h2>
+            <div class="list" id="chainList"></div>
+        </section>
+    </main>
+    <footer>
+        <div id="hostStatus">Carla idle</div>
+    </footer>
+</body>
+</html>

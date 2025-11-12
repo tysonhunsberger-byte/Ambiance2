@@ -1,0 +1,11 @@
+{
+  "streams": {
+    "Main": {
+      "active_lane": "A",
+      "lanes": {
+        "A": [],
+        "B": []
+      }
+    }
+  }
+}

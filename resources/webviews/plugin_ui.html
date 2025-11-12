@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>Plugin UI Header</title>
+    <style>
+        :root {
+            font-family: "Segoe UI", "Tahoma", sans-serif;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(180deg, rgba(255,255,255,0.95), rgba(210,230,255,0.8));
+            color: #0e1f3c;
+        }
+        .wrapper {
+            padding: 14px 18px 10px;
+        }
+        .title {
+            font-size: 18px;
+            font-weight: 700;
+            margin: 0 0 6px;
+        }
+        .path {
+            font-size: 12px;
+            color: #4a618d;
+            margin: 0 0 12px;
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        button {
+            border: 1px solid rgba(68, 111, 188, 0.7);
+            background: linear-gradient(180deg, #f9fdff, #d3e6ff);
+            border-radius: 16px;
+            padding: 6px 18px;
+            font-weight: 600;
+            color: #143460;
+            cursor: pointer;
+        }
+        button.danger {
+            border-color: rgba(175, 60, 60, 0.9);
+            background: linear-gradient(180deg, #ffe0e0, #ffb3b3);
+            color: #6c1010;
+        }
+        .chain {
+            margin-top: 16px;
+            border-top: 1px solid rgba(120,160,210,0.4);
+            padding-top: 10px;
+        }
+        .chain h3 {
+            margin: 0 0 8px;
+            font-size: 14px;
+            color: #1a3a6e;
+        }
+        .chain-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .chip {
+            border-radius: 12px;
+            padding: 6px 10px;
+            font-size: 12px;
+            background: rgba(255,255,255,0.8);
+            border: 1px solid rgba(80,120,190,0.4);
+            cursor: pointer;
+        }
+        .chip.active {
+            background: rgba(114,168,255,0.25);
+            border-color: rgba(42,108,215,0.8);
+            font-weight: 600;
+        }
+        .status {
+            margin-top: 8px;
+            font-size: 12px;
+            color: #31518b;
+        }
+    </style>
+    <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+    <script>
+        let bridge = null;
+        let state = { chain: [], currentPluginPath: null };
+
+        function initChannel() {
+            if (typeof qt === "undefined") {
+                document.getElementById("status").textContent = "Qt WebChannel unavailable";
+                return;
+            }
+            new QWebChannel(qt.webChannelTransport, channel => {
+                bridge = channel.objects.PluginUIBridge;
+                bridge.stateUpdated.connect(handleState);
+                bridge.pluginChanged.connect(handlePluginChange);
+                bridge.hostStatusChanged.connect(updateStatus);
+                bridge.requestInitialState();
+            });
+        }
+
+        function handleState(payload) {
+            try {
+                state = JSON.parse(payload) || state;
+            } catch (err) {
+                console.error("Failed to parse UI state", err);
+            }
+            render();
+        }
+
+        function handlePluginChange(payload) {
+            try {
+                const descriptor = JSON.parse(payload);
+                state.currentPluginPath = descriptor.path || null;
+            } catch (err) {
+                console.warn("Plugin descriptor parse failed", err);
+            }
+            renderCurrentPlugin();
+            renderChainChips();
+        }
+
+        function updateStatus(message) {
+            document.getElementById("status").textContent = message || "";
+        }
+
+        function render() {
+            renderCurrentPlugin();
+            renderChainChips();
+            updateStatus(state.hostStatus || "");
+        }
+
+        function renderCurrentPlugin() {
+            const title = document.getElementById("pluginTitle");
+            const path = document.getElementById("pluginPath");
+            if (state.currentPluginPath) {
+                const parts = state.currentPluginPath.split(/[\\/]/);
+                title.textContent = parts[parts.length - 1] || "Loaded Plugin";
+                path.textContent = state.currentPluginPath;
+            } else {
+                title.textContent = "No plugin loaded";
+                path.textContent = "Select a plugin from the chain to load it.";
+            }
+        }
+
+        function renderChainChips() {
+            const mount = document.getElementById("chainChips");
+            mount.innerHTML = "";
+            if (!state.chain.length) {
+                const empty = document.createElement("span");
+                empty.textContent = "Chain is empty.";
+                mount.appendChild(empty);
+                return;
+            }
+            state.chain.forEach(entry => {
+                const chip = document.createElement("div");
+                chip.className = "chip" + (entry.active ? " active" : "");
+                chip.textContent = entry.label || entry.path;
+                chip.title = entry.path || "";
+                chip.addEventListener("click", () => bridge && bridge.loadChainIndex(entry.index));
+                mount.appendChild(chip);
+            });
+        }
+
+        function showNativeUI() {
+            bridge && bridge.showNativeUI();
+        }
+
+        function unloadPlugin() {
+            bridge && bridge.unloadPlugin();
+        }
+
+        window.addEventListener("DOMContentLoaded", initChannel);
+    </script>
+</head>
+<body>
+    <div class="wrapper">
+        <p class="title" id="pluginTitle">No plugin loaded</p>
+        <p class="path" id="pluginPath">Select a plugin from the chain.</p>
+        <div class="controls">
+            <button onclick="showNativeUI()">Show Native UI</button>
+            <button class="danger" onclick="unloadPlugin()">Unload Plugin</button>
+        </div>
+        <div class="chain">
+            <h3>Chain</h3>
+            <div class="chain-list" id="chainChips"></div>
+        </div>
+        <div class="status" id="status"></div>
+    </div>
+</body>
+</html>

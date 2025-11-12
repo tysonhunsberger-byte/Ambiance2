@@ -1,0 +1,2918 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>Ambiance Web Desktop</title>
+    <link rel="stylesheet" href="/vendor/98.css/dist/98.css" data-theme-style="win98" disabled>
+    <link rel="stylesheet" href="/vendor/xp.css/dist/XP.css" data-theme-style="winxp" disabled>
+    <link rel="stylesheet" href="/vendor/7.css/dist/7.css" data-theme-style="win7" disabled>
+    <style>
+        :root {
+            --desktop-bg: #0f1c33;
+            --wallpaper-url: none;
+            --window-glass: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(210,230,255,0.82));
+            --window-border: rgba(120,160,210,0.8);
+            --text-color: #0d1f3f;
+            --button-fill: linear-gradient(180deg, #f9fdff, #dfefff);
+            --button-border: rgba(70,120,200,0.85);
+            --panel-bg: rgba(255,255,255,0.9);
+            --taskbar-height: 44px;
+            --toolbar-height: 38px;
+        }
+        body {
+            margin: 0;
+            font-family: "Segoe UI", Arial, sans-serif;
+            background: var(--desktop-bg);
+            color: var(--text-color);
+            overflow: hidden;
+            user-select: none;
+            padding-top: var(--toolbar-height);
+        }
+        #wallpaper {
+            position: fixed;
+            inset: 0;
+            background: var(--desktop-bg);
+            background-image: var(--wallpaper-url);
+            background-size: cover;
+            background-position: center;
+            filter: saturate(1.05);
+            z-index: 0;
+        }
+        #desktop {
+            position: relative;
+            width: 100vw;
+            height: calc(100vh - var(--taskbar-height) - 38px);
+            z-index: 1;
+        }
+        .window {
+            position: absolute;
+            width: 460px;
+            min-height: 240px;
+            display: flex;
+            flex-direction: column;
+            pointer-events: auto;
+            resize: both;
+            min-width: 320px;
+            min-height: 220px;
+            overflow: hidden;
+        }
+        .window[data-window="studio"] {
+            left: 30px;
+            top: 30px;
+            width: 600px;
+            min-height: 360px;
+        }
+        .window[data-window="plugin-ui"] {
+            right: 30px;
+            top: 40px;
+            width: 460px;
+            min-height: 320px;
+        }
+        .window[data-window="keyboard"] {
+            left: 30px;
+            top: 360px;
+            width: 720px;
+            min-height: 260px;
+        }
+        .window[data-window="console"] {
+            right: 30px;
+            top: 360px;
+            width: 420px;
+            min-height: 220px;
+        }
+        .window[data-window="strudel"] {
+            left: 80px;
+            top: 80px;
+            width: min(1100px, calc(100vw - 160px));
+            height: min(640px, calc(100vh - var(--toolbar-height) - var(--taskbar-height) - 120px));
+            min-height: 360px;
+            max-height: calc(100vh - var(--toolbar-height) - var(--taskbar-height) - 32px);
+            resize: both;
+            z-index: 9;
+            display: flex;
+            flex-direction: column;
+            box-sizing: border-box;
+        }
+        .window.maximized {
+            left: 12px !important;
+            top: calc(var(--toolbar-height) + 8px) !important;
+            width: calc(100vw - 24px) !important;
+            height: calc(100vh - var(--toolbar-height) - var(--taskbar-height) - 16px) !important;
+            max-width: none !important;
+            max-height: none !important;
+        }
+        .window-titlebar {
+            padding: 8px 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: grab;
+            gap: 12px;
+        }
+        .window-titlebar .title-bar-text {
+            font-weight: 600;
+            font-size: 14px;
+        }
+        .window-controls {
+            display: flex;
+            gap: 4px;
+        }
+        .window-controls button.is-maximize::before {
+            content: "";
+            display: block;
+            width: 8px;
+            height: 8px;
+            border: 1px solid currentColor;
+            margin: auto;
+        }
+        body[data-theme="flat"] .window-titlebar {
+            background: var(--window-glass);
+            border-radius: 12px 12px 0 0;
+        }
+        body[data-theme="flat"] .window-controls button {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            border: none;
+            background: rgba(255, 255, 255, 0.8);
+            cursor: pointer;
+        }
+        .window-body {
+            flex: 1;
+            display: flex;
+            overflow: auto;
+            min-height: 0;
+        }
+        .window[data-window="strudel"] .window-body {
+            overflow: hidden;
+            flex-direction: column;
+        }
+        .window-content {
+            flex: 1;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            overflow: hidden;
+            min-height: 0;
+        }
+        .window[data-window="strudel"] .window-content {
+            padding: 10px 14px 16px;
+            gap: 10px;
+            flex: 1;
+        }
+        body[data-theme="flat"] .window-content {
+            background: var(--panel-bg);
+            border-radius: 0 0 12px 12px;
+        }
+        .strudel-window {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            height: 100%;
+            min-height: 0;
+            flex: 1;
+            overflow: hidden;
+        }
+        .strudel-main {
+            flex: 1;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            align-items: stretch;
+        }
+        .strudel-toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+            justify-content: flex-start;
+            border-radius: 10px;
+            border: 1px solid rgba(120, 160, 210, 0.5);
+            padding: 8px;
+            background: rgba(255,255,255,0.95);
+            min-height: 48px;
+        }
+        .strudel-toolbar .strudel-actions {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            align-items: center;
+            margin-left: auto;
+        }
+        .strudel-toolbar button {
+            border: 1px solid rgba(70, 120, 200, 0.7);
+            border-radius: 8px;
+            background: linear-gradient(180deg, #fefefe, #d7e9ff);
+            color: #0d1f3f;
+            font-weight: 600;
+            padding: 4px 12px;
+            cursor: pointer;
+            outline: none;
+            transition: filter 0.08s ease, box-shadow 0.08s ease;
+            box-shadow: inset 0 0 0 rgba(0,0,0,0);
+        }
+        .strudel-toolbar button:active {
+            filter: brightness(0.94);
+            box-shadow: inset 0 1px 3px rgba(0,0,0,0.35);
+        }
+        .strudel-toolbar .nav-group {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+        }
+        .sequencer-panel {
+            margin-top: 0;
+            border: 1px solid rgba(51, 74, 117, 0.35);
+            border-radius: 14px;
+            padding: 14px 16px 16px;
+            background: rgba(248, 250, 255, 0.98);
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            z-index: 1;
+            flex: 0 0 auto;
+            width: 100%;
+            min-height: 0;
+            box-shadow: 0 10px 28px rgba(8, 20, 46, 0.18);
+            font-size: 13px;
+            color: #0d1f3f;
+        }
+        .sequencer-controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: flex-start;
+        }
+        .sequencer-controls label {
+            font-weight: 600;
+            display: flex;
+            gap: 6px;
+            align-items: center;
+            background: rgba(255,255,255,0.95);
+            padding: 4px 8px;
+            border-radius: 8px;
+            border: 1px solid rgba(120, 160, 210, 0.4);
+            flex: 1 1 45%;
+            min-width: 150px;
+            color: #0d1f3f;
+        }
+        .sequencer-controls input[type="number"] {
+            width: 80px;
+            padding: 6px 8px;
+            font-size: 14px;
+        }
+        .sequencer-panel button {
+            font-size: 14px;
+            padding: 6px 14px;
+            color: #0d1f3f;
+        }
+        .sequencer-rows {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            overflow: auto;
+            padding-right: 4px;
+            flex: 1;
+            min-height: 0;
+            border-radius: 10px;
+            padding-top: 2px;
+        }
+        .sequencer-row {
+            border: 1px solid rgba(120, 160, 210, 0.4);
+            border-radius: 10px;
+            padding: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            background: rgba(255,255,255,0.95);
+        }
+        .sequencer-row-header {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+        }
+        .sequencer-row-header input,
+        .sequencer-panel input,
+        .sequencer-panel select {
+            padding: 5px 8px;
+            font-size: 14px;
+            color: #0d1f3f;
+            background: #ffffff;
+            border: 1px solid rgba(120, 160, 210, 0.6);
+            border-radius: 6px;
+        }
+        .sequencer-row-header .row-actions {
+            margin-left: auto;
+            display: flex;
+            gap: 6px;
+        }
+        .sequencer-row-extra {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 4px;
+        }
+        .sequencer-row-extra label {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            font-size: 12px;
+        }
+        .sequencer-row.mode-melody .row-field-bank,
+        .sequencer-row.mode-melody .row-field-voice-sample {
+            display: none;
+        }
+        .sequencer-row:not(.mode-melody) .sequencer-row-extra {
+            display: none;
+        }
+        .sequencer-row:not(.mode-melody) .row-field-voice-melody {
+            display: none;
+        }
+        .sequencer-beats {
+            display: grid;
+            grid-template-columns: repeat(var(--sequencer-steps, 16), minmax(20px, 1fr));
+            gap: 4px;
+        }
+        .sequencer-beat {
+            border: 1px solid rgba(120, 120, 120, 0.4);
+            background: #f4f7ff;
+            border-radius: 6px;
+            padding: 8px 0;
+            text-align: center;
+            font-size: 12px;
+            cursor: pointer;
+            transition: background 120ms ease, color 120ms ease, border 120ms ease;
+        }
+        .sequencer-beat.active {
+            background: #4c7dff;
+            color: #fff;
+            border-color: #1f49d3;
+            box-shadow: 0 0 6px rgba(76, 125, 255, 0.5);
+        }
+        .sequencer-preview textarea {
+            width: 100%;
+            min-height: 80px;
+            border-radius: 8px;
+            padding: 8px;
+            border: 1px solid rgba(120, 160, 210, 0.5);
+            font-family: "SF Mono", "Consolas", monospace;
+            resize: vertical;
+            flex: 1;
+            color: #0d1f3f;
+            background: #ffffff;
+        }
+        .sequencer-preview {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        @media (max-width: 1280px) {
+            .sequencer-panel {
+                overflow: auto;
+            }
+        }
+        @media (max-width: 900px) {
+            .sequencer-controls {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+        }
+        .strudel-shell {
+            position: relative;
+            flex: 1 1 auto;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid rgba(120, 160, 210, 0.5);
+            box-shadow: inset 0 0 12px rgba(0,0,0,0.15);
+            min-height: 360px;
+            min-width: 0;
+            display: flex;
+            height: 100%;
+            background: #05070d;
+        }
+        .strudel-placeholder {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 24px;
+            font-weight: 600;
+            letter-spacing: 0.3px;
+            background: rgba(4, 15, 36, 0.92);
+            color: #dfe9ff;
+            z-index: 2;
+            transition: opacity 0.3s ease;
+        }
+        .strudel-placeholder.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+        #strudelWebviewContainer {
+            flex: 1 1 auto;
+            display: flex;
+            width: 100%;
+            min-height: 360px;
+            border-radius: 12px;
+            background: #0b0b0b;
+            overflow: hidden;
+            position: relative;
+            z-index: 0;
+        }
+        #strudelFrame {
+            flex: 1;
+            width: 100%;
+            height: 100%;
+            border: none;
+            background: #0b0b0b;
+            position: relative;
+            z-index: 0;
+        }
+        .panel {
+            border-radius: 12px;
+            border: 1px solid rgba(120, 160, 210, 0.5);
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.92);
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            overflow: hidden;
+        }
+        .panel button {
+            border: 1px solid rgba(70, 120, 200, 0.7);
+            border-radius: 8px;
+            background: linear-gradient(180deg, #fefefe, #d7e9ff);
+            color: #0d1f3f;
+            font-weight: 600;
+            padding: 4px 12px;
+            cursor: pointer;
+            outline: none;
+            transition: filter 0.08s ease, box-shadow 0.08s ease;
+            box-shadow: inset 0 0 0 rgba(0,0,0,0);
+        }
+        .panel button:active {
+            filter: brightness(0.94);
+            box-shadow: inset 0 1px 3px rgba(0,0,0,0.35);
+        }
+        .list {
+            flex: 1;
+            overflow: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .card {
+            border-radius: 10px;
+            border: 1px solid rgba(90, 130, 200, 0.4);
+            padding: 10px 12px;
+            background: rgba(246, 252, 255, 0.95);
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            align-items: center;
+        }
+        .card h3 {
+            margin: 0;
+            font-size: 15px;
+        }
+        .card span {
+            font-size: 12px;
+            color: #3a598d;
+        }
+        .card button {
+            border-radius: 20px;
+            padding: 6px 16px;
+            border: 1px solid var(--button-border);
+            background: var(--button-fill);
+            cursor: pointer;
+            font-weight: 600;
+            color: #0f264d;
+        }
+        .card button.secondary {
+            border-color: rgba(200, 80, 80, 0.8);
+            background: linear-gradient(180deg, #ffe3e3, #ffbcbc);
+            color: #6e1414;
+        }
+        .chain-chip {
+            border-radius: 12px;
+            padding: 6px 12px;
+            border: 1px solid rgba(120, 160, 210, 0.4);
+            background: rgba(255, 255, 255, 0.9);
+            font-size: 12px;
+            cursor: pointer;
+        }
+        .chain-chip.active {
+            border-color: rgba(60, 120, 210, 0.9);
+            background: rgba(120, 170, 255, 0.3);
+            font-weight: 600;
+        }
+        #taskbar {
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            height: var(--taskbar-height);
+            background: linear-gradient(180deg, rgba(120, 170, 255, 0.95), rgba(60, 120, 210, 0.92));
+            border-top: 1px solid rgba(255, 255, 255, 0.6);
+            box-shadow: inset 0 1px rgba(255, 255, 255, 0.5), inset 0 -1px rgba(0, 0, 0, 0.25);
+            display: flex;
+            align-items: center;
+            padding: 4px 18px;
+            gap: 12px;
+            z-index: 2;
+        }
+        #taskbar .start {
+            width: 120px;
+            height: calc(var(--taskbar-height) - 8px);
+            border-radius: 18px;
+            border: 1px solid rgba(30, 90, 60, 0.9);
+            background: linear-gradient(180deg, #b9ffca, #5bbd7a);
+            color: #ffffff;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            line-height: normal;
+            text-shadow: 0 1px rgba(0, 0, 0, 0.4);
+        }
+        #taskbar .start:active {
+            filter: brightness(0.92);
+            transform: translateY(1px);
+        }
+        body[data-theme="winxp"] #taskbar .start {
+            width: 110px;
+            border-radius: 22px;
+            border: 1px solid rgba(60, 110, 170, 0.9);
+            background: url('/start/winxp_start.png') no-repeat center center / contain;
+            color: transparent;
+            text-indent: -9999px;
+            overflow: hidden;
+            box-shadow: none;
+        }
+        body[data-theme="winxp"] #taskbar .start:active {
+            filter: brightness(0.95);
+        }
+        body[data-theme="win7"] #taskbar .start {
+            width: 130px;
+            border-radius: 26px;
+            border: 1px solid rgba(30, 80, 120, 0.8);
+            background: url('/start/win7_start.png') no-repeat center center / contain;
+            color: transparent;
+            text-indent: -9999px;
+            overflow: hidden;
+            box-shadow: none;
+        }
+        body[data-theme="win7"] #taskbar .start:active {
+            filter: brightness(0.92);
+        }
+        body[data-theme="win98"] #taskbar .start {
+            width: 96px;
+            height: calc(var(--taskbar-height) - 10px);
+            border-radius: 4px;
+            border: 2px solid #ffffff;
+            background: #c0c0c0 url('/start/win98_start.png') no-repeat center center / contain;
+            color: transparent;
+            text-indent: -9999px;
+            overflow: hidden;
+            box-shadow: inset 0 0 0 1px #808080;
+        }
+        body[data-theme="win98"] #taskbar .start:active {
+            filter: brightness(0.9);
+            box-shadow: inset 0 0 0 1px #404040;
+        }
+        #taskbar .clock {
+            margin-left: auto;
+            color: #0f244a;
+            font-weight: 600;
+        }
+        #windowButtons {
+            display: flex;
+            gap: 8px;
+            flex: 1;
+            align-items: center;
+        }
+        .taskbar-button {
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            padding: 6px 14px;
+            background: rgba(255, 255, 255, 0.4);
+            color: #0d2040;
+            cursor: pointer;
+            font-weight: 600;
+            transition: filter 120ms ease;
+        }
+        .taskbar-button:hover {
+            filter: brightness(1.1);
+        }
+        .taskbar-button.active {
+            background: rgba(80, 150, 255, 0.9);
+            color: #fff;
+            border-color: rgba(255, 255, 255, 0.8);
+        }
+        body[data-theme="flat"] {
+            --desktop-bg: #222222;
+            --window-glass: linear-gradient(180deg, #3a3a3a, #2b2b2b);
+            --window-border: rgba(120, 120, 120, 0.9);
+            --panel-bg: rgba(40, 40, 40, 0.95);
+            --text-color: #f0f0f0;
+            --button-fill: linear-gradient(180deg, #3f3f3f, #2a2a2a);
+            --button-border: rgba(140, 140, 140, 0.9);
+        }
+        body[data-theme="flat"] .window {
+            color: #f0f0f0;
+            box-shadow: 0 8px 18px rgba(0, 0, 0, 0.5);
+        }
+        body[data-theme="flat"] .card,
+        body[data-theme="flat"] .panel {
+            color: #f0f0f0;
+            border-color: rgba(96, 96, 96, 0.9);
+        }
+        body[data-theme="flat"] .panel,
+        body[data-theme="flat"] .card {
+            background: #2a2a2a;
+            border-color: #444;
+            color: #f5f5f5;
+        }
+        body[data-theme="flat"] .card span,
+        body[data-theme="flat"] .card h3,
+        body[data-theme="flat"] .panel h3,
+        body[data-theme="flat"] .panel p {
+            color: #f5f5f5;
+        }
+        body[data-theme="flat"] .panel h3 {
+            color: #ffffff;
+        }
+        body[data-theme="flat"] .card button,
+        body[data-theme="flat"] .panel button {
+            background: linear-gradient(180deg, #f5f5f5, #d6d6d6);
+            color: #101010;
+            border: 1px solid #6a6a6a;
+        }
+        body[data-theme="flat"] #taskbar {
+            background: linear-gradient(180deg, #1f1f1f, #121212);
+            border-top: 1px solid #333;
+        }
+        body[data-theme="flat"] #taskbar .start {
+            background: #3a3a3a;
+            border: 1px solid #5a5a5a;
+            border-radius: 6px;
+            color: #ffffff;
+        }
+        body[data-theme="flat"] #taskbar .clock {
+            color: #f0f0f0;
+        }
+        body[data-theme="flat"] .taskbar-button {
+            border: 1px solid #3d3d3d;
+            background: linear-gradient(180deg, #2d2d2d, #161616);
+            color: #f0f0f0;
+        }
+        body[data-theme="flat"] .taskbar-button.active {
+            background: #4a4a4a;
+            color: #ffffff;
+        }
+        body[data-theme="flat"] .window {
+            background: var(--panel-bg);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+            border-radius: 14px;
+            border: 1px solid var(--window-border);
+        }
+        body[data-theme="win7"] {
+            --desktop-bg: #3c6db5;
+            --window-glass: linear-gradient(180deg, #fefefe, #d3e5ff);
+            --window-border: rgba(84, 126, 199, 0.9);
+            --panel-bg: rgba(249, 251, 254, 0.96);
+            --text-color: #0d1f3c;
+            --button-fill: linear-gradient(180deg, #eef6ff, #cbe2ff);
+            --button-border: rgba(80, 120, 200, 0.7);
+            --taskbar-height: 50px;
+        }
+        body[data-theme="win7"] #web-toolbar {
+            background: linear-gradient(180deg, rgba(255,255,255,0.95), rgba(210,230,255,0.92));
+            border-bottom: 1px solid rgba(255,255,255,0.7);
+            color: #0d1f3c;
+        }
+        body[data-theme="win7"] #taskbar {
+            background: linear-gradient(180deg, #e5f0ff 0%, #9fc9ff 40%, #4d89d6 100%);
+            border-top: 1px solid rgba(255, 255, 255, 0.75);
+            box-shadow: inset 0 1px rgba(255, 255, 255, 0.9), inset 0 -1px rgba(0, 0, 0, 0.25);
+            padding: 4px 16px;
+        }
+        body[data-theme="win7"] #taskbar .start {
+            width: 118px;
+            height: var(--taskbar-height);
+            margin: 0;
+            background: transparent;
+            border: none;
+            background-image: url("/start/win7_start.png");
+            background-repeat: no-repeat;
+            background-size: contain;
+            background-position: left center;
+            text-indent: -9999px;
+            color: transparent;
+        }
+        body[data-theme="win7"] #taskbar .start:active {
+            filter: brightness(0.96);
+        }
+        body[data-theme="win7"] #windowButtons {
+            gap: 6px;
+            background: rgba(255, 255, 255, 0.18);
+            border-radius: 18px;
+            padding: 3px 6px;
+        }
+        body[data-theme="win7"] .taskbar-button {
+            border-radius: 14px;
+            padding: 6px 18px;
+            border: 1px solid rgba(255, 255, 255, 0.45);
+            background: linear-gradient(180deg, rgba(255,255,255,0.6), rgba(80,140,210,0.35));
+            color: #f4fbff;
+            text-shadow: 0 1px rgba(0,0,0,0.5);
+            box-shadow: inset 0 1px rgba(255,255,255,0.8), inset 0 -1px rgba(0,0,0,0.3);
+        }
+        body[data-theme="win7"] .taskbar-button:hover {
+            background: linear-gradient(180deg, rgba(255,255,255,0.75), rgba(120,170,230,0.55));
+        }
+        body[data-theme="win7"] .taskbar-button.active {
+            border-color: rgba(255,255,255,0.85);
+            background: linear-gradient(180deg, rgba(255,255,255,0.95), rgba(140,190,250,0.85));
+            color: #1e365c;
+            text-shadow: none;
+        }
+        body[data-theme="win7"] #taskbar .clock {
+            color: #ffffff;
+            text-shadow: 0 1px rgba(0,0,0,0.6);
+        }
+        body[data-theme="win7"] .panel {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 14px;
+            border: 1px solid rgba(120, 150, 210, 0.4);
+        }
+        body[data-theme="winxp"] {
+            --desktop-bg: #0f73c8;
+            --window-glass: linear-gradient(180deg, #ffffff, #dbe8ff);
+            --window-border: rgba(89, 142, 222, 0.95);
+            --panel-bg: rgba(255, 255, 255, 0.98);
+            --text-color: #123f8c;
+            --button-fill: linear-gradient(180deg, #fefefe, #e1ecff);
+            --button-border: rgba(90, 130, 220, 0.7);
+            --taskbar-height: 48px;
+        }
+        body[data-theme="winxp"] #taskbar {
+            background: linear-gradient(180deg, #83b7ff 0%, #2e6ed1 45%, #0a2f84 100%);
+            border-top: 1px solid #a8d6ff;
+            box-shadow: inset 0 1px rgba(255,255,255,0.9), inset 0 -1px rgba(0,0,0,0.35);
+            padding: 2px 16px 2px 6px;
+            gap: 10px;
+            justify-content: flex-start;
+        }
+        body[data-theme="winxp"] #taskbar .start {
+            width: 138px;
+            height: calc(var(--taskbar-height) - 6px);
+            margin: 0;
+            border: none;
+            background: transparent;
+            background-image: url("/start/winxp_start.png");
+            background-repeat: no-repeat;
+            background-size: contain;
+            background-position: left center;
+            text-indent: -9999px;
+            color: transparent;
+        }
+        body[data-theme="winxp"] #taskbar .start:active {
+            filter: brightness(0.95);
+            transform: translateY(1px);
+            background-position: left calc(50% + 1px);
+        }
+        body[data-theme="winxp"] #windowButtons {
+            background: rgba(0, 0, 0, 0.28);
+            border-radius: 8px;
+            padding: 3px 6px;
+            gap: 4px;
+            box-shadow: inset 0 1px rgba(255,255,255,0.25), inset 0 -1px rgba(0,0,0,0.35);
+        }
+        body[data-theme="winxp"] .taskbar-button {
+            border-radius: 5px;
+            border: 1px solid #0a255d;
+            background: linear-gradient(180deg, #fdfefe, #b9d5ff);
+            color: #0b2970;
+            text-shadow: 0 1px #fff;
+            box-shadow: inset 0 1px rgba(255,255,255,0.9);
+            padding: 4px 14px;
+        }
+        body[data-theme="winxp"] .taskbar-button:hover {
+            background: linear-gradient(180deg, #ffffff, #c7e0ff);
+        }
+        body[data-theme="winxp"] .taskbar-button.active {
+            background: linear-gradient(180deg, #fff, #6ea6f6);
+            border-color: #0a2f84;
+            color: #031650;
+        }
+        body[data-theme="winxp"] #taskbar .clock {
+            color: #fdfdfd;
+            text-shadow: 0 1px rgba(0,0,0,0.4);
+        }
+        body[data-theme="winxp"] #web-toolbar {
+            background: linear-gradient(180deg, #fefefe, #ccdffc);
+            border-bottom: 1px solid #89b4ff;
+            color: #123f8c;
+        }
+        body[data-theme="winxp"] .panel {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 12px;
+            border: 1px solid rgba(70, 120, 200, 0.35);
+        }
+        body[data-theme="win98"] {
+            --desktop-bg: #008080;
+            --window-glass: linear-gradient(180deg, #ece9d8, #d5d0bb);
+            --window-border: rgba(83, 83, 83, 1);
+            --panel-bg: #ece9d8;
+            --text-color: #000;
+            --button-fill: linear-gradient(180deg, #fff, #c7c3b4);
+            --button-border: rgba(83, 83, 83, 1);
+            --taskbar-height: 42px;
+        }
+        body[data-theme="win98"] #taskbar {
+            background: #c0c0c0;
+            border-top: 2px solid #ffffff;
+            border-bottom: 2px solid #7f7f7f;
+            box-shadow: inset 0 1px #ffffff, inset 0 -1px #7f7f7f;
+            padding: 2px 10px 2px 4px;
+        }
+        body[data-theme="win98"] #taskbar .start {
+            width: 102px;
+            height: calc(var(--taskbar-height) - 4px);
+            margin: 0;
+            border: none;
+            background: transparent;
+            background-image: url("/start/win98_start.png");
+            background-repeat: no-repeat;
+            background-size: auto 100%;
+            background-position: left center;
+            text-indent: -9999px;
+            color: transparent;
+        }
+        body[data-theme="win98"] #taskbar .start:active {
+            filter: brightness(0.9);
+            transform: translateY(1px);
+            background-position: left calc(50% + 1px);
+        }
+        body[data-theme="win98"] #windowButtons {
+            gap: 4px;
+        }
+        body[data-theme="win98"] .taskbar-button {
+            border-radius: 0;
+            border: 2px outset #ffffff;
+            background: #d4d4d4;
+            color: #000;
+            font-family: "MS Sans Serif", Tahoma, sans-serif;
+            font-size: 11px;
+            padding: 4px 10px;
+        }
+        body[data-theme="win98"] .taskbar-button.active {
+            border: 2px inset #7f7f7f;
+            background: #a5a5a5;
+        }
+        body[data-theme="win98"] #taskbar .clock {
+            color: #000;
+            font-family: "MS Sans Serif", Tahoma, sans-serif;
+            font-size: 11px;
+        }
+        body[data-theme="win98"] #web-toolbar {
+            background: linear-gradient(180deg, #dfdfdf, #c4c4c4);
+            border-bottom: 2px solid #fff;
+            color: #000;
+        }
+        body[data-theme="win98"] .panel {
+            background: #ece9d8;
+            border: 2px ridge #fff;
+            color: #000;
+        }
+        #web-toolbar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: var(--toolbar-height);
+            background: linear-gradient(180deg, rgba(255,255,255,0.95), rgba(220,230,250,0.92));
+            border-bottom: 1px solid rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 16px;
+            z-index: 3;
+        }
+        body[data-theme="flat"] #web-toolbar {
+            background: #1f1f1f;
+            border-bottom: 1px solid #333;
+            color: #f0f0f0;
+        }
+        #web-toolbar label {
+            margin-right: 6px;
+            font-weight: 600;
+        }
+        #web-toolbar select,
+        #web-toolbar button {
+            padding: 4px 12px;
+            border-radius: 6px;
+            border: 1px solid rgba(70, 120, 200, 0.7);
+            background: var(--button-fill);
+            color: var(--text-color);
+            font-weight: 600;
+            cursor: pointer;
+        }
+        #web-toolbar .status-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-color);
+        }
+        #web-toolbar button.danger {
+            border-color: rgba(200, 70, 70, 0.8);
+            background: linear-gradient(180deg, #ffb0b0, #ea6b6b);
+            color: #fff;
+        }
+        .toolbar-section {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .studio-toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 4px 4px 10px;
+            font-size: 13px;
+            color: #2d4d82;
+        }
+        .studio-toolbar button {
+            border: 1px solid rgba(70, 120, 200, 0.7);
+            background: var(--button-fill);
+            color: var(--text-color);
+            border-radius: 8px;
+            padding: 4px 12px;
+            cursor: pointer;
+            outline: none;
+            box-shadow: inset 0 0 0 rgba(0,0,0,0);
+            transition: filter 0.08s ease, box-shadow 0.08s ease;
+        }
+        .studio-toolbar button:active {
+            filter: brightness(0.94);
+            box-shadow: inset 0 1px 3px rgba(0,0,0,0.35);
+        }
+        .window[data-window="plugin-ui"] .window-body,
+        .window[data-window="plugin-ui"] .window-content {
+            display: flex;
+            flex-direction: column;
+        }
+        .window[data-window="plugin-ui"] .window-content {
+            flex: 1;
+        }
+        #pluginInfoPanel {
+            display: flex;
+            flex-direction: column;
+            flex: 1 1 auto;
+            gap: 16px;
+        }
+        .native-viewport {
+            border: 1px solid rgba(36, 78, 138, 0.72);
+            border-radius: 12px;
+            margin-top: 12px;
+            min-height: 320px;
+            flex: 1 1 auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+            color: rgba(255, 255, 255, 0.86);
+            background: linear-gradient(180deg, rgba(10, 24, 48, 0.92), rgba(6, 14, 30, 0.88));
+            box-shadow: inset 0 1px 6px rgba(0, 0, 0, 0.45);
+        }
+        .keyboard-controls {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .keyboard-controls input[type="range"] {
+            width: 200px;
+        }
+        .keyboard-keys {
+            position: relative;
+            width: 100%;
+            height: 180px;
+            margin-top: 16px;
+            user-select: none;
+        }
+        .key {
+            position: absolute;
+            border: 1px solid rgba(0,0,0,0.4);
+            border-radius: 4px;
+            text-align: center;
+            font-size: 11px;
+            padding-top: 130px;
+            cursor: pointer;
+        }
+        .key.white {
+            width: 40px;
+            height: 170px;
+            background: linear-gradient(180deg, #fff, #ececec);
+            color: #000;
+            z-index: 1;
+        }
+        .key.black {
+            width: 28px;
+            height: 110px;
+            background: linear-gradient(180deg, #222, #111);
+            color: #fff;
+            z-index: 2;
+            padding-top: 70px;
+        }
+        .key.active {
+            background: linear-gradient(180deg, #7ab7ff, #3a78dd);
+            color: #fff;
+        }
+        .console-log {
+            background: rgba(20, 30, 40, 0.9);
+            color: #b7ffa4;
+            font-family: "Consolas", "Courier New", monospace;
+            font-size: 12px;
+            border-radius: 8px;
+            padding: 10px;
+            height: 150px;
+            overflow-y: auto;
+            border: 1px solid rgba(0,0,0,0.4);
+        }
+    </style>
+    <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+</head>
+<body>
+    <div id="web-toolbar">
+        <div class="toolbar-section">
+            <label for="themeSelect">Theme</label>
+            <select id="themeSelect"></select>
+        </div>
+        <div class="toolbar-section">
+            <button id="strudelToggle">Open Strudel</button>
+            <button id="strudelReload">Reload</button>
+            <span id="strudelStatus" class="status-label"></span>
+            <button id="panicButton" class="danger">Emergency Stop</button>
+        </div>
+    </div>
+    <div id="wallpaper"></div>
+    <div id="desktop">
+        <div class="window" data-window="studio" style="display:none;">
+            <div class="window-titlebar title-bar">
+                <span class="title-bar-text">Plugin Studio</span>
+                <div class="window-controls title-bar-controls">
+                    <button data-action="minimize" aria-label="Minimize" class="is-minimize"></button>
+                    <button data-action="maximize" aria-label="Maximize" class="is-maximize"></button>
+                    <button data-action="close" aria-label="Close" class="is-close"></button>
+                </div>
+            </div>
+            <div class="window-body">
+                <div class="window-content">
+                    <div class="studio-toolbar">
+                        <div class="toolbar-section">
+                            <span id="workspaceLabel">Workspace: (detecting)</span>
+                        </div>
+                        <div class="toolbar-section">
+                            <button id="refreshBtn">Refresh</button>
+                            <button id="saveSessionBtn">Save Session</button>
+                            <button id="loadSessionBtn">Load Session</button>
+                        </div>
+                    </div>
+                    <div class="panel">
+                        <h3>Discovered Plugins</h3>
+                        <div class="list" id="pluginList"></div>
+                    </div>
+                    <div class="panel">
+                        <h3>Plugin Chain</h3>
+                        <div class="list" id="chainList"></div>
+                        <div id="hostStatus"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="window" data-window="plugin-ui" style="display:none;">
+            <div class="window-titlebar title-bar">
+                <span class="title-bar-text">Plugin UI</span>
+                <div class="window-controls title-bar-controls">
+                    <button data-action="minimize" aria-label="Minimize" class="is-minimize"></button>
+                    <button data-action="maximize" aria-label="Maximize" class="is-maximize"></button>
+                    <button data-action="close" aria-label="Close" class="is-close"></button>
+                </div>
+            </div>
+            <div class="window-body">
+                <div class="window-content">
+                    <div class="panel" id="pluginInfoPanel">
+                        <h3 id="pluginTitle">No plugin loaded</h3>
+                        <div id="pluginPath" style="font-size:12px;color:#47609b;">
+                            Select a plugin to load it.
+                        </div>
+                        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                            <button id="btnShowNative">Show Native UI</button>
+                            <button id="btnUnload" class="secondary">Unload Plugin</button>
+                        </div>
+                        <div>
+                            <h4>Chain</h4>
+                            <div id="chainChips" style="display:flex; flex-wrap:wrap; gap:8px;"></div>
+                        </div>
+                        <div id="pluginUiStatus" style="font-size:12px;color:#14305a;"></div>
+                        <div id="nativeViewport" class="native-viewport">
+                            Native plugin UI will appear here when available.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="window" data-window="keyboard" style="display:none;">
+            <div class="window-titlebar title-bar">
+                <span class="title-bar-text">Instrument Keyboard</span>
+                <div class="window-controls title-bar-controls">
+                    <button data-action="minimize" aria-label="Minimize" class="is-minimize"></button>
+                    <button data-action="maximize" aria-label="Maximize" class="is-maximize"></button>
+                    <button data-action="close" aria-label="Close" class="is-close"></button>
+                </div>
+            </div>
+            <div class="window-body">
+                <div class="window-content">
+                    <div class="panel">
+                        <div class="keyboard-controls">
+                            <div>Velocity: <span id="velocityValue">80</span></div>
+                            <input type="range" id="velocityRange" min="0" max="127" value="80">
+                            <div>Octave: <span id="octaveValue">3</span></div>
+                            <button id="octaveDown">-</button>
+                            <button id="octaveUp">+</button>
+                        </div>
+                        <div class="keyboard-keys" id="keyboardKeys"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="window" data-window="console" style="display:none;">
+            <div class="window-titlebar title-bar">
+                <span class="title-bar-text">Console Log</span>
+                <div class="window-controls title-bar-controls">
+                    <button data-action="minimize" aria-label="Minimize" class="is-minimize"></button>
+                    <button data-action="maximize" aria-label="Maximize" class="is-maximize"></button>
+                    <button data-action="close" aria-label="Close" class="is-close"></button>
+                </div>
+            </div>
+            <div class="window-body">
+                <div class="window-content">
+                    <div class="panel">
+                        <div class="console-log" id="consoleLog"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="window" data-window="strudel" style="display:none;">
+            <div class="window-titlebar title-bar">
+                <span class="title-bar-text">Strudel Live Coding</span>
+                <div class="window-controls title-bar-controls">
+                    <button data-action="minimize" aria-label="Minimize" class="is-minimize"></button>
+                    <button data-action="maximize" aria-label="Maximize" class="is-maximize"></button>
+                    <button data-action="close" aria-label="Close" class="is-close"></button>
+                </div>
+            </div>
+            <div class="window-body">
+                <div class="window-content strudel-window">
+                    <div class="strudel-toolbar">
+                        <div class="nav-group">
+                            <button id="strudelBack" title="Back">&#9664;</button>
+                            <button id="strudelForward" title="Forward">&#9654;</button>
+                            <button id="strudelHome" title="Home">Home</button>
+                            <button id="strudelBrowserReload" title="Reload">Reload</button>
+                        </div>
+                        <div class="strudel-actions">
+                            <button id="strudelLearn" title="Strudel Learn">Learn</button>
+                            <button id="strudelUpdate" title="Update Pattern">Update</button>
+                            <button id="strudelStop" title="Stop Audio">Stop</button>
+                            <button id="strudelShare" title="Share Pattern">Share</button>
+                        </div>
+                    </div>
+                    <div class="strudel-main">
+                        <div class="sequencer-panel">
+                            <div class="sequencer-controls">
+                                <label>Cycles/min
+                                    <input type="number" id="sequencerCpm" min="10" max="400" value="120">
+                                </label>
+                                <label>Default steps
+                                    <input type="number" id="sequencerDefaultSteps" min="1" max="64" value="16">
+                                </label>
+                                <button id="sequencerAddRow">Add Row</button>
+                                <button id="sequencerApply">Apply Pattern</button>
+                                <button id="sequencerApplyPlay">Apply &amp; Play</button>
+                                <button id="sequencerStop">Stop</button>
+                            </div>
+                            <div id="sequencerRows" class="sequencer-rows"></div>
+                            <div class="sequencer-preview">
+                                <label for="sequencerCodePreview">Generated pattern</label>
+                                <textarea id="sequencerCodePreview" readonly></textarea>
+                            </div>
+                        </div>
+                        <div id="strudelWebviewContainer" class="strudel-shell">
+                            <iframe id="strudelFrame" title="Strudel"></iframe>
+                            <div class="strudel-placeholder" id="strudelPlaceholder">
+                                Preparing Strudel...
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+    <div id="taskbar">
+        <div class="start">Start</div>
+        <div id="windowButtons"></div>
+        <div class="clock" id="desktopClock"></div>
+    </div>
+    <script>
+        const DesktopState = {
+            theme: "flat",
+            wallpaper: { image: null, color: "#222222", offset: 0.5 },
+            themes: [],
+            windows: [],
+        };
+        const PluginState = {
+            plugins: [],
+            chain: [],
+            hostStatus: "",
+            currentPluginPath: null,
+            workspace: "",
+        };
+        const KeyboardState = {
+            velocity: 80,
+            octave: 3,
+            activeNotes: [],
+            enabled: false,
+        };
+        const StrudelState = {
+            loaded: false,
+            visible: false,
+            url: null, // proxied iframe URL
+            displayUrl: null, // remote URL shown in UI
+            error: null,
+            remoteHome: "https://strudel.cc/",
+            homeUrl: "https://strudel.cc/",
+            proxyBase: null,
+            reloadToken: 0,
+            lastReloadToken: -1,
+            debugSync: false,
+        };
+        const DrumCatalog = {
+            banks: new Map(),
+            bankOrder: [],
+            defaultBank: "tr909",
+            defaultInstrument: "bd",
+            loaded: false,
+            promise: null,
+        };
+        const FALLBACK_BANK_ENTRY = {
+            id: "tr909",
+            bank: "tr909",
+            label: "TR-909",
+            instruments: new Map([
+                ["bd", 4],
+                ["sd", 4],
+                ["hh", 4],
+                ["oh", 4],
+                ["cp", 2],
+            ]),
+        };
+        const FALLBACK_INSTRUMENT_OPTIONS = [
+            { value: "bd", label: "bd" },
+            { value: "sd", label: "sd" },
+            { value: "hh", label: "hh" },
+            { value: "oh", label: "oh" },
+            { value: "cp", label: "cp" },
+        ];
+        function cloneBankEntry(entry) {
+            return {
+                id: entry.id,
+                bank: entry.bank,
+                label: entry.label,
+                instruments: new Map(entry.instruments),
+            };
+        }
+        function resetDrumCatalogToFallback() {
+            const fallbackClone = cloneBankEntry(FALLBACK_BANK_ENTRY);
+            DrumCatalog.banks = new Map([[fallbackClone.id, fallbackClone]]);
+            DrumCatalog.bankOrder = [fallbackClone];
+            DrumCatalog.defaultBank = fallbackClone.id;
+            DrumCatalog.defaultInstrument = "bd";
+            DrumCatalog.loaded = false;
+        }
+        resetDrumCatalogToFallback();
+        function buildInstrumentOptionList(entry) {
+            if (!entry) {
+                return [...FALLBACK_INSTRUMENT_OPTIONS];
+            }
+            const options = [];
+            entry.instruments.forEach((count, instrumentId) => {
+                const total = Math.max(1, Number(count) || 1);
+                if (total <= 1) {
+                    options.push({ value: instrumentId, label: instrumentId });
+                } else {
+                    for (let idx = 0; idx < total; idx += 1) {
+                        const token = `${instrumentId}:${idx}`;
+                        options.push({ value: token, label: token });
+                    }
+                }
+            });
+            if (!options.length) {
+                return [...FALLBACK_INSTRUMENT_OPTIONS];
+            }
+            options.sort((a, b) => a.label.localeCompare(b.label));
+            return options;
+        }
+        function getDrumBankEntries() {
+            return DrumCatalog.bankOrder.length ? DrumCatalog.bankOrder : [FALLBACK_BANK_ENTRY];
+        }
+        function getBankEntry(bankId) {
+            return DrumCatalog.banks.get(bankId) || DrumCatalog.bankOrder[0] || FALLBACK_BANK_ENTRY;
+        }
+        function getInstrumentOptions(bankId) {
+            const entry = getBankEntry(bankId);
+            return buildInstrumentOptionList(entry);
+        }
+        function getDefaultBankId() {
+            return DrumCatalog.defaultBank || (DrumCatalog.bankOrder[0]?.id) || FALLBACK_BANK_ENTRY.id;
+        }
+        function getDefaultInstrumentValue(bankId) {
+            const options = getInstrumentOptions(bankId);
+            return options[0]?.value || DrumCatalog.defaultInstrument || "bd";
+        }
+        function ensureRowBank(row) {
+            if (row.mode === "melody") {
+                row.bank = row.bank || "";
+                return;
+            }
+            if (!row.bank || !DrumCatalog.banks.has(row.bank)) {
+                row.bank = getDefaultBankId();
+            }
+        }
+        function ensureRowInstrument(row) {
+            ensureRowBank(row);
+            if (row.mode === "melody") {
+                row.instrument = row.instrument || "sin";
+                return;
+            }
+            const options = getInstrumentOptions(row.bank);
+            if (!options.some((option) => option.value === row.instrument)) {
+                row.instrument = options[0]?.value || DrumCatalog.defaultInstrument;
+            }
+        }
+        function populateBankSelect(select, row) {
+            if (!select) return;
+            const banks = getDrumBankEntries();
+            select.innerHTML = "";
+            banks.forEach((entry) => {
+                const opt = document.createElement("option");
+                opt.value = entry.id;
+                opt.textContent = entry.label || entry.id;
+                select.appendChild(opt);
+            });
+            ensureRowBank(row);
+            select.value = row.bank;
+        }
+        function populateInstrumentSelect(select, row) {
+            if (!select) return;
+            ensureRowInstrument(row);
+            const options = getInstrumentOptions(row.bank);
+            select.innerHTML = "";
+            options.forEach((option) => {
+                const opt = document.createElement("option");
+                opt.value = option.value;
+                opt.textContent = option.label;
+                select.appendChild(opt);
+            });
+            select.value = row.instrument;
+        }
+        function hydrateSequencerRowSelectors(rowEl, row) {
+            const bankSelect = rowEl.querySelector('select[data-field="bank"]');
+            const instrumentSelect = rowEl.querySelector('select[data-field="instrumentSelect"]');
+            populateBankSelect(bankSelect, row);
+            if (instrumentSelect) {
+                populateInstrumentSelect(instrumentSelect, row);
+            }
+            const instrumentInput = rowEl.querySelector('input[data-field="instrumentInput"]');
+            if (instrumentInput) {
+                instrumentInput.value = row.instrument || "";
+            }
+        }
+        function applySequencerRowModeClasses(rowEl, row) {
+            if (!rowEl) return;
+            rowEl.classList.toggle("mode-melody", row.mode === "melody");
+        }
+        function loadDrumCatalog() {
+            if (DrumCatalog.loaded) {
+                return Promise.resolve(DrumCatalog);
+            }
+            if (DrumCatalog.promise) {
+                return DrumCatalog.promise;
+            }
+            DrumCatalog.promise = fetch("drum_catalog.json", { cache: "no-store" })
+                .then((response) => {
+                    if (!response.ok) {
+                        throw new Error(`Failed to load drum catalog (${response.status})`);
+                    }
+                    return response.json();
+                })
+                .then((payload) => {
+                    const banks = new Map();
+                    const order = [];
+                    Object.entries(payload || {}).forEach(([id, details]) => {
+                        const label = (details.label || details.bank || id || "").trim() || id;
+                        const bankId = (details.bank || id || "").toLowerCase();
+                        const entry = {
+                            id: bankId,
+                            bank: bankId,
+                            label,
+                            instruments: new Map(),
+                        };
+                        Object.entries(details.instruments || {}).forEach(([instrumentId, count]) => {
+                            entry.instruments.set(instrumentId.toLowerCase(), Number(count) || 1);
+                        });
+                        banks.set(entry.id, entry);
+                        order.push(entry);
+                    });
+                    if (!order.length) {
+                        resetDrumCatalogToFallback();
+                    } else {
+                        order.sort((a, b) => a.label.localeCompare(b.label));
+                        DrumCatalog.banks = banks;
+                        DrumCatalog.bankOrder = order;
+                        DrumCatalog.defaultBank = order[0].id;
+                        const firstOptions = buildInstrumentOptionList(order[0]);
+                        DrumCatalog.defaultInstrument = firstOptions[0]?.value || "bd";
+                        DrumCatalog.loaded = true;
+                        SequencerState.rows.forEach((row) => {
+                            ensureRowBank(row);
+                            ensureRowInstrument(row);
+                        });
+                    }
+                    return DrumCatalog;
+                })
+                .catch((error) => {
+                    console.warn("Drum catalog unavailable", error);
+                    resetDrumCatalogToFallback();
+                    return DrumCatalog;
+                })
+                .finally(() => {
+                    DrumCatalog.promise = null;
+                });
+            return DrumCatalog.promise;
+        }
+        const SequencerState = {
+            defaultSteps: 16,
+            cpm: 120,
+            rows: [],
+            lastCode: "",
+        };
+        const LocalWindowRegistry = {
+            studio: { id: "studio", name: "Studio", selector: '[data-window="studio"]' },
+            keyboard: { id: "keyboard", name: "Keyboard", selector: '[data-window="keyboard"]' },
+            console: { id: "console", name: "Console", selector: '[data-window="console"]' },
+            strudel: { id: "strudel", name: "Strudel", selector: '[data-window="strudel"]' },
+        };
+        const RemoteWindowMap = {
+            "plugin-ui": "plugin_ui",
+        };
+        const RemoteWindowReverseMap = Object.fromEntries(
+            Object.entries(RemoteWindowMap).map(([local, remote]) => [remote, local])
+        );
+        const StrudelHistory = {
+            entries: [],
+            index: -1,
+        };
+        const STRUDEL_POST_MAX_ATTEMPTS = 20;
+        const keyboardElements = new Map();
+        const pointerNotes = new Map();
+        let nativeViewportObserver = null;
+        let strudelFrameObserver = null;
+        const KEYBOARD_LAYOUT = [
+            { note: 48, label: "C3", type: "white", x: 0 },
+            { note: 50, label: "D3", type: "white", x: 40 },
+            { note: 52, label: "E3", type: "white", x: 80 },
+            { note: 53, label: "F3", type: "white", x: 120 },
+            { note: 55, label: "G3", type: "white", x: 160 },
+            { note: 57, label: "A3", type: "white", x: 200 },
+            { note: 59, label: "B3", type: "white", x: 240 },
+            { note: 60, label: "C4", type: "white", x: 280 },
+            { note: 62, label: "D4", type: "white", x: 320 },
+            { note: 64, label: "E4", type: "white", x: 360 },
+            { note: 65, label: "F4", type: "white", x: 400 },
+            { note: 67, label: "G4", type: "white", x: 440 },
+            { note: 69, label: "A4", type: "white", x: 480 },
+            { note: 71, label: "B4", type: "white", x: 520 },
+            { note: 72, label: "C5", type: "white", x: 560 },
+            { note: 74, label: "D5", type: "white", x: 600 },
+            { note: 76, label: "E5", type: "white", x: 640 },
+        ];
+        const BLACK_KEYS = [
+            { note: 49, x: 26 }, { note: 51, x: 66 },
+            { note: 54, x: 146 }, { note: 56, x: 186 }, { note: 58, x: 226 },
+            { note: 61, x: 306 }, { note: 63, x: 346 },
+            { note: 66, x: 426 }, { note: 68, x: 466 }, { note: 70, x: 506 },
+            { note: 73, x: 586 }, { note: 75, x: 626 },
+        ];
+        const COMPUTER_KEYMAP = {
+            KeyZ: 0,
+            KeyS: 1,
+            KeyX: 2,
+            KeyD: 3,
+            KeyC: 4,
+            KeyV: 5,
+            KeyG: 6,
+            KeyB: 7,
+            KeyH: 8,
+            KeyN: 9,
+            KeyJ: 10,
+            KeyM: 11,
+            KeyComma: 12,
+            KeyL: 13,
+            KeyPeriod: 14,
+            KeySemicolon: 15,
+            KeySlash: 16,
+            KeyQ: 12,
+            KeyW: 14,
+            KeyE: 16,
+            KeyR: 17,
+            KeyT: 19,
+            KeyY: 21,
+            KeyU: 23,
+            KeyI: 24,
+            KeyO: 26,
+            KeyP: 28,
+            Digit2: 13,
+            Digit3: 15,
+            Digit5: 18,
+            Digit6: 20,
+            Digit7: 22,
+            Digit9: 25,
+            Digit0: 27,
+        };
+        const Bridges = {};
+        let desktopZCounter = 20;
+        const activeComputerKeys = new Map();
+        function initClock() {
+            const clock = document.getElementById("desktopClock");
+            const update = () => {
+                const now = new Date();
+                clock.textContent = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+            };
+            update();
+            setInterval(update, 1000);
+        }
+        function applyWallpaper() {
+            const url = DesktopState.wallpaper?.image;
+            const color = DesktopState.wallpaper?.color || "#222222";
+            document.documentElement.style.setProperty("--desktop-bg", color);
+            if (url) {
+                document.documentElement.style.setProperty("--wallpaper-url", `url('${url}')`);
+            } else {
+                document.documentElement.style.setProperty("--wallpaper-url", "none");
+            }
+        }
+        function applyThemeStylesheet() {
+            const theme = DesktopState.theme;
+            document.querySelectorAll('link[data-theme-style]').forEach((link) => {
+                const linkTheme = link.getAttribute("data-theme-style");
+                link.disabled = !linkTheme || linkTheme !== theme;
+            });
+        }
+        function syncWindowThemeClasses() {
+            const isGlass = DesktopState.theme === "win7";
+            document.querySelectorAll(".window").forEach((win) => {
+                win.classList.toggle("glass", isGlass);
+            });
+        }
+        function bringWindowToFront(win) {
+            if (!win) return;
+            desktopZCounter += 1;
+            win.style.zIndex = desktopZCounter;
+        }
+        function setStrudelUrlDisplay(url) {
+            const input = document.getElementById("strudelUrlDisplay");
+            if (input) input.value = url || "";
+        }
+        function recordStrudelHistory(url) {
+            if (!url) return;
+            if (StrudelHistory.index >= 0 && StrudelHistory.entries[StrudelHistory.index] === url) {
+                return;
+            }
+            StrudelHistory.entries = StrudelHistory.entries.slice(0, StrudelHistory.index + 1);
+            StrudelHistory.entries.push(url);
+            StrudelHistory.index = StrudelHistory.entries.length - 1;
+            updateStrudelNavButtons();
+        }
+        function updateStrudelNavButtons() {
+            const backBtn = document.getElementById("strudelBack");
+            const forwardBtn = document.getElementById("strudelForward");
+            if (backBtn) backBtn.disabled = StrudelHistory.index <= 0;
+            if (forwardBtn) forwardBtn.disabled = StrudelHistory.index < 0 || StrudelHistory.index >= StrudelHistory.entries.length - 1;
+        }
+        function requestStrudelUrl(url) {
+            if (!url) return;
+            if (Bridges.strudel) {
+                Bridges.strudel.open();
+                Bridges.strudel.navigate(url);
+            } else {
+                const frame = document.getElementById("strudelFrame");
+                if (frame) frame.src = buildProxyUrl(url);
+            }
+        }
+        function buildProxyUrl(url) {
+            if (!url) return StrudelState.proxyBase || StrudelState.homeUrl;
+            if (!StrudelState.proxyBase) return url;
+            const remoteBase = StrudelState.remoteHome || "https://strudel.cc/";
+            try {
+                const remote = new URL(url, remoteBase);
+                const proxy = new URL(StrudelState.proxyBase, window.location.origin);
+                const path = remote.pathname.replace(/^\//, "");
+                const proxied = proxy.origin + proxy.pathname.replace(/\/?$/, "/") + path;
+                return proxied + remote.search + remote.hash;
+            } catch {
+                return url;
+            }
+        }
+
+        function getStrudelProxyInfo() {
+            if (!StrudelState.proxyBase) return null;
+            try {
+                const proxyUrl = new URL(StrudelState.proxyBase, window.location.origin);
+                const proxyPath = proxyUrl.pathname.replace(/\/?$/, "/");
+                return { url: proxyUrl, path: proxyPath };
+            } catch {
+                return null;
+            }
+        }
+
+        function syncStrudelFrameLocation() {
+            const frame = document.getElementById("strudelFrame");
+            if (!frame) return;
+            const proxyInfo = getStrudelProxyInfo();
+            if (!proxyInfo) return;
+            try {
+                const loc = frame.contentWindow?.location;
+                if (!loc) return;
+                let href;
+                try {
+                    href = loc.href;
+                } catch {
+                    return;
+                }
+                if (!href || href === "about:blank") return;
+                let pathname = loc.pathname || "/";
+                if (pathname.startsWith(proxyInfo.path)) {
+                    pathname = pathname.slice(proxyInfo.path.length);
+                    if (!pathname.startsWith("/")) pathname = `/${pathname}`;
+                }
+                const remoteBase = StrudelState.remoteHome || "https://strudel.cc/";
+                const remoteUrl = new URL(pathname + (loc.search || "") + (loc.hash || ""), remoteBase);
+                if (!loc.pathname.startsWith(proxyInfo.path)) {
+                    const desired = buildProxyUrl(remoteUrl.href);
+                    if (desired && desired !== frame.src) {
+                        frame.dataset.src = desired;
+                        frame.src = desired;
+                        return;
+                    }
+                }
+                StrudelState.displayUrl = remoteUrl.href;
+                setStrudelUrlDisplay(remoteUrl.href);
+                recordStrudelHistory(remoteUrl.href);
+            } catch (err) {
+                // Access errors are expected when the iframe is on a different origin (initial load, etc).
+                if (StrudelState.debugSync) {
+                    console.warn("Failed to sync Strudel frame location", err);
+                }
+            }
+        }
+
+        function attachStrudelFrameListeners() {
+            const frame = document.getElementById("strudelFrame");
+            if (!frame || frame._strudelSyncAttached) return;
+            frame._strudelSyncAttached = true;
+            frame.addEventListener("load", () => {
+                setTimeout(syncStrudelFrameLocation, 0);
+            });
+        }
+        function reloadStrudelView() {
+            if (Bridges.strudel) {
+                Bridges.strudel.reload();
+            } else {
+                const frame = document.getElementById("strudelFrame");
+                if (frame) frame.contentWindow.location.reload();
+            }
+        }
+        function navigateStrudelHistory(direction) {
+            if (!StrudelHistory.entries.length) return;
+            const nextIndex = StrudelHistory.index + direction;
+            if (nextIndex < 0 || nextIndex >= StrudelHistory.entries.length) return;
+            StrudelHistory.index = nextIndex;
+            updateStrudelNavButtons();
+            requestStrudelUrl(StrudelHistory.entries[nextIndex]);
+        }
+        function initializeWindowFocus() {
+            document.querySelectorAll(".window").forEach((win, index) => {
+                win.style.zIndex = 10 + index;
+                win.addEventListener("pointerdown", () => bringWindowToFront(win));
+            });
+        }
+        function handleDesktopState(payload) {
+            try {
+                const data = JSON.parse(payload);
+                DesktopState.theme = data.theme || DesktopState.theme;
+                DesktopState.wallpaper = data.wallpaper || DesktopState.wallpaper;
+                DesktopState.themes = data.themes || DesktopState.themes;
+                DesktopState.windows = data.windows || DesktopState.windows;
+                document.body.dataset.theme = DesktopState.theme;
+                applyThemeStylesheet();
+                syncWindowThemeClasses();
+                applyWallpaper();
+                updateThemeSelect();
+                renderTaskbarWindows();
+                initializeWindowFocus();
+                applyRemoteWindowVisibility();
+            } catch (err) {
+                console.warn("Desktop state parse failed", err);
+            }
+        }
+        function handlePluginStudioState(payload) {
+            try {
+                const data = JSON.parse(payload);
+                PluginState.plugins = data.plugins || [];
+                PluginState.chain = data.chain || [];
+                PluginState.hostStatus = data.hostStatus || "";
+                PluginState.currentPluginPath = data.currentPluginPath || null;
+                PluginState.workspace = data.workspace || PluginState.workspace;
+                console.log("[WebDesktop] received plugin state", PluginState.plugins.length, "plugins");
+                renderPluginStudio();
+                renderPluginUI();
+            } catch (err) {
+                console.warn("Plugin state parse failed", err);
+            }
+        }
+        function handlePluginDescriptor(payload) {
+            try {
+                const data = JSON.parse(payload);
+                PluginState.currentPluginPath = data.path || null;
+                renderPluginUI();
+            } catch (err) {
+                console.warn("Plugin descriptor parse failed", err);
+            }
+        }
+        function renderPluginStudio() {
+            const list = document.getElementById("pluginList");
+            const chain = document.getElementById("chainList");
+            const status = document.getElementById("hostStatus");
+            const workspace = document.getElementById("workspaceLabel");
+            if (workspace) {
+                workspace.textContent = `Workspace: ${PluginState.workspace || "(unknown)"}`;
+            }
+            list.innerHTML = "";
+            if (!PluginState.plugins.length) {
+                list.innerHTML = "<p>No plugins discovered. Click Refresh in toolbar.</p>";
+            } else {
+                for (const plugin of PluginState.plugins) {
+                    const card = document.createElement("div");
+                    card.className = "card";
+                    const text = document.createElement("div");
+                    const title = document.createElement("h3");
+                    title.textContent = plugin.name || "(untitled)";
+                    const meta = document.createElement("span");
+                    meta.textContent = `${plugin.format || "?"} | ${plugin.path || ""}`;
+                    text.appendChild(title);
+                    text.appendChild(meta);
+                    const btn = document.createElement("button");
+                    btn.textContent = "Add to chain";
+                    btn.addEventListener("click", () => Bridges.pluginStudio && Bridges.pluginStudio.addPluginByPath(plugin.path || ""));
+                    card.appendChild(text);
+                    card.appendChild(btn);
+                    list.appendChild(card);
+                }
+            }
+            chain.innerHTML = "";
+            if (!PluginState.chain.length) {
+                chain.innerHTML = "<p>Chain empty. Add plugins to configure routing.</p>";
+            } else {
+                for (const entry of PluginState.chain) {
+                    const card = document.createElement("div");
+                    card.className = "card";
+                    const text = document.createElement("div");
+                    const title = document.createElement("h3");
+                    title.textContent = entry.label || entry.path;
+                    const meta = document.createElement("span");
+                    meta.textContent = entry.path || "";
+                    text.appendChild(title);
+                    text.appendChild(meta);
+                    const actions = document.createElement("div");
+                    actions.style.display = "flex";
+                    actions.style.gap = "8px";
+                    const loadBtn = document.createElement("button");
+                    loadBtn.textContent = entry.active ? "Loaded" : "Load";
+                    loadBtn.addEventListener("click", () => Bridges.pluginStudio && Bridges.pluginStudio.loadChainIndex(entry.index));
+                    const removeBtn = document.createElement("button");
+                    removeBtn.textContent = "Remove";
+                    removeBtn.className = "secondary";
+                    removeBtn.addEventListener("click", () => Bridges.pluginStudio && Bridges.pluginStudio.removeChainIndex(entry.index));
+                    actions.appendChild(loadBtn);
+                    actions.appendChild(removeBtn);
+                    card.appendChild(text);
+                    card.appendChild(actions);
+                    chain.appendChild(card);
+                }
+            }
+            status.textContent = PluginState.hostStatus || "";
+        }
+        function renderPluginUI() {
+            const title = document.getElementById("pluginTitle");
+            const path = document.getElementById("pluginPath");
+            const chips = document.getElementById("chainChips");
+            const status = document.getElementById("pluginUiStatus");
+            if (PluginState.currentPluginPath) {
+                const segments = PluginState.currentPluginPath.split(/[\\/]/);
+                title.textContent = segments.pop() || "Loaded Plugin";
+                path.textContent = PluginState.currentPluginPath;
+            } else {
+                title.textContent = "No plugin loaded";
+                path.textContent = "Select a plugin from the chain to load it.";
+            }
+            chips.innerHTML = "";
+            if (!PluginState.chain.length) {
+                chips.textContent = "Chain is empty.";
+            } else {
+                for (const entry of PluginState.chain) {
+                    const chip = document.createElement("div");
+                    chip.className = "chain-chip" + (entry.active ? " active" : "");
+                    chip.textContent = entry.label || entry.path || "Plugin";
+                    chip.title = entry.path || "";
+                    chip.addEventListener("click", () => Bridges.pluginStudio && Bridges.pluginStudio.loadChainIndex(entry.index));
+                    chips.appendChild(chip);
+                }
+            }
+            status.textContent = PluginState.hostStatus || "";
+        }
+        function renderTaskbarWindows() {
+            const container = document.getElementById("windowButtons");
+            if (!container) return;
+            container.innerHTML = "";
+            const entries = [];
+            (DesktopState.windows || []).forEach(win => {
+                entries.push({
+                    id: win.id,
+                    name: win.name,
+                    visible: !!win.visible,
+                    local: false,
+                });
+            });
+            Object.values(LocalWindowRegistry).forEach(spec => {
+                const exists = entries.some(entry => entry.id === spec.id);
+                if (exists) return;
+                const el = document.querySelector(spec.selector);
+                if (!el) return;
+                entries.push({
+                    id: spec.id,
+                    name: spec.name,
+                    visible: el.style.display !== "none",
+                    local: true,
+                });
+            });
+            entries.forEach(entry => {
+                const btn = document.createElement("button");
+                btn.className = "taskbar-button" + (entry.visible ? " active" : "");
+                btn.textContent = entry.name;
+                btn.addEventListener("click", () => {
+                    if (!entry.local && Bridges.desktop) {
+                        Bridges.desktop.toggleWindow(entry.id);
+                        const localId = RemoteWindowReverseMap[entry.id];
+                        if (localId) {
+                            const element = document.querySelector(`[data-window="${localId}"]`);
+                            if (element) {
+                                element.style.display = element.style.display === "none" ? "block" : "none";
+                                if (element.style.display !== "none") {
+                                    bringWindowToFront(element);
+                                }
+                            }
+                        }
+                    } else {
+                        toggleLocalWindow(entry.id);
+                    }
+                });
+                container.appendChild(btn);
+            });
+        }
+        function applyRemoteWindowVisibility() {
+            (DesktopState.windows || []).forEach(win => {
+                const localId = RemoteWindowReverseMap[win.id];
+                if (!localId) return;
+                const element = document.querySelector(`[data-window="${localId}"]`);
+                if (!element) return;
+                element.style.display = win.visible ? "block" : "none";
+                if (win.visible) {
+                    bringWindowToFront(element);
+                }
+            });
+        }
+        function updateThemeSelect() {
+            const select = document.getElementById("themeSelect");
+            if (!select) return;
+            const currentOptions = Array.from(select.options).map(opt => opt.value);
+            const themeIds = DesktopState.themes.map(t => t.id);
+            const needsRebuild = currentOptions.length !== themeIds.length ||
+                currentOptions.some((value, idx) => value !== themeIds[idx]);
+            if (needsRebuild) {
+                select.innerHTML = "";
+                DesktopState.themes.forEach(theme => {
+                    const option = document.createElement("option");
+                    option.value = theme.id;
+                    option.textContent = theme.name;
+                    select.appendChild(option);
+                });
+            }
+            const target = DesktopState.theme;
+            if (select.value !== target) {
+                const option = Array.from(select.options).find(opt => opt.value === target);
+                if (option) {
+                    select.value = target;
+                }
+            }
+        }
+        function buildKeyboard() {
+            const host = document.getElementById("keyboardKeys");
+            if (!host) return;
+            host.innerHTML = "";
+            KEYBOARD_LAYOUT.forEach(key => {
+                const el = document.createElement("div");
+                el.className = `key ${key.type}`;
+                el.style.left = `${key.x}px`;
+                el.style.width = key.type === "white" ? "40px" : "28px";
+                el.style.zIndex = key.type === "white" ? "1" : "2";
+                el.dataset.note = key.note;
+                el.textContent = key.label;
+                bindKeyElement(el, key.note);
+                host.appendChild(el);
+                keyboardElements.set(key.note, el);
+            });
+            BLACK_KEYS.forEach(key => {
+                const el = document.createElement("div");
+                el.className = "key black";
+                el.style.left = `${key.x}px`;
+                el.dataset.note = key.note;
+                el.textContent = "";
+                bindKeyElement(el, key.note);
+                host.appendChild(el);
+                keyboardElements.set(key.note, el);
+            });
+        }
+        function bindKeyElement(el, note) {
+            el.addEventListener("pointerdown", (event) => {
+                event.preventDefault();
+                el.setPointerCapture(event.pointerId);
+                pointerNotes.set(event.pointerId, note);
+                Bridges.keyboard && Bridges.keyboard.noteOn(note);
+                setKeyHighlight(note, true);
+            });
+            const release = (event) => {
+                const trackedNote = pointerNotes.get(event.pointerId);
+                if (trackedNote !== undefined) {
+                    Bridges.keyboard && Bridges.keyboard.noteOff(trackedNote);
+                    pointerNotes.delete(event.pointerId);
+                    setKeyHighlight(trackedNote, false);
+                }
+            };
+            el.addEventListener("pointerup", release);
+            el.addEventListener("pointercancel", release);
+        }
+        function handleKeyboardState(payload) {
+            try {
+                const state = JSON.parse(payload);
+                KeyboardState.velocity = state.velocity ?? KeyboardState.velocity;
+                KeyboardState.octave = state.octave ?? KeyboardState.octave;
+                KeyboardState.activeNotes = state.activeNotes || [];
+                KeyboardState.enabled = !!state.enabled;
+                document.getElementById("velocityRange").value = KeyboardState.velocity;
+                document.getElementById("velocityValue").textContent = KeyboardState.velocity;
+                document.getElementById("octaveValue").textContent = KeyboardState.octave;
+                keyboardElements.forEach((el, note) => {
+                    el.classList.toggle("active", KeyboardState.activeNotes.includes(note));
+                });
+                if (!KeyboardState.enabled) {
+                    releaseAllComputerKeys();
+                }
+            } catch (err) {
+                console.warn("Keyboard state parse failed", err);
+            }
+        }
+        function shouldIgnoreKeyEventTarget(target) {
+            if (!target) return false;
+            const tag = target.tagName;
+            if (!tag) return false;
+            return ["INPUT", "TEXTAREA", "SELECT"].includes(tag) || target.isContentEditable;
+        }
+        function keyboardBaseNote() {
+            const octave = Number.isFinite(KeyboardState.octave) ? Number(KeyboardState.octave) : 3;
+            return 12 + octave * 12;
+        }
+        function noteFromComputerKey(code) {
+            const offset = COMPUTER_KEYMAP[code];
+            if (typeof offset === "undefined") return null;
+            return keyboardBaseNote() + offset;
+        }
+        function setKeyHighlight(note, active) {
+            const el = keyboardElements.get(note);
+            if (el) {
+                el.classList.toggle("active", active);
+            }
+        }
+        function handleComputerKeyDown(event) {
+            if (event.repeat) return;
+            if (!KeyboardState.enabled || !Bridges.keyboard) return;
+            if (shouldIgnoreKeyEventTarget(event.target)) return;
+            const midi = noteFromComputerKey(event.code);
+            if (midi === null) return;
+            if (activeComputerKeys.has(event.code)) return;
+            event.preventDefault();
+            activeComputerKeys.set(event.code, midi);
+            Bridges.keyboard.noteOn(midi);
+            setKeyHighlight(midi, true);
+        }
+        function handleComputerKeyUp(event) {
+            const midi = activeComputerKeys.get(event.code);
+            if (midi === undefined) return;
+            activeComputerKeys.delete(event.code);
+            if (Bridges.keyboard) {
+                Bridges.keyboard.noteOff(midi);
+            }
+            setKeyHighlight(midi, false);
+        }
+        function releaseAllComputerKeys() {
+            if (!activeComputerKeys.size) return;
+            activeComputerKeys.forEach((note) => {
+                if (Bridges.keyboard) {
+                    Bridges.keyboard.noteOff(note);
+                }
+                setKeyHighlight(note, false);
+            });
+            activeComputerKeys.clear();
+        }
+        function appendLogLine(line) {
+            const container = document.getElementById("consoleLog");
+            if (!container) return;
+            const div = document.createElement("div");
+            div.textContent = line;
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+        }
+        function setLogHistory(payload) {
+            try {
+                const data = JSON.parse(payload);
+                const container = document.getElementById("consoleLog");
+                if (!container || !data.lines) return;
+                container.innerHTML = "";
+                data.lines.forEach(line => appendLogLine(line));
+            } catch (err) {
+                console.warn("Failed to parse log history", err);
+            }
+        }
+        function getLocalWindowEntry(id) {
+            const spec = LocalWindowRegistry[id];
+            if (!spec) return null;
+            const el = document.querySelector(spec.selector);
+            if (!el) return null;
+            return { id: spec.id, name: spec.name, element: el };
+        }
+        function isLocalWindowVisible(id) {
+            const entry = getLocalWindowEntry(id);
+            if (!entry) return false;
+            return entry.element.style.display !== "none";
+        }
+        function showLocalWindow(id) {
+            const entry = getLocalWindowEntry(id);
+            if (!entry) return;
+            entry.element.style.display = "block";
+            bringWindowToFront(entry.element);
+        }
+        function hideLocalWindow(id) {
+            const entry = getLocalWindowEntry(id);
+            if (!entry) return;
+            entry.element.style.display = "none";
+        }
+        function toggleLocalWindow(id) {
+            if (id === "strudel") {
+                if (!Bridges.strudel) return;
+                if (StrudelState.visible) {
+                    Bridges.strudel.close();
+                } else {
+                    Bridges.strudel.open();
+                }
+                return;
+            }
+            const entry = getLocalWindowEntry(id);
+            if (!entry) return;
+            const visible = entry.element.style.display !== "none";
+            if (visible) {
+                entry.element.style.display = "none";
+            } else {
+                entry.element.style.display = "block";
+                bringWindowToFront(entry.element);
+            }
+            renderTaskbarWindows();
+        }
+        function handleWindowAction(win, action) {
+            if (!win || !action) return;
+            const id = win.dataset.window || "";
+            if (action === "maximize") {
+                toggleMaximize(win);
+                return;
+            }
+            if (action === "minimize" || action === "close") {
+                if (id === "strudel") {
+                    if (Bridges.strudel) Bridges.strudel.close();
+                    win.style.display = "none";
+                    renderTaskbarWindows();
+                    return;
+                }
+                const remoteId = RemoteWindowMap[id];
+                if (remoteId && Bridges.desktop && Bridges.desktop.toggleWindow) {
+                    Bridges.desktop.toggleWindow(remoteId);
+                    win.style.display = "none";
+                    return;
+                }
+                if (LocalWindowRegistry[id]) {
+                    hideLocalWindow(id);
+                    renderTaskbarWindows();
+                    return;
+                }
+                win.style.display = "none";
+                renderTaskbarWindows();
+            }
+        }
+        function wireWindowControls() {
+            document.querySelectorAll(".window").forEach(win => {
+                const buttons = win.querySelectorAll(".window-controls button[data-action]");
+                buttons.forEach(btn => {
+                    btn.addEventListener("click", (event) => {
+                        event.stopPropagation();
+                        handleWindowAction(win, btn.dataset.action);
+                    });
+                });
+            });
+        }
+        function handleStrudelState(payload) {
+            const prevProxyBase = StrudelState.proxyBase;
+            try {
+                const data = JSON.parse(payload) || {};
+                StrudelState.loaded = !!data.loaded;
+                StrudelState.visible = !!data.visible;
+                StrudelState.url = data.url || null;
+                StrudelState.error = data.error || null;
+                StrudelState.homeUrl = data.homeUrl || StrudelState.homeUrl;
+                if (Object.prototype.hasOwnProperty.call(data, "displayUrl")) {
+                    StrudelState.displayUrl = data.displayUrl || null;
+                }
+                if (Object.prototype.hasOwnProperty.call(data, "proxyBase")) {
+                    StrudelState.proxyBase = data.proxyBase || null;
+                }
+                if (typeof data.reloadToken === "number") {
+                    StrudelState.reloadToken = data.reloadToken;
+                }
+            } catch (err) {
+                console.warn("Strudel state parse failed", err);
+            }
+            const proxyChanged = prevProxyBase !== StrudelState.proxyBase;
+            const remoteHome = StrudelState.remoteHome || "https://strudel.cc/";
+            if (StrudelState.proxyBase) {
+                const proxiedHome = buildProxyUrl(remoteHome);
+                if (proxiedHome) {
+                    StrudelState.homeUrl = proxiedHome;
+                }
+                if (proxyChanged) {
+                    const nextUrl = buildProxyUrl(StrudelState.displayUrl || remoteHome);
+                    if (nextUrl) {
+                        StrudelState.url = nextUrl;
+                        StrudelState.reloadToken += 1;
+                    }
+                }
+            } else {
+                StrudelState.homeUrl = remoteHome;
+            }
+            const status = document.getElementById("strudelStatus");
+            let message = "";
+            if (StrudelState.error) {
+                message = `Error: ${StrudelState.error}`;
+            } else if (!StrudelState.loaded) {
+                message = "Starting Strudel...";
+            } else if (StrudelState.visible) {
+                message = "Strudel running.";
+            } else {
+                message = "Strudel ready.";
+            }
+            if (status) status.textContent = message;
+            const frame = document.getElementById("strudelFrame");
+            const placeholder = document.getElementById("strudelPlaceholder");
+            const fallbackUrl = StrudelState.displayUrl || StrudelState.homeUrl || StrudelState.remoteHome;
+            let desiredUrl = StrudelState.url;
+            if (!desiredUrl && fallbackUrl) {
+                if (StrudelState.proxyBase && fallbackUrl && StrudelState.proxyBase && fallbackUrl.startsWith(StrudelState.proxyBase)) {
+                    desiredUrl = fallbackUrl;
+                } else if (StrudelState.proxyBase) {
+                    desiredUrl = buildProxyUrl(fallbackUrl);
+                } else {
+                    desiredUrl = fallbackUrl;
+                }
+            }
+            if (frame && desiredUrl) {
+                const shouldReload = StrudelState.reloadToken !== StrudelState.lastReloadToken;
+                if (shouldReload || frame.dataset.src !== desiredUrl) {
+                    frame.dataset.src = desiredUrl;
+                    frame.src = desiredUrl;
+                    StrudelState.lastReloadToken = StrudelState.reloadToken;
+                }
+            } else {
+                StrudelState.lastReloadToken = StrudelState.reloadToken;
+            }
+            const displayUrl = StrudelState.displayUrl || StrudelState.homeUrl || desiredUrl;
+            if (displayUrl) {
+                recordStrudelHistory(displayUrl);
+            }
+            const win = document.querySelector('[data-window="strudel"]');
+            const shouldShow = StrudelState.visible;
+            if (win) {
+                win.style.display = shouldShow ? "block" : "none";
+                if (shouldShow) {
+                    bringWindowToFront(win);
+                }
+            }
+
+            const toggleBtn = document.getElementById("strudelToggle");
+            if (toggleBtn) {
+                toggleBtn.textContent = StrudelState.visible ? "Hide Strudel" : "Open Strudel";
+                toggleBtn.disabled = !!StrudelState.error;
+            }
+            setStrudelUrlDisplay(displayUrl);
+            updateStrudelNavButtons();
+            attachStrudelFrameListeners();
+            syncStrudelFrameLocation();
+            updateStrudelFrameBounds();
+            if (placeholder) {
+                if (StrudelState.error) {
+                    placeholder.textContent = `Unable to load Strudel (${StrudelState.error}).`;
+                } else if (!StrudelState.loaded) {
+                    placeholder.textContent = "Preparing Strudel...";
+                } else if (!StrudelState.visible) {
+                    placeholder.textContent = "Strudel is hidden. Click Open Strudel to view.";
+                } else {
+                    placeholder.textContent = "";
+                }
+                placeholder.classList.toggle("hidden", StrudelState.visible && !StrudelState.error);
+            }
+        }
+        function reportNativeViewport() {
+            if (!Bridges.desktop) return;
+            const anchor = document.getElementById("nativeViewport");
+            if (!anchor) return;
+            const rect = anchor.getBoundingClientRect();
+            Bridges.desktop.updateNativeViewport(rect.x, rect.y, rect.width, rect.height);
+        }
+        function observeNativeViewport() {
+            const anchor = document.getElementById("nativeViewport");
+            if (!anchor) return;
+            if (nativeViewportObserver) nativeViewportObserver.disconnect();
+            nativeViewportObserver = new ResizeObserver(() => reportNativeViewport());
+            nativeViewportObserver.observe(anchor);
+            reportNativeViewport();
+        }
+        function updateStrudelFrameBounds() {
+            const container = document.getElementById("strudelWebviewContainer");
+            const frame = document.getElementById("strudelFrame");
+            if (!container || !frame) return;
+            const height = container.clientHeight;
+            if (height > 0) {
+                frame.style.height = `${height}px`;
+            }
+        }
+        function observeStrudelFrameBounds() {
+            const container = document.getElementById("strudelWebviewContainer");
+            if (!container) return;
+            if (strudelFrameObserver) {
+                strudelFrameObserver.disconnect();
+                strudelFrameObserver = null;
+            }
+            if (typeof ResizeObserver === "undefined") {
+                updateStrudelFrameBounds();
+                return;
+            }
+            strudelFrameObserver = new ResizeObserver(() => updateStrudelFrameBounds());
+            strudelFrameObserver.observe(container);
+            updateStrudelFrameBounds();
+        }
+        function wireControls() {
+            const themeSelect = document.getElementById("themeSelect");
+            if (themeSelect) {
+                themeSelect.addEventListener("change", () => {
+                    const value = themeSelect.value;
+                    Bridges.desktop && Bridges.desktop.setTheme(value);
+                });
+            }
+            document.getElementById("btnShowNative").addEventListener("click", () => {
+                Bridges.pluginUI && Bridges.pluginUI.showNativeUI();
+            });
+            document.getElementById("btnUnload").addEventListener("click", () => {
+                Bridges.pluginUI && Bridges.pluginUI.unloadPlugin();
+            });
+            document.getElementById("refreshBtn").addEventListener("click", () => {
+                Bridges.pluginStudio && Bridges.pluginStudio.refreshPlugins();
+            });
+            const saveBtn = document.getElementById("saveSessionBtn");
+            if (saveBtn) {
+                saveBtn.addEventListener("click", () => Bridges.pluginStudio && Bridges.pluginStudio.saveSession && Bridges.pluginStudio.saveSession());
+            }
+            const loadBtn = document.getElementById("loadSessionBtn");
+            if (loadBtn) {
+                loadBtn.addEventListener("click", () => Bridges.pluginStudio && Bridges.pluginStudio.loadSession && Bridges.pluginStudio.loadSession());
+            }
+            const panicButton = document.getElementById("panicButton");
+            if (panicButton) {
+                panicButton.addEventListener("click", () => {
+                    Bridges.desktop && Bridges.desktop.emergencyStop();
+                });
+            }
+            const strudelToggle = document.getElementById("strudelToggle");
+            if (strudelToggle) {
+                strudelToggle.addEventListener("click", () => {
+                    if (!Bridges.strudel) return;
+                    if (StrudelState.visible) {
+                        Bridges.strudel.close();
+                    } else {
+                        Bridges.strudel.open();
+                    }
+                });
+            }
+            const velocityRange = document.getElementById("velocityRange");
+            velocityRange.addEventListener("input", (event) => {
+                const value = parseInt(event.target.value, 10) || 0;
+                document.getElementById("velocityValue").textContent = value;
+                Bridges.keyboard && Bridges.keyboard.setVelocity(value);
+            });
+            document.getElementById("octaveDown").addEventListener("click", () => {
+                Bridges.keyboard && Bridges.keyboard.setOctave(KeyboardState.octave - 1);
+            });
+            document.getElementById("octaveUp").addEventListener("click", () => {
+                Bridges.keyboard && Bridges.keyboard.setOctave(KeyboardState.octave + 1);
+            });
+            buildKeyboard();
+            observeNativeViewport();
+            observeStrudelFrameBounds();
+            const strudelReload = document.getElementById("strudelReload");
+            if (strudelReload) {
+                strudelReload.addEventListener("click", () => {
+                    if (Bridges.strudel) {
+                        Bridges.strudel.open();
+                        Bridges.strudel.reload();
+                    }
+                });
+            }
+            const strudelBrowserReload = document.getElementById("strudelBrowserReload");
+            if (strudelBrowserReload) {
+                strudelBrowserReload.addEventListener("click", () => {
+                    reloadStrudelView();
+                });
+            }
+            const strudelBack = document.getElementById("strudelBack");
+            if (strudelBack) {
+                strudelBack.addEventListener("click", () => navigateStrudelHistory(-1));
+            }
+            const strudelForward = document.getElementById("strudelForward");
+            if (strudelForward) {
+                strudelForward.addEventListener("click", () => navigateStrudelHistory(1));
+            }
+            const strudelHome = document.getElementById("strudelHome");
+            if (strudelHome) {
+                strudelHome.addEventListener("click", () => {
+                    const home = StrudelState.remoteHome || "https://strudel.cc/";
+                    requestStrudelUrl(home);
+                });
+            }
+            const actionButtons = [
+                ["strudelLearn", "learn"],
+                ["strudelUpdate", "update"],
+                ["strudelStop", "stop"],
+                ["strudelShare", "share"],
+            ];
+            actionButtons.forEach(([id, action]) => {
+                const btn = document.getElementById(id);
+                if (!btn) return;
+                btn.addEventListener("click", () => sendStrudelAction(action));
+            });
+            initSequencer();
+            loadDrumCatalog().then(() => renderSequencer());
+            const sequencerAddRow = document.getElementById("sequencerAddRow");
+            if (sequencerAddRow) {
+                sequencerAddRow.addEventListener("click", () => addSequencerRow());
+            }
+            const sequencerApply = document.getElementById("sequencerApply");
+            if (sequencerApply) {
+                sequencerApply.addEventListener("click", () => applySequencerToStrudel(false));
+            }
+            const sequencerApplyPlay = document.getElementById("sequencerApplyPlay");
+            if (sequencerApplyPlay) {
+                sequencerApplyPlay.addEventListener("click", () => applySequencerToStrudel(true));
+            }
+            const sequencerStop = document.getElementById("sequencerStop");
+            if (sequencerStop) {
+                sequencerStop.addEventListener("click", () => sendStrudelAction("stop"));
+            }
+            const sequencerCpm = document.getElementById("sequencerCpm");
+            if (sequencerCpm) {
+                sequencerCpm.addEventListener("input", (event) => {
+                    const value = parseFloat(event.target.value);
+                    if (!Number.isFinite(value)) return;
+                    SequencerState.cpm = Math.max(1, value);
+                    renderSequencer();
+                });
+            }
+            const sequencerDefaultSteps = document.getElementById("sequencerDefaultSteps");
+            if (sequencerDefaultSteps) {
+                sequencerDefaultSteps.addEventListener("input", (event) => {
+                    const value = clampNumber(Number(event.target.value), 1, 64);
+                    SequencerState.defaultSteps = value;
+                    event.target.value = value;
+                    renderSequencer(false);
+                });
+            }
+            document.addEventListener("keydown", handleComputerKeyDown);
+            document.addEventListener("keyup", handleComputerKeyUp);
+            window.addEventListener("blur", releaseAllComputerKeys);
+            document.addEventListener("visibilitychange", () => {
+                if (document.hidden) {
+                    releaseAllComputerKeys();
+                }
+            });
+            window.addEventListener("resize", () => {
+                reportNativeViewport();
+                updateStrudelFrameBounds();
+            });
+            document.querySelectorAll(".window").forEach(enableDrag);
+            wireWindowControls();
+        }
+        function enableDrag(win) {
+            if (win.dataset.locked === "true") {
+                return;
+            }
+            const titlebar = win.querySelector(".window-titlebar");
+            let offsetX = 0;
+            let offsetY = 0;
+            let dragging = false;
+            titlebar.addEventListener("pointerdown", (event) => {
+                dragging = true;
+                bringWindowToFront(win);
+                titlebar.setPointerCapture(event.pointerId);
+                const rect = win.getBoundingClientRect();
+                offsetX = event.clientX - rect.left;
+                offsetY = event.clientY - rect.top;
+            });
+            titlebar.addEventListener("pointermove", (event) => {
+                if (!dragging) return;
+                const x = event.clientX - offsetX;
+                const y = event.clientY - offsetY;
+                win.style.left = `${x}px`;
+                win.style.top = `${y}px`;
+                win.style.right = "auto";
+                if (win.dataset.window === "plugin-ui") {
+                    reportNativeViewport();
+                }
+            });
+            const stopDrag = (event) => {
+                if (!dragging) return;
+                dragging = false;
+                titlebar.releasePointerCapture(event.pointerId);
+                if (win.dataset.window === "plugin-ui") {
+                    reportNativeViewport();
+                }
+            };
+            titlebar.addEventListener("pointerup", stopDrag);
+            titlebar.addEventListener("pointercancel", stopDrag);
+        }
+        function initChannel() {
+            if (typeof qt === "undefined" || !qt.webChannelTransport) {
+                console.warn("Qt WebChannel unavailable");
+                return;
+            }
+            new QWebChannel(qt.webChannelTransport, (channel) => {
+                Bridges.desktop = channel.objects.DesktopBridge;
+                Bridges.pluginStudio = channel.objects.PluginStudioBridge;
+                Bridges.pluginUI = channel.objects.PluginUIBridge;
+                Bridges.console = channel.objects.ConsoleBridge;
+                Bridges.keyboard = channel.objects.KeyboardBridge;
+                Bridges.strudel = channel.objects.StrudelBridge;
+                if (Bridges.desktop) {
+                    Bridges.desktop.stateUpdated.connect(handleDesktopState);
+                    Bridges.desktop.requestInitialState();
+                }
+                if (Bridges.pluginStudio) {
+                    Bridges.pluginStudio.stateUpdated.connect(handlePluginStudioState);
+                    Bridges.pluginStudio.requestInitialState();
+                }
+                if (Bridges.pluginUI) {
+                    Bridges.pluginUI.stateUpdated.connect(handlePluginStudioState);
+                    Bridges.pluginUI.pluginChanged.connect(handlePluginDescriptor);
+                    Bridges.pluginUI.requestInitialState();
+                }
+                if (Bridges.console) {
+                    Bridges.console.logLine.connect(appendLogLine);
+                    Bridges.console.historyReady.connect(setLogHistory);
+                    Bridges.console.requestHistory();
+                }
+                if (Bridges.keyboard) {
+                    Bridges.keyboard.stateUpdated.connect(handleKeyboardState);
+                    if (Bridges.keyboard.requestState) {
+                        Bridges.keyboard.requestState();
+                    }
+                }
+                if (Bridges.strudel) {
+                    Bridges.strudel.stateUpdated.connect(handleStrudelState);
+                    Bridges.strudel.requestState();
+                }
+            });
+        }
+        document.addEventListener("DOMContentLoaded", () => {
+            document.body.dataset.theme = DesktopState.theme;
+            applyThemeStylesheet();
+            syncWindowThemeClasses();
+            applyWallpaper();
+            const initialStatus = document.getElementById("strudelStatus");
+            if (initialStatus) initialStatus.textContent = "Strudel idle";
+            initializeWindowFocus();
+            renderTaskbarWindows();
+            initClock();
+            wireControls();
+            attachStrudelFrameListeners();
+            updateStrudelNavButtons();
+            initChannel();
+        });
+        function getToolbarHeight() {
+            const toolbar = document.getElementById("web-toolbar");
+            return toolbar ? toolbar.offsetHeight : 38;
+        }
+        function getTaskbarHeight() {
+            const taskbar = document.getElementById("taskbar");
+            return taskbar ? taskbar.offsetHeight : 44;
+        }
+        function applyMaximizedBounds(win) {
+            const toolbarHeight = getToolbarHeight();
+            const taskbarHeight = getTaskbarHeight();
+            win.style.left = "12px";
+            win.style.top = `${toolbarHeight + 8}px`;
+            win.style.width = "calc(100vw - 24px)";
+            win.style.height = `calc(100vh - ${toolbarHeight + taskbarHeight + 16}px)`;
+            win.style.right = "auto";
+            win.style.bottom = "auto";
+        }
+        function maximizeWindow(win) {
+            if (win.classList.contains("maximized")) return;
+            const rect = win.getBoundingClientRect();
+            win.dataset.prevLeft = win.style.left || `${rect.left}px`;
+            win.dataset.prevTop = win.style.top || `${rect.top}px`;
+            win.dataset.prevWidth = win.style.width || `${rect.width}px`;
+            win.dataset.prevHeight = win.style.height || `${rect.height}px`;
+            win.classList.add("maximized");
+            applyMaximizedBounds(win);
+        }
+        function restoreWindow(win) {
+            if (!win.classList.contains("maximized")) return;
+            win.classList.remove("maximized");
+            if (win.dataset.prevLeft) win.style.left = win.dataset.prevLeft;
+            if (win.dataset.prevTop) win.style.top = win.dataset.prevTop;
+            if (win.dataset.prevWidth) win.style.width = win.dataset.prevWidth;
+            if (win.dataset.prevHeight) win.style.height = win.dataset.prevHeight;
+            ["prevLeft","prevTop","prevWidth","prevHeight"].forEach(key => delete win.dataset[key]);
+        }
+        function toggleMaximize(win) {
+            if (win.classList.contains("maximized")) {
+                restoreWindow(win);
+            } else {
+                maximizeWindow(win);
+            }
+        }
+        function getStrudelTargetOrigin() {
+            const frame = document.getElementById("strudelFrame");
+            const target =
+                (frame && frame.dataset && frame.dataset.src) ||
+                StrudelState.url ||
+                StrudelState.homeUrl ||
+                StrudelState.remoteHome;
+            if (!target) return null;
+            try {
+                return new URL(target, window.location.href).origin;
+            } catch {
+                return null;
+            }
+        }
+        function sendStrudelAction(action, attempt = 0) {
+            if (!action) return;
+            const frame = document.getElementById("strudelFrame");
+            const origin = getStrudelTargetOrigin();
+            if (!frame || !frame.contentWindow || !origin) {
+                if (attempt < STRUDEL_POST_MAX_ATTEMPTS) {
+                    setTimeout(() => sendStrudelAction(action, attempt + 1), 200);
+                }
+                return;
+            }
+            try {
+                frame.contentWindow.postMessage({ type: "ambiance-strudel-action", action }, origin);
+            } catch (error) {
+                if (attempt < STRUDEL_POST_MAX_ATTEMPTS) {
+                    setTimeout(() => sendStrudelAction(action, attempt + 1), 200);
+                } else {
+                    console.warn("Unable to deliver Strudel action", action, error);
+                }
+            }
+        }
+        function sendStrudelCode(code, attempt = 0) {
+            if (typeof code !== "string") return;
+            const frame = document.getElementById("strudelFrame");
+            const origin = getStrudelTargetOrigin();
+            if (!frame || !frame.contentWindow || !origin) {
+                if (attempt < STRUDEL_POST_MAX_ATTEMPTS) {
+                    setTimeout(() => sendStrudelCode(code, attempt + 1), 200);
+                }
+                return;
+            }
+            try {
+                frame.contentWindow.postMessage({ type: "ambiance-strudel-set-code", code }, origin);
+            } catch (error) {
+                if (attempt < STRUDEL_POST_MAX_ATTEMPTS) {
+                    setTimeout(() => sendStrudelCode(code, attempt + 1), 200);
+                } else {
+                    console.warn("Unable to deliver Strudel code", error);
+                }
+            }
+        }
+        function clampNumber(value, min, max) {
+            if (!Number.isFinite(value)) return min;
+            return Math.min(Math.max(value, min), max);
+        }
+        function escapeHtml(value) {
+            return String(value ?? "")
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;");
+        }
+        function generateSequencerRowId() {
+            return `seq-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 6)}`;
+        }
+        function createSequencerRow(instrument, bank, steps) {
+            const total = clampNumber(Number(steps) || SequencerState.defaultSteps, 1, 64);
+            const row = {
+                id: generateSequencerRowId(),
+                mode: "sample",
+                instrument: (instrument || "").trim(),
+                bank: (bank || "").toLowerCase(),
+                steps: total,
+                structDivisor: total,
+                pitchMode: "scale",
+                pitchSequence: "",
+                scaleList: "",
+                beats: Array.from({ length: total }, () => false),
+            };
+            ensureRowBank(row);
+            ensureRowInstrument(row);
+            return row;
+        }
+        function addSequencerRow(instrument, bank, steps) {
+            SequencerState.rows.push(createSequencerRow(instrument, bank, steps));
+            renderSequencer();
+        }
+        function removeSequencerRow(rowId) {
+            SequencerState.rows = SequencerState.rows.filter((row) => row.id !== rowId);
+            renderSequencer();
+        }
+        function ensureRowBeatLength(row) {
+            if (!row.steps) row.steps = row.beats.length || SequencerState.defaultSteps;
+            if (row.beats.length === row.steps) return;
+            if (row.beats.length < row.steps) {
+                while (row.beats.length < row.steps) {
+                    row.beats.push(false);
+                }
+            } else {
+                row.beats.length = row.steps;
+            }
+        }
+        function getSequencerRow(rowId) {
+            return SequencerState.rows.find((item) => item.id === rowId) || null;
+        }
+        function toggleSequencerBeat(rowId, step) {
+            const row = getSequencerRow(rowId);
+            if (!row) return;
+            ensureRowBeatLength(row);
+            if (step < 0 || step >= row.beats.length) return;
+            row.beats[step] = !row.beats[step];
+            renderSequencer();
+        }
+        function updateSequencerField(rowId, field, value) {
+            const row = getSequencerRow(rowId);
+            if (!row) return;
+            if (field === "steps") {
+                const newSteps = clampNumber(Number(value), 1, 64);
+                row.steps = newSteps;
+                ensureRowBeatLength(row);
+            } else if (field === "bank") {
+                row.bank = (value || "").toLowerCase();
+                ensureRowBank(row);
+                ensureRowInstrument(row);
+            } else if (field === "instrument") {
+                row.instrument = (value || "").toLowerCase();
+                ensureRowInstrument(row);
+            } else {
+                row[field] = value;
+            }
+            renderSequencer();
+        }
+        function buildSequencerCode() {
+            const cpm = Math.max(1, Number(SequencerState.cpm) || 120);
+            const cps = (cpm / 60).toFixed(4);
+            const voices = SequencerState.rows.map((row) => {
+                ensureRowBeatLength(row);
+                const structBits = row.beats.map((active) => (active ? "1" : "0")).join(" ");
+                const steps = row.steps || row.beats.length;
+                const patternSteps = clampNumber(Number(steps), 1, 64);
+                const instrument = (row.instrument || "").trim().replace(/"/g, "") || "~";
+                const bank = (row.bank || "").trim().replace(/"/g, "");
+                const structCall = `.struct("{${structBits}}%${patternSteps}")`;
+                const bankCall = bank ? `.bank("${bank}")` : "";
+                return `s("${instrument}")${structCall}${bankCall}`;
+            }).filter(Boolean);
+            const rowLines = voices.map((voice) => `$: ${voice}`);
+            const body = rowLines.length ? rowLines.join("\n") : "$: s(\"~\")";
+            const code = `setcps(${cps});\n${body}`;
+            SequencerState.lastCode = code;
+            return code;
+        }
+        function renderSequencer(updatePreview = true) {
+            const rowsHost = document.getElementById("sequencerRows");
+            const cpmInput = document.getElementById("sequencerCpm");
+            if (cpmInput) {
+                cpmInput.value = SequencerState.cpm;
+            }
+            const defaultStepsInput = document.getElementById("sequencerDefaultSteps");
+            if (defaultStepsInput) {
+                defaultStepsInput.value = SequencerState.defaultSteps;
+            }
+            if (rowsHost) {
+                rowsHost.innerHTML = "";
+                const fragment = document.createDocumentFragment();
+                SequencerState.rows.forEach((row) => {
+                    ensureRowBeatLength(row);
+                    const rowEl = document.createElement("div");
+                    rowEl.className = "sequencer-row";
+                    rowEl.dataset.rowId = row.id;
+                    const structValue = clampNumber(Number(row.structDivisor) || row.steps, 1, 256);
+                    rowEl.innerHTML = `
+                        <div class="sequencer-row-header">
+                            <label>Type
+                                <select data-field="mode">
+                                    <option value="sample"${row.mode === "melody" ? "" : " selected"}>Sample</option>
+                                    <option value="melody"${row.mode === "melody" ? " selected" : ""}>Melody</option>
+                                </select>
+                            </label>
+                            <label class="row-field-voice row-field-voice-sample">
+                                Instrument
+                                <select data-field="instrumentSelect"></select>
+                            </label>
+                            <label class="row-field-voice row-field-voice-melody">
+                                Synth
+                                <input type="text" value="${escapeHtml(row.instrument || "")}" data-field="instrumentInput" placeholder="sin">
+                            </label>
+                            <label class="row-field-bank">
+                                Bank
+                                <select data-field="bank"></select>
+                            </label>
+                            <label>Steps
+                                <input type="number" min="1" max="64" value="${row.steps}" data-field="steps">
+                            </label>
+                            <label>Struct %
+                                <input type="number" min="1" max="256" value="${structValue}" data-field="structDivisor">
+                            </label>
+                            <div class="row-actions">
+                                <button type="button" data-action="remove-row">Remove</button>
+                            </div>
+                        </div>
+                        <div class="sequencer-row-extra">
+                            <label>Pitch Mode
+                                <select data-field="pitchMode">
+                                    <option value="scale"${row.pitchMode === "note" ? "" : " selected"}>Scale Degree</option>
+                                    <option value="note"${row.pitchMode === "note" ? " selected" : ""}>Explicit Note</option>
+                                </select>
+                            </label>
+                            <label>Pitch Pattern
+                                <input type="text" value="${escapeHtml(row.pitchSequence || "")}" data-field="pitchSequence" placeholder="${row.pitchMode === "note" ? "c4 e4 g4" : "0 2 4 5"}">
+                            </label>
+                            <label class="row-field-scale">
+                                Scale List
+                                <input type="text" value="${escapeHtml(row.scaleList || "")}" data-field="scaleList" placeholder="A:minor,B:major">
+                            </label>
+                        </div>
+                        <div class="sequencer-beats" style="--sequencer-steps:${row.steps};">
+                            ${row.beats.map((active, index) => `<button type="button" class="sequencer-beat${active ? " active" : ""}" data-beat="${index}">${index + 1}</button>`).join("")}
+                        </div>
+                    `;
+                    fragment.appendChild(rowEl);
+                    hydrateSequencerRowSelectors(rowEl, row);
+                    applySequencerRowModeClasses(rowEl, row);
+                });
+                rowsHost.appendChild(fragment);
+            }
+            if (updatePreview) {
+                const preview = document.getElementById("sequencerCodePreview");
+                if (preview) {
+                    preview.value = buildSequencerCode();
+                }
+            }
+            updateStrudelFrameBounds();
+        }
+        function ensureStrudelVisible() {
+            if (StrudelState.visible) return;
+            if (Bridges.strudel) {
+                Bridges.strudel.open();
+            }
+        }
+        function applySequencerToStrudel(play = false) {
+            ensureStrudelVisible();
+            const code = buildSequencerCode();
+            sendStrudelCode(code);
+            const preview = document.getElementById("sequencerCodePreview");
+            if (preview) preview.value = code;
+            if (play) {
+                setTimeout(() => sendStrudelAction("update"), 200);
+            }
+        }
+        function initSequencer() {
+            const rowsHost = document.getElementById("sequencerRows");
+            if (!rowsHost) {
+                return;
+            }
+            if (!SequencerState.rows.length) {
+                addSequencerRow();
+            } else {
+                renderSequencer();
+            }
+            if (!rowsHost.dataset.handlersAttached) {
+                rowsHost.dataset.handlersAttached = "true";
+                rowsHost.addEventListener("click", (event) => {
+                    const beatButton = event.target.closest(".sequencer-beat");
+                    const rowEl = event.target.closest(".sequencer-row");
+                    if (!rowEl) return;
+                    const rowId = rowEl.dataset.rowId;
+                    if (event.target.matches("[data-action='remove-row']")) {
+                        removeSequencerRow(rowId);
+                        return;
+                    }
+                    if (beatButton) {
+                        const step = Number(beatButton.dataset.beat);
+                        toggleSequencerBeat(rowId, step);
+                        return;
+                    }
+                });
+                rowsHost.addEventListener("input", (event) => {
+                    const target = event.target;
+                    const rowEl = target.closest(".sequencer-row");
+                    if (!rowEl) return;
+                    const rowId = rowEl.dataset.rowId;
+                    if (target.dataset.field === "steps") {
+                        updateSequencerField(rowId, target.dataset.field, target.value);
+                    }
+                });
+                rowsHost.addEventListener("change", (event) => {
+                    const target = event.target;
+                    const rowEl = target.closest(".sequencer-row");
+                    if (!rowEl) return;
+                    const rowId = rowEl.dataset.rowId;
+                    if (target.dataset.field === "bank") {
+                        updateSequencerField(rowId, "bank", target.value);
+                        const row = getSequencerRow(rowId);
+                        if (row) {
+                            const instrumentSelect = rowEl.querySelector('select[data-field="instrument"]');
+                            populateInstrumentSelect(instrumentSelect, row);
+                        }
+                        return;
+                    }
+                    if (target.dataset.field === "instrument") {
+                        updateSequencerField(rowId, "instrument", target.value);
+                    }
+                });
+            }
+            renderSequencer();
+        }
+        window.initSequencer = initSequencer;
+    </script>
+</body>
+</html>

@@ -1,3 +1,0 @@
-LIBRARY     JackBridge
-DESCRIPTION 'Carla JackBridge'
-EXPORTS jackbridge_get_exported_functions

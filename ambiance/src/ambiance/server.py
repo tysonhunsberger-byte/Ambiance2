@@ -10,13 +10,15 @@ import logging
 import subprocess
 import sys
 import threading
+import time
+import urllib.request
 from http import HTTPStatus
 from http.server import HTTPServer, SimpleHTTPRequestHandler
-import time
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from socketserver import ThreadingMixIn
 from typing import Any
-from urllib.parse import parse_qs, urlparse
+from urllib.error import HTTPError, URLError
+from urllib.parse import parse_qs, urljoin, urlparse
 
 from .core.engine import AudioEngine
 from .core.registry import registry
@@ -30,6 +32,39 @@ logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s: %(m
 logger = logging.getLogger(__name__)
 
 _plugin_host_process: subprocess.Popen | None = None
+
+STRUDEL_REMOTE_BASE = "https://strudel.cc/"
+STRUDEL_PROXY_PREFIX = "/strudel-live"
+STRUDEL_PROXY_USER_AGENT = "AmbianceStrudelProxy/1.0"
+STRUDEL_PROXY_TIMEOUT = 12
+STRUDEL_PROXY_HEADER_BLOCKLIST = {
+    "content-encoding",
+    "transfer-encoding",
+    "connection",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "te",
+    "trailer",
+    "upgrade",
+    "x-frame-options",
+    "content-security-policy",
+    "strict-transport-security",
+}
+STRUDEL_PROXY_ASSET_PREFIXES = (
+    "/_astro/",
+    "/icons/",
+    "/img/",
+    "/fonts/",
+    "/assets/",
+)
+STRUDEL_PROXY_ASSET_EXACT = (
+    "/favicon.ico",
+    "/manifest.webmanifest",
+    "/rss.xml",
+    "/robots.txt",
+    "/make-scrollable-code-focusable.js",
+)
 
 
 def _launch_plugin_host(plugin_path: Path, drivers: list[str], server_url: str = "http://127.0.0.1:8000") -> None:
@@ -117,6 +152,9 @@ def render_payload(payload: dict[str, Any]) -> dict[str, Any]:
 class AmbianceRequestHandler(SimpleHTTPRequestHandler):
     """Serve static assets and lightweight JSON APIs."""
 
+    strudel_remote_base = STRUDEL_REMOTE_BASE
+    strudel_proxy_prefix = STRUDEL_PROXY_PREFIX
+
     # Set MIME types for JavaScript modules and other assets
     # This is the correct way to configure MIME types in SimpleHTTPRequestHandler
     extensions_map = {
@@ -147,6 +185,8 @@ class AmbianceRequestHandler(SimpleHTTPRequestHandler):
         self.vst_host = vst_host
         self.juce_host = juce_host
         self.server_url = server_url
+        root = f"{self.server_url}{self.strudel_proxy_prefix}"
+        self._strudel_referer_prefix = f"{root.rstrip('/')}/"
         super().__init__(*args, directory=directory, **kwargs)
 
     def log_message(self, format, *args):
@@ -177,9 +217,120 @@ class AmbianceRequestHandler(SimpleHTTPRequestHandler):
         except json.JSONDecodeError as exc:
             raise ValueError("Invalid JSON payload") from exc
 
+    # --- Strudel proxy -----------------------------------------------
+    def _handle_strudel_proxy(self, parsed) -> bool:
+        path = parsed.path or "/"
+        prefix = self.strudel_proxy_prefix
+        if self._is_strudel_asset_path(path):
+            self._proxy_strudel_request(parsed, strip_prefix=False)
+            return True
+        referer = self.headers.get("Referer", "")
+        accept = self.headers.get("Accept", "")
+        is_direct = path == prefix or path.startswith(f"{prefix}/")
+        if is_direct:
+            self._proxy_strudel_request(parsed, strip_prefix=True)
+            return True
+        referer_prefix = self._strudel_referer_prefix
+        if not referer.startswith(referer_prefix):
+            return False
+        if self._should_redirect_to_prefix(path, accept):
+            target = self._build_prefixed_path(path, parsed.query)
+            self.send_response(HTTPStatus.FOUND)
+            self.send_header("Location", target)
+            self.end_headers()
+            return True
+        self._proxy_strudel_request(parsed, strip_prefix=False)
+        return True
+
+    def _is_strudel_asset_path(self, path: str) -> bool:
+        for prefix in STRUDEL_PROXY_ASSET_PREFIXES:
+            if path.startswith(prefix):
+                return True
+        return path in STRUDEL_PROXY_ASSET_EXACT
+
+    def _should_redirect_to_prefix(self, path: str, accept: str) -> bool:
+        suffix = PurePosixPath(path).suffix.lower()
+        if not suffix:
+            return True
+        if suffix in {".html", ".htm"}:
+            return True
+        if "text/html" in accept:
+            return True
+        return False
+
+    def _build_prefixed_path(self, path: str, query: str) -> str:
+        suffix = path.lstrip("/")
+        base = self.strudel_proxy_prefix.rstrip("/")
+        proxied = f"{base}/" if not suffix else f"{base}/{suffix}"
+        if query:
+            return f"{proxied}?{query}"
+        return proxied
+
+    def _proxy_strudel_request(self, parsed, strip_prefix: bool) -> None:
+        path = parsed.path or "/"
+        if strip_prefix:
+            path = path[len(self.strudel_proxy_prefix):]
+            if not path:
+                path = "/"
+        remote_url = self._build_remote_url(path, parsed.query)
+        logger.debug("Proxying Strudel request %s -> %s", parsed.path, remote_url)
+        self._stream_remote(remote_url)
+
+    def _build_remote_url(self, remote_path: str, query: str) -> str:
+        clean = remote_path or "/"
+        if not clean.startswith("/"):
+            clean = f"/{clean}"
+        upstream = urljoin(self.strudel_remote_base, clean)
+        if query:
+            upstream = f"{upstream}?{query}"
+        return upstream
+
+    def _stream_remote(self, remote_url: str) -> None:
+        request = urllib.request.Request(
+            remote_url,
+            headers={
+                "User-Agent": STRUDEL_PROXY_USER_AGENT,
+                "Accept": "*/*",
+                "Accept-Encoding": "identity",
+            },
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=STRUDEL_PROXY_TIMEOUT) as response:
+                data = response.read()
+                status = getattr(response, "status", response.getcode())
+                self._write_proxy_response(status, response.headers, data)
+        except HTTPError as exc:
+            body = exc.read()
+            self._write_proxy_response(exc.code, exc.headers, body)
+        except URLError as exc:
+            logger.error("Failed to reach Strudel host for %s: %s", remote_url, exc)
+            reason = getattr(exc, "reason", exc)
+            self.send_error(HTTPStatus.BAD_GATEWAY, f"Strudel proxy failed: {reason}")
+
+    def _write_proxy_response(self, status: int, headers, body: bytes) -> None:
+        self.send_response(status)
+        content_type = headers.get("Content-Type", "application/octet-stream") if headers else "application/octet-stream"
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        cache_control = headers.get("Cache-Control") if headers else None
+        self.send_header("Cache-Control", cache_control or "no-store")
+        if headers:
+            for key, value in headers.items():
+                lowered = key.lower()
+                if lowered in STRUDEL_PROXY_HEADER_BLOCKLIST:
+                    continue
+                if lowered in {"content-type", "content-length"}:
+                    continue
+                self.send_header(key, value)
+        self.end_headers()
+        self.wfile.write(body)
+
     # --- Routing -----------------------------------------------------
     def do_GET(self) -> None:  # noqa: N802 - stdlib signature
-        path = urlparse(self.path).path
+        parsed = urlparse(self.path)
+        path = parsed.path or "/"
+        if self._handle_strudel_proxy(parsed):
+            return
         if path in {"/api/status", "/api/plugins"}:
             payload = self.manager.status()
             self._send_json(payload)
@@ -199,7 +350,7 @@ class AmbianceRequestHandler(SimpleHTTPRequestHandler):
             self._send_json({"ok": True, "status": status})
             return
         if path == "/api/vst/ui":
-            query = parse_qs(urlparse(self.path).query)
+            query = parse_qs(parsed.query)
             plugin_path = query.get("path", [None])[0]
             status_snapshot = self.vst_host.status(include_parameters=False)
             current_plugin = (status_snapshot.get("plugin") or {}).get("path")

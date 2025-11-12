@@ -1,0 +1,1111 @@
+{
+  "percysyn": {
+    "label": "Percysyn",
+    "bank": "percysyn",
+    "instruments": {
+      "bd": 1,
+      "cb": 2,
+      "ht": 1,
+      "sd": 1
+    }
+  },
+  "linn": {
+    "label": "Linn",
+    "bank": "linn",
+    "instruments": {
+      "bd": 1,
+      "cb": 1,
+      "cp": 1,
+      "cr": 1,
+      "hh": 1,
+      "ht": 1,
+      "lt": 1,
+      "mt": 1,
+      "oh": 1,
+      "rd": 1,
+      "sd": 1,
+      "sh": 1,
+      "tb": 1
+    }
+  },
+  "mpc60": {
+    "label": "MPC60",
+    "bank": "mpc60",
+    "instruments": {
+      "bd": 2,
+      "cp": 1,
+      "cr": 1,
+      "hh": 1,
+      "ht": 1,
+      "lt": 1,
+      "misc": 2,
+      "mt": 1,
+      "oh": 1,
+      "perc": 5,
+      "rd": 1,
+      "rim": 1,
+      "sd": 3
+    }
+  },
+  "xr10": {
+    "label": "XR10",
+    "bank": "xr10",
+    "instruments": {
+      "bd": 10,
+      "cb": 1,
+      "cp": 1,
+      "cr": 3,
+      "hh": 2,
+      "ht": 1,
+      "lt": 2,
+      "misc": 4,
+      "mt": 2,
+      "oh": 1,
+      "perc": 15,
+      "rd": 1,
+      "rim": 2,
+      "sd": 10,
+      "sh": 1,
+      "tb": 1
+    }
+  },
+  "hr16": {
+    "label": "HR16",
+    "bank": "hr16",
+    "instruments": {
+      "bd": 1,
+      "cp": 1,
+      "hh": 1,
+      "ht": 1,
+      "lt": 1,
+      "oh": 1,
+      "perc": 8,
+      "rim": 1,
+      "sd": 1,
+      "sh": 3
+    }
+  },
+  "sr16": {
+    "label": "SR16",
+    "bank": "sr16",
+    "instruments": {
+      "bd": 13,
+      "cb": 1,
+      "cp": 1,
+      "cr": 2,
+      "hh": 3,
+      "misc": 3,
+      "oh": 4,
+      "perc": 7,
+      "rd": 3,
+      "rim": 1,
+      "sd": 12,
+      "sh": 1,
+      "tb": 1
+    }
+  },
+  "dr110": {
+    "label": "DR110",
+    "bank": "dr110",
+    "instruments": {
+      "bd": 1,
+      "cp": 1,
+      "cr": 1,
+      "hh": 1,
+      "oh": 1,
+      "rd": 1,
+      "sd": 1
+    }
+  },
+  "dr220": {
+    "label": "DR220",
+    "bank": "dr220",
+    "instruments": {
+      "bd": 1,
+      "cp": 1,
+      "cr": 1,
+      "hh": 1,
+      "ht": 1,
+      "lt": 1,
+      "mt": 1,
+      "oh": 1,
+      "perc": 1,
+      "rd": 1,
+      "sd": 1
+    }
+  },
+  "dr55": {
+    "label": "DR55",
+    "bank": "dr55",
+    "instruments": {
+      "bd": 2,
+      "hh": 2,
+      "rim": 1,
+      "sd": 8
+    }
+  },
+  "dr550": {
+    "label": "DR550",
+    "bank": "dr550",
+    "instruments": {
+      "bd": 5,
+      "cb": 2,
+      "cp": 1,
+      "cr": 1,
+      "hh": 2,
+      "ht": 3,
+      "lt": 3,
+      "misc": 3,
+      "mt": 2,
+      "oh": 2,
+      "perc": 11,
+      "rd": 2,
+      "rim": 1,
+      "sd": 6,
+      "sh": 2,
+      "tb": 1
+    }
+  },
+  "rz1": {
+    "label": "RZ1",
+    "bank": "rz1",
+    "instruments": {
+      "bd": 1,
+      "cb": 1,
+      "cp": 1,
+      "cr": 1,
+      "hh": 1,
+      "ht": 1,
+      "lt": 1,
+      "mt": 1,
+      "rd": 2,
+      "rim": 1,
+      "sd": 1
+    }
+  },
+  "sk1": {
+    "label": "SK1",
+    "bank": "sk1",
+    "instruments": {
+      "bd": 1,
+      "hh": 1,
+      "ht": 1,
+      "mt": 1,
+      "oh": 1,
+      "sd": 1
+    }
+  },
+  "vl1": {
+    "label": "VL1",
+    "bank": "vl1",
+    "instruments": {
+      "bd": 1,
+      "hh": 1,
+      "sd": 1
+    }
+  },
+  "ms404": {
+    "label": "MS404",
+    "bank": "ms404",
+    "instruments": {
+      "bd": 2,
+      "hh": 1,
+      "lt": 1,
+      "oh": 1,
+      "sd": 1
+    }
+  },
+  "drumulator": {
+    "label": "Drumulator",
+    "bank": "drumulator",
+    "instruments": {
+      "bd": 1,
+      "cb": 1,
+      "cp": 1,
+      "cr": 1,
+      "hh": 1,
+      "ht": 1,
+      "lt": 1,
+      "mt": 1,
+      "oh": 1,
+      "perc": 1,
+      "rim": 1,
+      "sd": 1
+    }
+  },
+  "emumodular": {
+    "label": "Emu Modular",
+    "bank": "emumodular",
+    "instruments": {
+      "bd": 2,
+      "misc": 1,
+      "perc": 2
+    }
+  },
+  "sp12": {
+    "label": "SP12",
+    "bank": "sp12",
+    "instruments": {
+      "bd": 14,
+      "cb": 1,
+      "cp": 1,
+      "cr": 1,
+      "hh": 2,
+      "ht": 6,
+      "lt": 6,
+      "misc": 7,
+      "mt": 4,
+      "oh": 1,
+      "perc": 1,
+      "rd": 1,
+      "rim": 2,
+      "sd": 21
+    }
+  },
+  "ddm110": {
+    "label": "DDM110",
+    "bank": "ddm110",
+    "instruments": {
+      "bd": 1,
+      "cp": 1,
+      "cr": 1,
+      "hh": 1,
+      "ht": 2,
+      "lt": 2,
+      "oh": 1,
+      "rim": 1,
+      "sd": 1
+    }
+  },
+  "kpr77": {
+    "label": "KPR77",
+    "bank": "kpr77",
+    "instruments": {
+      "bd": 1,
+      "cp": 1,
+      "hh": 1,
+      "oh": 1,
+      "sd": 1
+    }
+  },
+  "kr55": {
+    "label": "KR55",
+    "bank": "kr55",
+    "instruments": {
+      "bd": 1,
+      "cb": 1,
+      "cr": 1,
+      "hh": 1,
+      "ht": 1,
+      "oh": 1,
+      "perc": 2,
+      "rim": 1,
+      "sd": 1
+    }
+  },
+  "krz": {
+    "label": "KRZ",
+    "bank": "krz",
+    "instruments": {
+      "bd": 1,
+      "cr": 1,
+      "fx": 2,
+      "hh": 1,
+      "ht": 1,
+      "lt": 1,
+      "misc": 1,
+      "oh": 1,
+      "rd": 1,
+      "sd": 2
+    }
+  },
+  "m1": {
+    "label": "M1",
+    "bank": "m1",
+    "instruments": {
+      "bd": 3,
+      "cb": 1,
+      "cp": 1,
+      "cr": 1,
+      "hh": 2,
+      "ht": 2,
+      "misc": 16,
+      "mt": 1,
+      "oh": 2,
+      "perc": 7,
+      "rd": 1,
+      "rim": 1,
+      "sd": 4,
+      "sh": 1,
+      "tb": 1
+    }
+  },
+  "minipops": {
+    "label": "Minipops",
+    "bank": "minipops",
+    "instruments": {
+      "bd": 7,
+      "hh": 4,
+      "misc": 4,
+      "oh": 4,
+      "sd": 13
+    }
+  },
+  "poly800": {
+    "label": "Poly800",
+    "bank": "poly800",
+    "instruments": {
+      "bd": 4
+    }
+  },
+  "t3": {
+    "label": "T3",
+    "bank": "t3",
+    "instruments": {
+      "bd": 5,
+      "cp": 1,
+      "hh": 2,
+      "misc": 4,
+      "oh": 2,
+      "perc": 4,
+      "rim": 1,
+      "sd": 5,
+      "sh": 3
+    }
+  },
+  "9000": {
+    "label": "9000",
+    "bank": "9000",
+    "instruments": {
+      "bd": 1,
+      "cb": 2,
+      "cr": 2,
+      "hh": 1,
+      "ht": 2,
+      "lt": 2,
+      "mt": 1,
+      "oh": 1,
+      "perc": 3,
+      "rd": 2,
+      "rim": 1,
+      "sd": 1,
+      "tb": 1
+    }
+  },
+  "linndrum": {
+    "label": "Linn Drum",
+    "bank": "linndrum",
+    "instruments": {
+      "bd": 1,
+      "cb": 1,
+      "cp": 1,
+      "cr": 1,
+      "hh": 3,
+      "ht": 2,
+      "lt": 2,
+      "mt": 1,
+      "oh": 1,
+      "perc": 6,
+      "rd": 1,
+      "rim": 3,
+      "sd": 3,
+      "sh": 1,
+      "tb": 1
+    }
+  },
+  "lm1": {
+    "label": "LM1",
+    "bank": "lm1",
+    "instruments": {
+      "bd": 4,
+      "cb": 1,
+      "cp": 1,
+      "hh": 1,
+      "ht": 1,
+      "lt": 1,
+      "oh": 1,
+      "perc": 3,
+      "rim": 1,
+      "sd": 1,
+      "sh": 1,
+      "tb": 1
+    }
+  },
+  "lm2": {
+    "label": "LM2",
+    "bank": "lm2",
+    "instruments": {
+      "bd": 4,
+      "cb": 1,
+      "cp": 1,
+      "cr": 1,
+      "hh": 2,
+      "ht": 1,
+      "lt": 1,
+      "mt": 1,
+      "oh": 2,
+      "rd": 1,
+      "rim": 2,
+      "sd": 4,
+      "sh": 1,
+      "tb": 1
+    }
+  },
+  "mfb512": {
+    "label": "M F B512",
+    "bank": "mfb512",
+    "instruments": {
+      "bd": 1,
+      "cp": 1,
+      "cr": 1,
+      "hh": 1,
+      "ht": 1,
+      "lt": 1,
+      "mt": 1,
+      "oh": 1,
+      "sd": 1
+    }
+  },
+  "mpc1000": {
+    "label": "M P C1000",
+    "bank": "mpc1000",
+    "instruments": {
+      "bd": 5,
+      "cp": 1,
+      "hh": 4,
+      "oh": 1,
+      "perc": 1,
+      "sd": 4,
+      "sh": 1
+    }
+  },
+  "concertmatemg1": {
+    "label": "ConcertMateMG1",
+    "bank": "concertmatemg1",
+    "instruments": {
+      "bd": 3,
+      "sd": 2
+    }
+  },
+  "dmx": {
+    "label": "DMX",
+    "bank": "dmx",
+    "instruments": {
+      "": 3,
+      "bd": 3,
+      "cp": 1,
+      "cr": 1,
+      "hh": 1,
+      "ht": 1,
+      "lt": 1,
+      "mt": 1,
+      "oh": 1,
+      "rd": 1,
+      "rim": 1,
+      "sd": 3,
+      "sh": 1,
+      "tb": 1
+    }
+  },
+  "polaris": {
+    "label": "Polaris",
+    "bank": "polaris",
+    "instruments": {
+      "bd": 4,
+      "misc": 4,
+      "sd": 4
+    }
+  },
+  "ace": {
+    "label": "Ace",
+    "bank": "ace",
+    "instruments": {
+      "bd": 3,
+      "hh": 1,
+      "ht": 1,
+      "lt": 1,
+      "oh": 1,
+      "perc": 6,
+      "sd": 3
+    }
+  },
+  "compurhythm1000": {
+    "label": "Compurhythm1000",
+    "bank": "compurhythm1000",
+    "instruments": {
+      "bd": 1,
+      "cb": 1,
+      "cp": 1,
+      "cr": 1,
+      "hh": 1,
+      "ht": 1,
+      "lt": 1,
+      "mt": 1,
+      "oh": 1,
+      "perc": 3,
+      "rd": 1,
+      "rim": 1,
+      "sd": 1
+    }
+  },
+  "compurhythm78": {
+    "label": "Compurhythm78",
+    "bank": "compurhythm78",
+    "instruments": {
+      "bd": 1,
+      "cb": 1,
+      "hh": 2,
+      "misc": 4,
+      "oh": 2,
+      "perc": 8,
+      "sd": 1,
+      "tb": 1
+    }
+  },
+  "compurhythm8000": {
+    "label": "Compurhythm8000",
+    "bank": "compurhythm8000",
+    "instruments": {
+      "bd": 1,
+      "cb": 1,
+      "cp": 1,
+      "cr": 1,
+      "hh": 1,
+      "ht": 1,
+      "lt": 1,
+      "mt": 1,
+      "oh": 1,
+      "perc": 2,
+      "rim": 1,
+      "sd": 1
+    }
+  },
+  "d110": {
+    "label": "D110",
+    "bank": "d110",
+    "instruments": {
+      "bd": 1,
+      "cb": 2,
+      "cr": 1,
+      "hh": 1,
+      "lt": 1,
+      "oh": 2,
+      "perc": 3,
+      "rd": 1,
+      "rim": 1,
+      "sd": 3,
+      "sh": 1,
+      "tb": 1
+    }
+  },
+  "d70": {
+    "label": "D70",
+    "bank": "d70",
+    "instruments": {
+      "bd": 4,
+      "cb": 1,
+      "cp": 1,
+      "cr": 1,
+      "hh": 1,
+      "lt": 1,
+      "mt": 1,
+      "oh": 1,
+      "perc": 1,
+      "rd": 1,
+      "rim": 1,
+      "sd": 5,
+      "sh": 1
+    }
+  },
+  "ddr30": {
+    "label": "DDR30",
+    "bank": "ddr30",
+    "instruments": {
+      "bd": 8,
+      "ht": 4,
+      "lt": 4,
+      "sd": 8
+    }
+  },
+  "jd990": {
+    "label": "JD990",
+    "bank": "jd990",
+    "instruments": {
+      "bd": 10,
+      "cb": 1,
+      "cp": 1,
+      "cr": 1,
+      "hh": 4,
+      "ht": 1,
+      "lt": 5,
+      "misc": 12,
+      "mt": 2,
+      "oh": 2,
+      "perc": 6,
+      "rd": 1,
+      "sd": 15,
+      "tb": 1
+    }
+  },
+  "mc202": {
+    "label": "MC202",
+    "bank": "mc202",
+    "instruments": {
+      "bd": 5,
+      "ht": 3,
+      "perc": 1
+    }
+  },
+  "mc303": {
+    "label": "MC303",
+    "bank": "mc303",
+    "instruments": {
+      "bd": 16,
+      "cb": 2,
+      "cp": 8,
+      "fx": 2,
+      "hh": 6,
+      "ht": 5,
+      "lt": 5,
+      "misc": 8,
+      "mt": 6,
+      "oh": 5,
+      "perc": 39,
+      "rd": 2,
+      "rim": 6,
+      "sd": 26,
+      "sh": 7,
+      "tb": 5
+    }
+  },
+  "mt32": {
+    "label": "MT32",
+    "bank": "mt32",
+    "instruments": {
+      "bd": 1,
+      "cb": 1,
+      "cp": 1,
+      "cr": 1,
+      "hh": 1,
+      "ht": 1,
+      "lt": 1,
+      "mt": 1,
+      "oh": 2,
+      "perc": 13,
+      "rd": 1,
+      "rim": 1,
+      "sd": 2,
+      "sh": 2,
+      "tb": 1
+    }
+  },
+  "r8": {
+    "label": "R8",
+    "bank": "r8",
+    "instruments": {
+      "bd": 7,
+      "cb": 1,
+      "cp": 1,
+      "cr": 1,
+      "hh": 2,
+      "ht": 4,
+      "lt": 4,
+      "mt": 4,
+      "oh": 1,
+      "perc": 8,
+      "rd": 2,
+      "rim": 2,
+      "sd": 12,
+      "sh": 2,
+      "tb": 1
+    }
+  },
+  "s50": {
+    "label": "S50",
+    "bank": "s50",
+    "instruments": {
+      "bd": 4,
+      "cb": 1,
+      "cp": 1,
+      "cr": 2,
+      "ht": 1,
+      "lt": 2,
+      "misc": 6,
+      "mt": 1,
+      "oh": 1,
+      "perc": 14,
+      "rd": 1,
+      "sd": 3,
+      "sh": 4,
+      "tb": 2
+    }
+  },
+  "sh09": {
+    "label": "SH09",
+    "bank": "sh09",
+    "instruments": {
+      "bd": 43
+    }
+  },
+  "system100": {
+    "label": "System100",
+    "bank": "system100",
+    "instruments": {
+      "bd": 15,
+      "hh": 2,
+      "misc": 2,
+      "oh": 3,
+      "perc": 19,
+      "sd": 21
+    }
+  },
+  "tr505": {
+    "label": "TR505",
+    "bank": "tr505",
+    "instruments": {
+      "bd": 1,
+      "cb": 2,
+      "cp": 1,
+      "cr": 1,
+      "hh": 1,
+      "ht": 1,
+      "lt": 1,
+      "mt": 1,
+      "oh": 1,
+      "perc": 3,
+      "rd": 1,
+      "rim": 1,
+      "sd": 1
+    }
+  },
+  "tr606": {
+    "label": "TR606",
+    "bank": "tr606",
+    "instruments": {
+      "bd": 1,
+      "cr": 1,
+      "hh": 1,
+      "ht": 1,
+      "lt": 1,
+      "oh": 1,
+      "sd": 1
+    }
+  },
+  "tr626": {
+    "label": "TR626",
+    "bank": "tr626",
+    "instruments": {
+      "bd": 2,
+      "cb": 1,
+      "cp": 1,
+      "cr": 2,
+      "hh": 1,
+      "ht": 2,
+      "lt": 2,
+      "mt": 2,
+      "oh": 1,
+      "perc": 8,
+      "rd": 2,
+      "rim": 1,
+      "sd": 3,
+      "sh": 1,
+      "tb": 1
+    }
+  },
+  "tr707": {
+    "label": "TR707",
+    "bank": "tr707",
+    "instruments": {
+      "bd": 2,
+      "cb": 1,
+      "cp": 1,
+      "cr": 1,
+      "hh": 1,
+      "ht": 1,
+      "lt": 1,
+      "mt": 1,
+      "oh": 1,
+      "rim": 1,
+      "sd": 2,
+      "tb": 1
+    }
+  },
+  "tr727": {
+    "label": "TR727",
+    "bank": "tr727",
+    "instruments": {
+      "perc": 10,
+      "sh": 2
+    }
+  },
+  "tr808": {
+    "label": "TR808",
+    "bank": "tr808",
+    "instruments": {
+      "bd": 25,
+      "cb": 2,
+      "cp": 5,
+      "cr": 25,
+      "hh": 1,
+      "ht": 5,
+      "lt": 5,
+      "mt": 5,
+      "oh": 5,
+      "perc": 16,
+      "rim": 1,
+      "sd": 25,
+      "sh": 2
+    }
+  },
+  "tr909": {
+    "label": "TR909",
+    "bank": "tr909",
+    "instruments": {
+      "bd": 4,
+      "cp": 5,
+      "cr": 5,
+      "hh": 4,
+      "ht": 9,
+      "lt": 9,
+      "mt": 9,
+      "oh": 5,
+      "rd": 5,
+      "rim": 3,
+      "sd": 16
+    }
+  },
+  "dpm48": {
+    "label": "DPM48",
+    "bank": "dpm48",
+    "instruments": {
+      "bd": 3,
+      "cp": 1,
+      "cr": 1,
+      "hh": 2,
+      "ht": 1,
+      "lt": 2,
+      "mt": 1,
+      "oh": 1,
+      "perc": 2,
+      "rd": 1,
+      "rim": 1,
+      "sd": 2,
+      "sh": 2
+    }
+  },
+  "circuitsdrumtracks": {
+    "label": "CircuitsDrumtracks",
+    "bank": "circuitsdrumtracks",
+    "instruments": {
+      "bd": 1,
+      "cb": 1,
+      "cp": 1,
+      "cr": 1,
+      "hh": 1,
+      "ht": 1,
+      "oh": 1,
+      "rd": 1,
+      "rim": 1,
+      "sd": 1,
+      "sh": 1,
+      "tb": 1
+    }
+  },
+  "circuitstom": {
+    "label": "CircuitsTom",
+    "bank": "circuitstom",
+    "instruments": {
+      "bd": 1,
+      "cp": 1,
+      "cr": 1,
+      "hh": 1,
+      "ht": 2,
+      "oh": 1,
+      "sd": 1
+    }
+  },
+  "sergemodular": {
+    "label": "Serge Modular",
+    "bank": "sergemodular",
+    "instruments": {
+      "bd": 1,
+      "misc": 1,
+      "perc": 5
+    }
+  },
+  "sds400": {
+    "label": "SDS400",
+    "bank": "sds400",
+    "instruments": {
+      "ht": 3,
+      "lt": 6,
+      "mt": 8,
+      "sd": 3
+    }
+  },
+  "sds5": {
+    "label": "SDS5",
+    "bank": "sds5",
+    "instruments": {
+      "bd": 12,
+      "hh": 5,
+      "ht": 3,
+      "lt": 8,
+      "mt": 6,
+      "oh": 2,
+      "rim": 7,
+      "sd": 21
+    }
+  },
+  "r88": {
+    "label": "R88",
+    "bank": "r88",
+    "instruments": {
+      "bd": 1,
+      "cr": 1,
+      "hh": 1,
+      "oh": 1,
+      "sd": 2
+    }
+  },
+  "microrhythmer12": {
+    "label": "MicroRhythmer12",
+    "bank": "microrhythmer12",
+    "instruments": {
+      "bd": 1,
+      "hh": 1,
+      "oh": 1,
+      "sd": 1
+    }
+  },
+  "spacedrum": {
+    "label": "SpaceDrum",
+    "bank": "spacedrum",
+    "instruments": {
+      "bd": 11,
+      "cb": 1,
+      "hh": 6,
+      "ht": 7,
+      "lt": 2,
+      "misc": 2,
+      "mt": 2,
+      "oh": 3,
+      "perc": 2,
+      "rim": 1,
+      "sd": 3
+    }
+  },
+  "lm8953": {
+    "label": "LM8953",
+    "bank": "lm8953",
+    "instruments": {
+      "bd": 3,
+      "cr": 1,
+      "hh": 2,
+      "ht": 2,
+      "lt": 2,
+      "mt": 2,
+      "oh": 1,
+      "rd": 1,
+      "rim": 2,
+      "sd": 5,
+      "tb": 1
+    }
+  },
+  "rm50": {
+    "label": "RM50",
+    "bank": "rm50",
+    "instruments": {
+      "bd": 103,
+      "cb": 6,
+      "cp": 2,
+      "cr": 22,
+      "hh": 18,
+      "ht": 25,
+      "lt": 49,
+      "misc": 28,
+      "mt": 34,
+      "oh": 12,
+      "perc": 56,
+      "rd": 13,
+      "sd": 108,
+      "sh": 6,
+      "tb": 3
+    }
+  },
+  "rx21": {
+    "label": "RX21",
+    "bank": "rx21",
+    "instruments": {
+      "bd": 1,
+      "cp": 1,
+      "cr": 1,
+      "hh": 1,
+      "ht": 1,
+      "lt": 1,
+      "mt": 1,
+      "oh": 1,
+      "sd": 1
+    }
+  },
+  "rx5": {
+    "label": "RX5",
+    "bank": "rx5",
+    "instruments": {
+      "bd": 2,
+      "cb": 1,
+      "fx": 1,
+      "hh": 1,
+      "lt": 1,
+      "oh": 1,
+      "rim": 1,
+      "sd": 3,
+      "sh": 1,
+      "tb": 1
+    }
+  },
+  "ry30": {
+    "label": "RY30",
+    "bank": "ry30",
+    "instruments": {
+      "bd": 13,
+      "cb": 2,
+      "cp": 1,
+      "cr": 2,
+      "hh": 4,
+      "ht": 3,
+      "lt": 3,
+      "misc": 8,
+      "mt": 2,
+      "oh": 4,
+      "perc": 13,
+      "rd": 3,
+      "rim": 2,
+      "sd": 21,
+      "sh": 2,
+      "tb": 1
+    }
+  },
+  "tg33": {
+    "label": "TG33",
+    "bank": "tg33",
+    "instruments": {
+      "bd": 4,
+      "cb": 3,
+      "cp": 1,
+      "cr": 3,
+      "fx": 1,
+      "ht": 2,
+      "lt": 2,
+      "misc": 10,
+      "mt": 2,
+      "oh": 1,
+      "perc": 12,
+      "rd": 2,
+      "rim": 1,
+      "sd": 5,
+      "sh": 1,
+      "tb": 1
+    }
+  }
+}

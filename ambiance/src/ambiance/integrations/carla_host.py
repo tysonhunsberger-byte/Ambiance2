@@ -11,6 +11,7 @@ from __future__ import annotations
 import atexit
 from dataclasses import dataclass
 import importlib.util
+import logging
 import os
 import shutil
 import sys
@@ -409,6 +410,7 @@ class CarlaBackend:
         self._plugin_window_parent_hwnd: int | None = None
         self._plugin_window_style: int | None = None
         self._plugin_window_exstyle: int | None = None
+        self._jack_preloaded = False
 
         if not self.root:
             self.warnings.append(
@@ -651,6 +653,27 @@ class CarlaBackend:
             existing = os.environ.get("PATH", "")
             combined = os.pathsep.join(paths + [existing]) if existing else os.pathsep.join(paths)
             os.environ["PATH"] = combined
+
+    def preload_jack_driver(self) -> None:
+        """Eagerly load libjack to avoid first-use stalls."""
+        if self._jack_preloaded or os.name != "nt" or ctypes is None:
+            return
+
+        last_error: Exception | None = None
+        for candidate in ("libjack64.dll", "libjack.dll", "jack.dll"):
+            try:
+                ctypes.WinDLL(candidate)  # type: ignore[misc]
+                logging.info("[JACK] Preloaded %s", candidate)
+                self._jack_preloaded = True
+                return
+            except OSError as exc:  # pragma: no cover - depends on local setup
+                last_error = exc
+                continue
+
+        if last_error:
+            warning = f"Failed to preload JACK driver: {last_error}"
+            logging.warning("[JACK] %s", warning)
+            self.warnings.append(warning)
 
     def _windows_dependency_dirs(self) -> set[Path]:
         """Get Windows dependency directories."""
@@ -1492,6 +1515,14 @@ class CarlaBackend:
             except:
                 break
     
+    def warm_up_engine(self) -> None:
+        """Start the audio engine ahead of time so first plugin loads faster."""
+        with self._lock:
+            self.preload_jack_driver()
+            if not self._engine_running:
+                self._ensure_engine()
+            self._wait_for_engine_idle(0.5)
+
     def _ensure_engine(self) -> None:
         if not self.available or self.host is None:
             raise CarlaHostError("Carla backend is not available")
@@ -2891,6 +2922,10 @@ class CarlaVSTHost:
                 sample_rate=sample_rate,
                 buffer_size=buffer_size,
             )
+
+    def warm_up_engine(self) -> None:
+        with self._lock:
+            self._backend.warm_up_engine()
 
     def shutdown(self) -> None:
         with self._lock:

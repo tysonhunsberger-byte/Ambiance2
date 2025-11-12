@@ -1,3 +1,0 @@
-LIBRARY     CarlaVST
-DESCRIPTION 'Carla VST Plugin'
-EXPORTS VSTPluginMain

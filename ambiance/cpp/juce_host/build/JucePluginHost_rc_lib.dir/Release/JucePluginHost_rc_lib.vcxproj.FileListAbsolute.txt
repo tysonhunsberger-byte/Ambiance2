@@ -1,1 +1,0 @@
-C:\Ambiance2\ambiance\cpp\juce_host\build\JucePluginHost_rc_lib.dir\Release\JucePluginHost_rc_lib.lib
