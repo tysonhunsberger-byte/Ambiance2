@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="utf-8" />
@@ -16,6 +16,8 @@
             --button-fill: linear-gradient(180deg, #f9fdff, #dfefff);
             --button-border: rgba(70,120,200,0.85);
             --panel-bg: rgba(255,255,255,0.9);
+            --panel-input-bg: #ffffff;
+            --surface-bg: rgba(255,255,255,0.95);
             --taskbar-height: 44px;
             --toolbar-height: 38px;
         }
@@ -35,8 +37,11 @@
             background-image: var(--wallpaper-url);
             background-size: cover;
             background-position: center;
-            filter: saturate(1.05);
-            z-index: 0;
+            z-index: -10;
+            pointer-events: none;
+            will-change: opacity, transform;
+            backface-visibility: hidden;
+            transform: translateZ(0);
         }
         #desktop {
             position: relative;
@@ -67,6 +72,13 @@
             top: 40px;
             width: 460px;
             min-height: 320px;
+        }
+        .window[data-window="sequencer"] {
+            left: 40px;
+            top: 60px;
+            width: min(980px, calc(100vw - 80px));
+            min-width: 820px;
+            min-height: 420px;
         }
         .window[data-window="keyboard"] {
             left: 30px;
@@ -160,6 +172,7 @@
             padding: 10px 14px 16px;
             gap: 10px;
             flex: 1;
+            overflow: auto;
         }
         body[data-theme="flat"] .window-content {
             background: var(--panel-bg);
@@ -181,6 +194,36 @@
             flex-direction: column;
             gap: 14px;
             align-items: stretch;
+            overflow: auto;
+            padding-right: 10px;
+        }
+        .strudel-subwindow {
+            border: 1px solid rgba(62, 88, 130, 0.45);
+            border-radius: 14px;
+            background: var(--panel-bg);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding: 12px 14px 14px;
+        }
+        .strudel-subwindow-title {
+            font-size: 15px;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .strudel-subwindow-body {
+            flex: 1;
+            min-height: 0;
+            overflow: auto;
+        }
+        .sequencer-subwindow-body {
+            max-height: 420px;
+            overflow-y: auto;
+        }
         }
         .strudel-toolbar {
             display: flex;
@@ -226,7 +269,7 @@
             margin-top: 0;
             border: 1px solid rgba(51, 74, 117, 0.35);
             border-radius: 14px;
-            padding: 14px 16px 16px;
+            padding: 18px 20px 20px 20px;
             background: rgba(248, 250, 255, 0.98);
             display: flex;
             flex-direction: column;
@@ -234,10 +277,14 @@
             z-index: 1;
             flex: 0 0 auto;
             width: 100%;
+            max-width: 100%;
             min-height: 0;
             box-shadow: 0 10px 28px rgba(8, 20, 46, 0.18);
             font-size: 13px;
-            color: #0d1f3f;
+            color: var(--text-color);
+            font-family: inherit;
+            background: var(--panel-bg);
+            box-sizing: border-box;
         }
         .sequencer-controls {
             display: flex;
@@ -250,13 +297,13 @@
             display: flex;
             gap: 6px;
             align-items: center;
-            background: rgba(255,255,255,0.95);
+            background: var(--panel-input-bg, rgba(255,255,255,0.95));
             padding: 4px 8px;
             border-radius: 8px;
             border: 1px solid rgba(120, 160, 210, 0.4);
             flex: 1 1 45%;
             min-width: 150px;
-            color: #0d1f3f;
+            color: inherit;
         }
         .sequencer-controls input[type="number"] {
             width: 80px;
@@ -266,7 +313,37 @@
         .sequencer-panel button {
             font-size: 14px;
             padding: 6px 14px;
-            color: #0d1f3f;
+            color: var(--text-color);
+        }
+        .sequencer-action-button {
+            background: var(--button-fill, linear-gradient(180deg, #f9fdff, #dfefff));
+            border: 1px solid var(--button-border, rgba(70, 120, 200, 0.85));
+            border-radius: 10px;
+            color: var(--text-color, #0d1f3f);
+            font-weight: 600;
+            min-height: 36px;
+            padding: 8px 18px;
+            box-shadow: 0 2px 4px rgba(8, 20, 46, 0.2);
+            transition: filter 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            white-space: nowrap;
+        }
+        .sequencer-action-button:hover {
+            filter: brightness(1.05);
+            box-shadow: 0 6px 14px rgba(8, 20, 46, 0.25);
+        }
+        .sequencer-action-button:active {
+            transform: translateY(1px);
+            filter: brightness(0.95);
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+        .sequencer-action-button:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
+            box-shadow: none;
         }
         .sequencer-rows {
             display: flex;
@@ -286,34 +363,185 @@
             display: flex;
             flex-direction: column;
             gap: 8px;
-            background: rgba(255,255,255,0.95);
+            background: var(--surface-bg, rgba(255,255,255,0.95));
+            --sequencer-cell-size: 32px;
         }
         .sequencer-row-header {
             display: flex;
             flex-wrap: wrap;
-            gap: 8px;
-            align-items: center;
+            gap: 10px;
+            align-items: flex-end;
+        }
+        .sequencer-row-header label {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            font-size: 12px;
+            color: inherit;
+            min-width: 140px;
+            flex: 1 1 200px;
+        }
+        .toggle-switch {
+            display: inline-flex;
+            border: 1px solid rgba(120, 160, 210, 0.6);
+            border-radius: 8px;
+            overflow: hidden;
+            background: var(--panel-input-bg, #fff);
+            box-shadow: inset 0 1px rgba(255,255,255,0.2);
+            padding: 2px;
+            gap: 2px;
+        }
+        .toggle-switch button {
+            border: none;
+            background: transparent;
+            padding: 6px 14px;
+            font-size: 12px;
+            color: inherit;
+            cursor: pointer;
+            transition: background 120ms ease, color 120ms ease, box-shadow 120ms ease;
+            border-radius: 4px;
+            flex: 1 1 80px;
+            min-width: 70px;
+        }
+        .toggle-switch button.active {
+            background: #4c7dff;
+            color: #fff;
+            box-shadow: inset 0 1px rgba(255,255,255,0.4);
+        }
+        .toggle-switch button:not(.active):hover {
+            background: rgba(255,255,255,0.15);
+        }
+        .sequencer-row-header label select,
+        .sequencer-row-header label input {
+            width: 100%;
+            min-width: 110px;
+        }
+        .sequencer-controls > button {
+            flex: 0 0 auto;
+            min-width: 118px;
+            width: auto;
         }
         .sequencer-row-header input,
         .sequencer-panel input,
         .sequencer-panel select {
-            padding: 5px 8px;
+            padding: 5px 8px !important;
             font-size: 14px;
-            color: #0d1f3f;
-            background: #ffffff;
-            border: 1px solid rgba(120, 160, 210, 0.6);
-            border-radius: 6px;
+            color: inherit;
+            background: var(--panel-input-bg, #ffffff) !important;
+            border: 1px solid rgba(120, 160, 210, 0.6) !important;
+            border-radius: 6px !important;
+            min-width: 0 !important;
+            min-height: 0 !important;
+            height: auto !important;
+            appearance: none;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            background-image: none;
+            box-shadow: none !important;
         }
-        .sequencer-row-header .row-actions {
-            margin-left: auto;
+        .sequencer-panel select::-ms-expand {
+            display: none;
+        }
+        .sequencer-panel select option {
+            background: var(--surface-bg, #fff);
+            color: var(--text-color, #000);
+        }
+        .sequencer-panel select option:checked,
+        .sequencer-panel select option:hover {
+            background: rgba(76, 125, 255, 0.4);
+            color: var(--text-color, #000);
+        }
+        .row-measurements {
             display: flex;
+            flex-wrap: wrap;
             gap: 6px;
+            align-items: flex-end;
+            width: 100%;
+        }
+        .row-measurements label {
+            flex: 0 0 auto;
+            min-width: 0;
+        }
+        .row-measurements label input[type="number"] {
+            max-width: 90px;
+            min-width: 70px;
+            align-self: flex-start;
+            text-align: center;
+        }
+        .row-field-subdivisions {
+            flex: 1 1 320px;
+            min-width: 200px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            font-weight: 600;
+            color: var(--text-color, #0d1f3f);
+        }
+        .row-field-subdivisions .melody-subdivision-row-wrapper {
+            font-weight: 400;
+        }
+        .row-measurements .row-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            align-items: center;
+            margin-left: auto;
+        }
+        .row-measurements .row-actions .sequencer-action-button {
+            flex: 0 1 auto;
+            min-width: 90px;
+            width: auto;
+            padding: 4px 12px;
+            font-size: 12px;
+            line-height: 1.2;
+            white-space: nowrap;
         }
         .sequencer-row-extra {
             display: flex;
             flex-wrap: wrap;
-            gap: 8px;
+            gap: 12px;
             margin-top: 4px;
+        }
+        .sequencer-row-extra label {
+            flex: 1 1 220px;
+            min-width: 180px;
+        }
+        .row-field-scale,
+        .row-field-labels {
+            flex: 2 1 320px;
+        }
+        .sequencer-row-header label .toggle-switch,
+        .sequencer-row-extra label .toggle-switch {
+            width: 100%;
+        }
+        .row-field-note-only {
+            display: none;
+            flex-direction: column;
+            gap: 4px;
+            flex: 0 0 auto;
+            min-width: 140px;
+        }
+        .sequencer-row.pitch-note-mode .row-field-note-only {
+            display: flex;
+        }
+        .octave-controls {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .octave-controls .sequencer-action-button {
+            width: 34px;
+            min-width: 34px;
+            height: 34px;
+            padding: 0;
+            border-radius: 8px;
+            font-size: 16px;
+        }
+        .octave-controls span {
+            font-weight: 600;
+            min-width: 28px;
+            text-align: center;
+            color: #0d1f3f;
         }
         .sequencer-row-extra label {
             display: flex;
@@ -322,29 +550,50 @@
             font-size: 12px;
         }
         .sequencer-row.mode-melody .row-field-bank,
-        .sequencer-row.mode-melody .row-field-voice-sample {
+        .sequencer-row.mode-melody .row-field-voice-sample,
+        .sequencer-row.mode-melody .sequencer-beats,
+        .sequencer-row.mode-melody .row-field-pitch-sequence {
             display: none;
         }
-        .sequencer-row:not(.mode-melody) .sequencer-row-extra {
-            display: none;
-        }
+        .sequencer-row:not(.mode-melody) .sequencer-row-extra,
+        .sequencer-row:not(.mode-melody) .row-field-scale,
         .sequencer-row:not(.mode-melody) .row-field-voice-melody {
             display: none;
         }
         .sequencer-beats {
             display: grid;
-            grid-template-columns: repeat(var(--sequencer-steps, 16), minmax(20px, 1fr));
+            grid-template-columns: repeat(var(--sequencer-steps, 16), var(--sequencer-cell-size, 30px));
             gap: 4px;
+            width: fit-content;
+            max-width: 100%;
+            justify-content: flex-start;
+        }
+        .sequencer-row:not(.mode-melody) .sequencer-beats {
+            margin-left: 8px;
         }
         .sequencer-beat {
             border: 1px solid rgba(120, 120, 120, 0.4);
             background: #f4f7ff;
             border-radius: 6px;
-            padding: 8px 0;
+            padding: 0 !important;
             text-align: center;
             font-size: 12px;
+            font-family: inherit;
             cursor: pointer;
             transition: background 120ms ease, color 120ms ease, border 120ms ease;
+            width: var(--sequencer-cell-size, 24px) !important;
+            max-width: var(--sequencer-cell-size, 24px) !important;
+            min-width: var(--sequencer-cell-size, 24px) !important;
+            height: var(--sequencer-cell-size, 24px) !important;
+            min-height: var(--sequencer-cell-size, 24px) !important;
+            box-sizing: border-box;
+            margin: 0 !important;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            isolation: isolate;
+            overflow: hidden;
+            box-shadow: none !important;
         }
         .sequencer-beat.active {
             background: #4c7dff;
@@ -352,17 +601,311 @@
             border-color: #1f49d3;
             box-shadow: 0 0 6px rgba(76, 125, 255, 0.5);
         }
+        .melody-grid-wrapper {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            width: 100%;
+            align-self: stretch;
+            --melody-grid-gap: 3px;
+            --melody-cell-size: var(--sequencer-cell-size, 30px);
+            --melody-label-width: 56px;
+            --melody-row-gap: 8px;
+            --melody-step-count: 8;
+            --melody-grid-offset: 0px;
+        }
+        .melody-grid-track {
+            width: 100%;
+            overflow-x: hidden;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .melody-grid-track.needs-scroll {
+            overflow-x: auto;
+        }
+        .sample-grid-wrapper {
+            width: max-content;
+            max-width: 100%;
+            margin-left: var(--melody-grid-offset, 0px);
+        }
+        .sample-grid-track {
+            width: 100%;
+            overflow-x: hidden;
+        }
+        .sample-grid-track.needs-scroll {
+            overflow-x: auto;
+        }
+        .sample-grid {
+            display: grid;
+            grid-template-columns: repeat(var(--melody-total-subdivs, 8), var(--melody-cell-size, 28px));
+            column-gap: var(--melody-grid-gap, 3px);
+            row-gap: 0;
+            width: max-content;
+        }
+        .sample-grid-cell {
+            cursor: pointer;
+        }
+        .melody-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+            padding: 6px 0;
+            width: max-content;
+            min-width: auto;
+            max-width: 100%;
+            margin-left: var(--melody-grid-offset, 0px);
+        }
+        .melody-bracket-row,
+        .melody-subdivision-row-wrapper {
+            display: flex;
+            align-items: center;
+            gap: var(--melody-row-gap, 8px);
+            width: max-content;
+            margin-left: var(--melody-grid-offset, 0px);
+        }
+        .melody-subdivision-row-wrapper.inline {
+            width: 100%;
+            margin-left: 0;
+            align-items: flex-start;
+            overflow-x: hidden;
+            max-width: 100%;
+        }
+        .melody-subdivision-row-wrapper.inline.needs-scroll {
+            overflow-x: auto;
+        }
+        .melody-grid-spacer {
+            width: var(--melody-label-width, 56px);
+            flex: 0 0 auto;
+        }
+        .melody-subdivision-row {
+            display: grid;
+            grid-template-columns: repeat(var(--melody-total-subdivs, 8), var(--melody-cell-size, 28px));
+            column-gap: var(--melody-grid-gap, 3px);
+            row-gap: 0;
+            font-size: 11px;
+            align-items: center;
+            width: max-content;
+        }
+        .melody-subdivision-row-wrapper.inline .melody-subdivision-row {
+            grid-template-columns: repeat(var(--melody-step-count, var(--melody-total-subdivs, 8)), minmax(36px, 1fr));
+            column-gap: 6px;
+            width: 100%;
+            min-width: 0;
+        }
+        .melody-subdivision-row label {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            text-align: center;
+            min-width: 32px;
+        }
+        .melody-subdivision-row-wrapper.inline label {
+            min-width: 0;
+        }
+        .melody-subdivision-controls {
+            display: flex;
+            gap: 6px;
+            justify-content: center;
+            align-items: center;
+        }
+        .melody-subdivision-controls button {
+            width: 18px;
+            height: 18px;
+            padding: 0 !important;
+            min-width: 0 !important;
+            min-height: 0 !important;
+            font-size: 12px;
+            line-height: 1;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+        .melody-subdivision-value {
+            font-size: 12px;
+            min-width: 22px;
+            display: inline-block;
+            text-align: center;
+        }
+        .melody-subdivision-row select,
+        .melody-subdivision-row input[type="number"] {
+            display: none;
+        }
+        .melody-grid-row {
+            display: flex;
+            align-items: stretch;
+            gap: var(--melody-row-gap, 8px);
+            flex: 0 0 auto;
+        }
+        .melody-grid-label {
+            width: var(--melody-label-width, 56px);
+            font-weight: 600;
+            text-align: left;
+            color: var(--text-color, #0d1f3f);
+            line-height: 1.2;
+            display: inline-flex;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 6px;
+            padding-right: 2px;
+        }
+        .melody-grid-label-text {
+            display: inline-block;
+            color: inherit;
+        }
+        .melody-note-preview {
+            width: 10px !important;
+            height: 10px !important;
+            border-radius: 3px;
+            border: 1px solid rgba(120, 160, 210, 0.8);
+            background: linear-gradient(180deg, rgba(250,250,255,0.95), rgba(208,222,255,0.9));
+            color: var(--text-color, #0d1f3f);
+            font-size: 6px;
+            line-height: 1;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            padding: 0 !important;
+            flex: 0 0 10px !important;
+            margin-right: 4px;
+        }
+        .melody-note-preview:hover {
+            background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(216,232,255,0.95));
+        }
+        .melody-note-preview:active {
+            transform: translateY(1px);
+        }
+        .melody-note-preview:focus-visible {
+            outline: 2px solid #1f49d3;
+            outline-offset: 2px;
+        }
+        body[data-theme="flat"] .melody-note-preview {
+            color: #000;
+        }
+        .melody-grid-cells {
+            display: grid;
+            column-gap: var(--melody-grid-gap, 3px);
+            row-gap: 0;
+            grid-template-columns: repeat(var(--melody-total-subdivs, 8), var(--melody-cell-size, 28px));
+            min-height: 0;
+            grid-auto-rows: var(--melody-cell-size, 34px);
+            justify-content: flex-start;
+        }
+        .melody-grid-cell {
+            border: 1px solid rgba(120, 160, 210, 0.55);
+            border-radius: 4px;
+            background: #eef2ff;
+            font-size: 0;
+            cursor: pointer;
+            transition: background 100ms ease, border 100ms ease, box-shadow 100ms ease;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: var(--melody-cell-size, 30px) !important;
+            height: var(--melody-cell-size, 30px) !important;
+            min-width: var(--melody-cell-size, 30px) !important;
+            min-height: var(--melody-cell-size, 30px) !important;
+            padding: 0 !important;
+            box-sizing: border-box;
+            box-shadow: none !important;
+        }
+        .sequencer-row.pitch-note-mode {
+            --melody-grid-offset: 14px;
+        }
+        .melody-grid-cell.active {
+            background: linear-gradient(180deg, #6b8dff, #3b5de9);
+            border-color: #2742c0;
+            box-shadow: 0 0 6px rgba(59, 93, 233, 0.45);
+        }
+        .melody-grid-cell:focus-visible {
+            outline: 2px solid #1f49d3;
+            outline-offset: 1px;
+        }
+        .melody-brackets {
+            display: grid;
+            grid-template-columns: repeat(var(--melody-total-subdivs, 8), var(--melody-cell-size, 28px));
+            column-gap: var(--melody-grid-gap, 3px);
+            margin-bottom: 8px;
+            width: max-content;
+        }
+        .melody-bracket {
+            position: relative;
+            height: 18px;
+            border: 1px solid rgba(99, 127, 187, 0.9);
+            border-bottom: none;
+            border-radius: 6px 6px 0 0;
+            background: rgba(224, 235, 255, 0.85);
+            text-align: center;
+            font-size: 11px;
+            line-height: 18px;
+            color: #0d1f3f;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .scale-reference {
+            border: 1px solid rgba(51, 74, 117, 0.35);
+            border-radius: 10px;
+            padding: 10px 12px;
+            background: var(--surface-bg, rgba(255,255,255,0.94));
+            font-size: 12px;
+            color: var(--text-color, #0d1f3f);
+        }
+        .scale-reference summary {
+            cursor: pointer;
+            font-weight: 600;
+            color: inherit;
+            margin-bottom: 6px;
+        }
+        .scale-reference-table {
+            max-height: 240px;
+            overflow-y: auto;
+            border: 1px solid rgba(120, 160, 210, 0.3);
+            border-radius: 8px;
+        }
+        .scale-reference table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+            color: inherit;
+        }
+        .scale-reference th,
+        .scale-reference td {
+            padding: 4px 6px;
+            border-bottom: 1px solid rgba(120, 160, 210, 0.3);
+            text-align: left;
+            color: inherit;
+        }
+        .scale-reference th {
+            font-weight: 600;
+            color: inherit;
+            background: rgba(224, 235, 255, 0.6);
+        }
+        body[data-theme="flat"] .scale-reference {
+            border-color: rgba(255, 255, 255, 0.15);
+            background: rgba(32, 32, 32, 0.96);
+        }
+        body[data-theme="flat"] .scale-reference th {
+            background: rgba(255, 255, 255, 0.08);
+        }
+        body[data-theme="flat"] .scale-reference th,
+        body[data-theme="flat"] .scale-reference td {
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+        .scale-reference tbody tr:last-child td {
+            border-bottom: none;
+        }
         .sequencer-preview textarea {
             width: 100%;
             min-height: 80px;
             border-radius: 8px;
-            padding: 8px;
-            border: 1px solid rgba(120, 160, 210, 0.5);
-            font-family: "SF Mono", "Consolas", monospace;
+            padding: 10px 12px;
+            border: 1px solid rgba(0, 0, 0, 0.45);
+            font-family: "Consolas", "Courier New", monospace;
             resize: vertical;
             flex: 1;
-            color: #0d1f3f;
-            background: #ffffff;
+            color: #b7ffa4;
+            background: rgba(20, 30, 40, 0.92);
         }
         .sequencer-preview {
             display: flex;
@@ -596,6 +1139,7 @@
             gap: 8px;
             flex: 1;
             align-items: center;
+            flex-wrap: wrap;
         }
         .taskbar-button {
             border-radius: 8px;
@@ -605,10 +1149,15 @@
             color: #0d2040;
             cursor: pointer;
             font-weight: 600;
-            transition: filter 120ms ease;
+            transition: background 120ms ease, color 120ms ease, box-shadow 120ms ease;
+            flex: 0 0 auto;
+            white-space: nowrap;
         }
         .taskbar-button:hover {
-            filter: brightness(1.1);
+            box-shadow: 0 0 8px rgba(255,255,255,0.35);
+        }
+        .taskbar-button:active {
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.35);
         }
         .taskbar-button.active {
             background: rgba(80, 150, 255, 0.9);
@@ -623,6 +1172,8 @@
             --text-color: #f0f0f0;
             --button-fill: linear-gradient(180deg, #3f3f3f, #2a2a2a);
             --button-border: rgba(140, 140, 140, 0.9);
+            --panel-input-bg: #3d4452;
+            --surface-bg: rgba(55, 55, 55, 0.95);
         }
         body[data-theme="flat"] .window {
             color: #f0f0f0;
@@ -682,6 +1233,9 @@
             border-radius: 14px;
             border: 1px solid var(--window-border);
         }
+        body[data-theme="flat"] .sequencer-row {
+            --sequencer-cell-size: 32px;
+        }
         body[data-theme="win7"] {
             --desktop-bg: #3c6db5;
             --window-glass: linear-gradient(180deg, #fefefe, #d3e5ff);
@@ -691,6 +1245,8 @@
             --button-fill: linear-gradient(180deg, #eef6ff, #cbe2ff);
             --button-border: rgba(80, 120, 200, 0.7);
             --taskbar-height: 50px;
+            --panel-input-bg: #ffffff;
+            --surface-bg: rgba(255,255,255,0.98);
         }
         body[data-theme="win7"] #web-toolbar {
             background: linear-gradient(180deg, rgba(255,255,255,0.95), rgba(210,230,255,0.92));
@@ -727,7 +1283,7 @@
         }
         body[data-theme="win7"] .taskbar-button {
             border-radius: 14px;
-            padding: 6px 18px;
+            padding: 4px 12px;
             border: 1px solid rgba(255, 255, 255, 0.45);
             background: linear-gradient(180deg, rgba(255,255,255,0.6), rgba(80,140,210,0.35));
             color: #f4fbff;
@@ -752,6 +1308,12 @@
             border-radius: 14px;
             border: 1px solid rgba(120, 150, 210, 0.4);
         }
+        body[data-theme="win7"] .sequencer-row {
+            --sequencer-cell-size: 32px;
+        }
+        body[data-theme="win7"] .sequencer-row {
+            --melody-cell-size: 16px;
+        }
         body[data-theme="winxp"] {
             --desktop-bg: #0f73c8;
             --window-glass: linear-gradient(180deg, #ffffff, #dbe8ff);
@@ -761,6 +1323,8 @@
             --button-fill: linear-gradient(180deg, #fefefe, #e1ecff);
             --button-border: rgba(90, 130, 220, 0.7);
             --taskbar-height: 48px;
+            --panel-input-bg: #ffffff;
+            --surface-bg: rgba(255,255,255,0.98);
         }
         body[data-theme="winxp"] #taskbar {
             background: linear-gradient(180deg, #83b7ff 0%, #2e6ed1 45%, #0a2f84 100%);
@@ -802,7 +1366,7 @@
             color: #0b2970;
             text-shadow: 0 1px #fff;
             box-shadow: inset 0 1px rgba(255,255,255,0.9);
-            padding: 4px 14px;
+            padding: 3px 10px;
         }
         body[data-theme="winxp"] .taskbar-button:hover {
             background: linear-gradient(180deg, #ffffff, #c7e0ff);
@@ -811,6 +1375,12 @@
             background: linear-gradient(180deg, #fff, #6ea6f6);
             border-color: #0a2f84;
             color: #031650;
+        }
+        body[data-theme="winxp"] .sequencer-beat.active {
+            background: linear-gradient(180deg, #a7c6ff, #4f8bff);
+            border-color: #1e4fb5;
+            color: #ffffff;
+            box-shadow: inset 0 1px rgba(255,255,255,0.6), 0 0 4px rgba(79,139,255,0.6);
         }
         body[data-theme="winxp"] #taskbar .clock {
             color: #fdfdfd;
@@ -826,6 +1396,12 @@
             border-radius: 12px;
             border: 1px solid rgba(70, 120, 200, 0.35);
         }
+        body[data-theme="winxp"] .sequencer-row {
+            --sequencer-cell-size: 32px;
+        }
+        body[data-theme="winxp"] .sequencer-row {
+            --melody-cell-size: 32px;
+        }
         body[data-theme="win98"] {
             --desktop-bg: #008080;
             --window-glass: linear-gradient(180deg, #ece9d8, #d5d0bb);
@@ -835,6 +1411,8 @@
             --button-fill: linear-gradient(180deg, #fff, #c7c3b4);
             --button-border: rgba(83, 83, 83, 1);
             --taskbar-height: 42px;
+            --panel-input-bg: #fdfdfd;
+            --surface-bg: #f6f2e4;
         }
         body[data-theme="win98"] #taskbar {
             background: #c0c0c0;
@@ -891,6 +1469,12 @@
             background: #ece9d8;
             border: 2px ridge #fff;
             color: #000;
+        }
+        body[data-theme="win98"] .sequencer-row {
+            --sequencer-cell-size: 32px;
+        }
+        body[data-theme="win98"] .sequencer-row {
+            --melody-cell-size: 32px;
         }
         #web-toolbar {
             position: fixed;
@@ -1056,6 +1640,7 @@
             <select id="themeSelect"></select>
         </div>
         <div class="toolbar-section">
+            <button id="sequencerToggle">Open Sequencer</button>
             <button id="strudelToggle">Open Strudel</button>
             <button id="strudelReload">Reload</button>
             <span id="strudelStatus" class="status-label"></span>
@@ -1171,6 +1756,58 @@
             </div>
         </div>
 
+        <div class="window" data-window="sequencer" style="display:none;">
+            <div class="window-titlebar title-bar">
+                <span class="title-bar-text">Sequencer</span>
+                <div class="window-controls title-bar-controls">
+                    <button data-action="minimize" aria-label="Minimize" class="is-minimize"></button>
+                    <button data-action="maximize" aria-label="Maximize" class="is-maximize"></button>
+                    <button data-action="close" aria-label="Close" class="is-close"></button>
+                </div>
+            </div>
+            <div class="window-body">
+                <div class="window-content">
+                    <div class="sequencer-panel">
+                        <div class="sequencer-controls">
+                            <label>Cycles/min
+                                <input type="number" id="sequencerCpm" min="10" max="400" value="120">
+                            </label>
+                            <label>Default steps
+                                <input type="number" id="sequencerDefaultSteps" min="1" max="64" value="16">
+                            </label>
+                            <button id="sequencerAddRow" class="sequencer-action-button">Add Row</button>
+                            <button id="sequencerApply" class="sequencer-action-button">Apply Pattern</button>
+                            <button id="sequencerApplyPlay" class="sequencer-action-button">Apply &amp; Play</button>
+                            <button id="sequencerStop" class="sequencer-action-button">Stop</button>
+                        </div>
+                        <div id="sequencerRows" class="sequencer-rows"></div>
+                        <div class="sequencer-preview">
+                            <label for="sequencerCodePreview">Generated pattern</label>
+                            <textarea id="sequencerCodePreview" readonly></textarea>
+                        </div>
+                        <div class="scale-reference">
+                            <details>
+                                <summary>Scale reference</summary>
+                                <div class="scale-reference-table">
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th>Token</th>
+                                                <th>Aliases</th>
+                                                <th>Intervals / Notes</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="scaleReferenceTableBody"></tbody>
+                                    </table>
+                                </div>
+                                <p style="margin-top:6px;">Use in Strudel as <code>.scale("A:minor","B:major")</code> or <code>.scale("minor")</code>. Prefix with a note (e.g. <code>A:minor</code>) to set the tonic.</p>
+                            </details>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div class="window" data-window="strudel" style="display:none;">
             <div class="window-titlebar title-bar">
                 <span class="title-bar-text">Strudel Live Coding</span>
@@ -1183,43 +1820,22 @@
             <div class="window-body">
                 <div class="window-content strudel-window">
                     <div class="strudel-toolbar">
-                        <div class="nav-group">
-                            <button id="strudelBack" title="Back">&#9664;</button>
-                            <button id="strudelForward" title="Forward">&#9654;</button>
-                            <button id="strudelHome" title="Home">Home</button>
-                            <button id="strudelBrowserReload" title="Reload">Reload</button>
-                        </div>
                         <div class="strudel-actions">
-                            <button id="strudelLearn" title="Strudel Learn">Learn</button>
+                            <button id="strudelPlay" title="Play Pattern">Play</button>
                             <button id="strudelUpdate" title="Update Pattern">Update</button>
                             <button id="strudelStop" title="Stop Audio">Stop</button>
-                            <button id="strudelShare" title="Share Pattern">Share</button>
                         </div>
                     </div>
                     <div class="strudel-main">
-                        <div class="sequencer-panel">
-                            <div class="sequencer-controls">
-                                <label>Cycles/min
-                                    <input type="number" id="sequencerCpm" min="10" max="400" value="120">
-                                </label>
-                                <label>Default steps
-                                    <input type="number" id="sequencerDefaultSteps" min="1" max="64" value="16">
-                                </label>
-                                <button id="sequencerAddRow">Add Row</button>
-                                <button id="sequencerApply">Apply Pattern</button>
-                                <button id="sequencerApplyPlay">Apply &amp; Play</button>
-                                <button id="sequencerStop">Stop</button>
-                            </div>
-                            <div id="sequencerRows" class="sequencer-rows"></div>
-                            <div class="sequencer-preview">
-                                <label for="sequencerCodePreview">Generated pattern</label>
-                                <textarea id="sequencerCodePreview" readonly></textarea>
-                            </div>
-                        </div>
-                        <div id="strudelWebviewContainer" class="strudel-shell">
-                            <iframe id="strudelFrame" title="Strudel"></iframe>
-                            <div class="strudel-placeholder" id="strudelPlaceholder">
-                                Preparing Strudel...
+                        <div class="strudel-subwindow">
+                            <div class="strudel-subwindow-title">Strudel Playground</div>
+                            <div class="strudel-subwindow-body">
+                                <div id="strudelWebviewContainer" class="strudel-shell">
+                                    <iframe id="strudelFrame" title="Strudel"></iframe>
+                                    <div class="strudel-placeholder" id="strudelPlaceholder">
+                                        Preparing Strudel...
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1369,6 +1985,201 @@
                 row.instrument = options[0]?.value || DrumCatalog.defaultInstrument;
             }
         }
+        function getMelodyRowCount(row) {
+            return row && row.pitchMode === "note" ? MELODY_NOTE_ROW_COUNT : MELODY_SCALE_ROW_COUNT;
+        }
+        function buildDefaultNoteLabels(offset = 0) {
+            const baseOctave = DEFAULT_NOTE_BASE_OCTAVE + offset;
+            const labels = [];
+            for (let i = 0; i < MELODY_NOTE_ROW_COUNT; i++) {
+                const noteIndex = i % NOTE_SEMITONE_NAMES.length;
+                const octaveOffset = Math.floor(i / NOTE_SEMITONE_NAMES.length);
+                const octave = baseOctave + octaveOffset;
+                labels.push(`${NOTE_SEMITONE_NAMES[noteIndex]}${octave}`);
+            }
+            return labels;
+        }
+        function ensureMelodyGrid(row) {
+            const cols = clampNumber(row.steps || SequencerState.defaultSteps, 1, 64);
+            const rowCount = getMelodyRowCount(row);
+            if (!Array.isArray(row.melodyGrid)) {
+                row.melodyGrid = [];
+            }
+            if (!Array.isArray(row.melodyColumnLengths)) {
+                row.melodyColumnLengths = [];
+            }
+            if (!Array.isArray(row.melodySubdivisions)) {
+                row.melodySubdivisions = [];
+            }
+            while (row.melodyColumnLengths.length < cols) {
+                row.melodyColumnLengths.push(1);
+            }
+            if (row.melodyColumnLengths.length > cols) {
+                row.melodyColumnLengths.length = cols;
+            }
+            while (row.melodySubdivisions.length < cols) {
+                row.melodySubdivisions.push(1);
+            }
+            if (row.melodySubdivisions.length > cols) {
+                row.melodySubdivisions.length = cols;
+            }
+            for (let col = 0; col < cols; col++) {
+                const subdivisions = clampNumber(Number(row.melodySubdivisions[col]) || 1, 1, 16);
+                row.melodySubdivisions[col] = subdivisions;
+                if (!Array.isArray(row.melodyGrid[col])) {
+                    row.melodyGrid[col] = [];
+                }
+                while (row.melodyGrid[col].length < subdivisions) {
+                    row.melodyGrid[col].push(Array(rowCount).fill(false));
+                }
+                if (row.melodyGrid[col].length > subdivisions) {
+                    row.melodyGrid[col].length = subdivisions;
+                }
+                for (let sub = 0; sub < row.melodyGrid[col].length; sub++) {
+                    const cell = row.melodyGrid[col][sub];
+                    if (!Array.isArray(cell)) {
+                        row.melodyGrid[col][sub] = Array(rowCount).fill(false);
+                        continue;
+                    }
+                    if (cell.length < rowCount) {
+                        row.melodyGrid[col][sub] = cell.concat(Array(rowCount - cell.length).fill(false));
+                    } else if (cell.length > rowCount) {
+                        cell.length = rowCount;
+                    }
+                    for (let i = 0; i < rowCount; i++) {
+                        if (typeof row.melodyGrid[col][sub][i] !== "boolean") {
+                            row.melodyGrid[col][sub][i] = false;
+                        }
+                    }
+                }
+            }
+            row.melodyGrid.length = cols;
+            row.melodyPaintLength = clampNumber(Number(row.melodyPaintLength) || 1, 1, cols);
+            ensureSampleBeatGrid(row);
+        }
+        function ensureSampleBeatGrid(row) {
+            const cols = clampNumber(row.steps || SequencerState.defaultSteps, 1, 64);
+            if (!Array.isArray(row.sampleSubBeats)) {
+                row.sampleSubBeats = [];
+            }
+            while (row.sampleSubBeats.length < cols) {
+                const beatIndex = row.sampleSubBeats.length;
+                const beatActive = Array.isArray(row.beats) ? Boolean(row.beats[beatIndex]) : false;
+                row.sampleSubBeats.push([beatActive]);
+            }
+            if (row.sampleSubBeats.length > cols) {
+                row.sampleSubBeats.length = cols;
+            }
+            for (let col = 0; col < cols; col++) {
+                const subdivisions = clampNumber(Number(row.melodySubdivisions?.[col]) || 1, 1, 16);
+                if (!Array.isArray(row.sampleSubBeats[col])) {
+                    row.sampleSubBeats[col] = [];
+                }
+                const beatActive = Array.isArray(row.beats) ? Boolean(row.beats[col]) : false;
+                while (row.sampleSubBeats[col].length < subdivisions) {
+                    row.sampleSubBeats[col].push(beatActive);
+                }
+                if (row.sampleSubBeats[col].length > subdivisions) {
+                    row.sampleSubBeats[col].length = subdivisions;
+                }
+                if (row.mode !== "melody" && Array.isArray(row.beats)) {
+                    row.beats[col] = row.sampleSubBeats[col].some(Boolean);
+                }
+            }
+        }
+        function getMelodyLabels(row) {
+            const rowCount = getMelodyRowCount(row);
+            const provided = (row.melodyLabels || "")
+                .split(/[,]/)
+                .map((entry) => entry.trim())
+                .filter(Boolean);
+            const labels = [];
+            if (row.pitchMode === "note" && provided.length === 0) {
+                const offset = clampNumber(Number(row.noteOctaveOffset) || 0, -6, 6);
+                return buildDefaultNoteLabels(offset);
+            }
+            const baseDefaults = row.pitchMode === "note"
+                ? buildDefaultNoteLabels(clampNumber(Number(row.noteOctaveOffset) || 0, -6, 6))
+                : DEFAULT_MELODY_SCALE_LABELS;
+            for (let i = 0; i < rowCount; i++) {
+                labels.push(provided[i] || baseDefaults[i % baseDefaults.length]);
+            }
+            return labels;
+        }
+        function getTotalMelodySubdivisions(row) {
+            ensureMelodyGrid(row);
+            return (row.melodySubdivisions || []).reduce((sum, count) => sum + Math.max(1, count || 1), 0) || row.steps || 1;
+        }
+        function flattenMelodyCells(row) {
+            ensureMelodyGrid(row);
+            const cells = [];
+            (row.melodySubdivisions || []).forEach((count, columnIndex) => {
+                const span = Math.max(1, count || 1);
+                for (let subIndex = 0; subIndex < span; subIndex += 1) {
+                    cells.push({ columnIndex, subIndex });
+                }
+            });
+            return cells;
+        }
+        function flattenSampleCells(row) {
+            ensureSampleBeatGrid(row);
+            const cells = [];
+            (row.sampleSubBeats || []).forEach((column, columnIndex) => {
+                if (!Array.isArray(column)) {
+                    return;
+                }
+                column.forEach((_, subIndex) => {
+                    cells.push({ columnIndex, subIndex });
+                });
+            });
+            return cells;
+        }
+        function buildMelodyGridPattern(row) {
+            if (row.mode !== "melody") return null;
+            ensureMelodyGrid(row);
+            const labels = getMelodyLabels(row);
+            const steps = clampNumber(row.steps || row.melodyGrid.length || 1, 1, 64);
+            const tokens = Array(steps).fill("~");
+            for (let col = 0; col < steps;) {
+                const subdivisions = row.melodySubdivisions[col] || 1;
+                const column = row.melodyGrid[col] || [];
+                const subTokens = [];
+                for (let sub = 0; sub < subdivisions; sub++) {
+                    const cell = column[sub] || [];
+                    const active = [];
+                    cell.forEach((isActive, labelIndex) => {
+                        if (isActive) {
+                            active.push(labels[labelIndex]);
+                        }
+                    });
+                    if (!active.length) {
+                        subTokens.push("~");
+                    } else {
+                        const chord = active.length > 1 ? `[${active.join(", ")}]` : active[0];
+                        subTokens.push(chord);
+                    }
+                }
+                let token = "~";
+                if (subTokens.some((entry) => entry !== "~")) {
+                    token = subdivisions > 1 ? `[${subTokens.join(" ")}]` : subTokens[0];
+                }
+                tokens[col] = token;
+                const repeat = clampNumber(row.melodyColumnLengths[col] || row.melodyPaintLength || 1, 1, steps - col);
+                for (let offset = 1; offset < repeat && col + offset < steps; offset++) {
+                    tokens[col + offset] = "~";
+                }
+                col += repeat;
+            }
+            const meaningful = tokens.some((token) => token && token !== "~");
+            return meaningful ? tokens.join(" ") : null;
+        }
+        function buildDefaultPitchPattern(row) {
+            const length = clampNumber(row.steps || row.beats.length || 1, 1, 64);
+            if (row.pitchMode === "note") {
+                return Array.from({ length }, () => "~").join(" ");
+            }
+            return Array.from({ length }, (_, idx) => String(idx)).join(" ");
+        }
         function populateBankSelect(select, row) {
             if (!select) return;
             const banks = getDrumBankEntries();
@@ -1384,6 +2195,11 @@
         }
         function populateInstrumentSelect(select, row) {
             if (!select) return;
+            select.disabled = row.mode === "melody";
+            if (row.mode === "melody") {
+                select.innerHTML = "";
+                return;
+            }
             ensureRowInstrument(row);
             const options = getInstrumentOptions(row.bank);
             select.innerHTML = "";
@@ -1409,7 +2225,18 @@
         }
         function applySequencerRowModeClasses(rowEl, row) {
             if (!rowEl) return;
+            if (!row.mode) row.mode = "sample";
             rowEl.classList.toggle("mode-melody", row.mode === "melody");
+            rowEl.classList.toggle("pitch-note-mode", row.pitchMode === "note");
+        }
+        function renderScaleReference() {
+            const body = document.getElementById("scaleReferenceTableBody");
+            if (!body) return;
+            body.innerHTML = SCALE_LIBRARY.map((entry) => {
+                const aliases = entry.aliases && entry.aliases.length ? entry.aliases.join(", ") : "—";
+                const desc = entry.description || "";
+                return `<tr><td><code>${entry.token}</code></td><td>${aliases}</td><td>${desc}</td></tr>`;
+            }).join("");
         }
         function loadDrumCatalog() {
             if (DrumCatalog.loaded) {
@@ -1470,9 +2297,106 @@
                 });
             return DrumCatalog.promise;
         }
+        const MELODY_SCALE_ROW_COUNT = 8;
+        const MELODY_NOTE_ROW_COUNT = 13;
+        const DEFAULT_NOTE_BASE_OCTAVE = 3;
+        const NOTE_SEMITONE_NAMES = ["c","c#","d","d#","e","f","f#","g","g#","a","a#","b"];
+        const NOTE_NAME_ALIASES = {
+            cb: "b",
+            db: "c#",
+            eb: "d#",
+            fb: "e",
+            gb: "f#",
+            ab: "g#",
+            bb: "a#",
+            "e#": "f",
+            "b#": "c",
+        };
+        const SequencerPreviewPlayer = {
+            ctx: null,
+            gain: null,
+            ensureContext() {
+                if (this.ctx) {
+                    if (this.ctx.state === "suspended") {
+                        this.ctx.resume().catch(() => {});
+                    }
+                    return true;
+                }
+                const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                if (!AudioCtx) return false;
+                this.ctx = new AudioCtx();
+                this.gain = this.ctx.createGain();
+                this.gain.gain.value = 0.2;
+                this.gain.connect(this.ctx.destination);
+                return true;
+            },
+            play(midi) {
+                if (!this.ensureContext()) return;
+                const osc = this.ctx.createOscillator();
+                const gainNode = this.ctx.createGain();
+                const now = this.ctx.currentTime;
+                osc.type = "triangle";
+                osc.frequency.value = midiToFrequency(midi);
+                gainNode.gain.setValueAtTime(0, now);
+                gainNode.gain.linearRampToValueAtTime(0.35, now + 0.02);
+                gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+                osc.connect(gainNode).connect(this.gain);
+                osc.start(now);
+                osc.stop(now + 0.65);
+            },
+        };
+        function noteNameToMidi(noteName) {
+            if (!noteName) return null;
+            const normalized = noteName.trim().replace(/[^a-gA-G0-9#b-]/g, "");
+            const match = /^([a-gA-G])([#b]?)(-?\d{1,2})$/.exec(normalized);
+            if (!match) return null;
+            const base = match[1].toLowerCase();
+            const accidental = (match[2] || "").toLowerCase();
+            const octave = parseInt(match[3], 10);
+            if (Number.isNaN(octave)) return null;
+            let key = `${base}${accidental}`;
+            if (!NOTE_SEMITONE_NAMES.includes(key)) {
+                key = NOTE_NAME_ALIASES[key] || key;
+            }
+            const semitone = NOTE_SEMITONE_NAMES.indexOf(key);
+            if (semitone === -1) return null;
+            return (octave + 1) * 12 + semitone;
+        }
+        function midiToFrequency(midi) {
+            return 440 * Math.pow(2, (Number(midi) - 69) / 12);
+        }
+        function playSequencerPreviewNote(noteName) {
+            const midi = noteNameToMidi(noteName);
+            if (typeof midi !== "number") return;
+            if (Bridges.keyboard && Bridges.keyboard.noteOn && Bridges.keyboard.noteOff) {
+                Bridges.keyboard.noteOn(midi);
+                setTimeout(() => {
+                    Bridges.keyboard && Bridges.keyboard.noteOff(midi);
+                }, 280);
+            }
+            SequencerPreviewPlayer.play(midi);
+        }
+        const DEFAULT_MELODY_SCALE_LABELS = ["0","1","2","3","4","5","6","7"];
+        const SCALE_LIBRARY = [
+            { token: "major", aliases: ["ionian"], description: "0 2 4 5 7 9 11" },
+            { token: "minor", aliases: ["aeolian"], description: "0 2 3 5 7 8 10" },
+            { token: "dorian", aliases: [], description: "0 2 3 5 7 9 10" },
+            { token: "mixolydian", aliases: [], description: "0 2 4 5 7 9 10" },
+            { token: "lydian", aliases: [], description: "0 2 4 6 7 9 11" },
+            { token: "phrygian", aliases: [], description: "0 1 3 5 7 8 10" },
+            { token: "locrian", aliases: [], description: "0 1 3 5 6 8 10" },
+            { token: "harmonicMinor", aliases: [], description: "0 2 3 5 7 8 11" },
+            { token: "melodicMinor", aliases: [], description: "0 2 3 5 7 9 11" },
+            { token: "pentatonic", aliases: ["majorPent"], description: "0 2 4 7 9" },
+            { token: "minorPent", aliases: [], description: "0 3 5 7 10" },
+            { token: "blues", aliases: [], description: "0 3 5 6 7 10" },
+            { token: "chromatic", aliases: [], description: "All semitones" },
+            { token: "whole", aliases: ["wholeTone"], description: "0 2 4 6 8 10" },
+            { token: "octatonic", aliases: ["diminished"], description: "0 2 3 5 6 8 9 11" },
+        ];
         const SequencerState = {
-            defaultSteps: 16,
-            cpm: 120,
+            defaultSteps: 8,
+            cpm: 60,
             rows: [],
             lastCode: "",
         };
@@ -1480,6 +2404,7 @@
             studio: { id: "studio", name: "Studio", selector: '[data-window="studio"]' },
             keyboard: { id: "keyboard", name: "Keyboard", selector: '[data-window="keyboard"]' },
             console: { id: "console", name: "Console", selector: '[data-window="console"]' },
+            sequencer: { id: "sequencer", name: "Sequencer", selector: '[data-window="sequencer"]' },
             strudel: { id: "strudel", name: "Strudel", selector: '[data-window="strudel"]' },
         };
         const RemoteWindowMap = {
@@ -1492,9 +2417,16 @@
             entries: [],
             index: -1,
         };
+        const THEME_CELL_SIZES = {
+            flat: 32,
+            win7: 32,
+            winxp: 32,
+            win98: 32,
+        };
         const STRUDEL_POST_MAX_ATTEMPTS = 20;
         const keyboardElements = new Map();
         const pointerNotes = new Map();
+        let melodyGridOverflowHandle = null;
         let nativeViewportObserver = null;
         let strudelFrameObserver = null;
         const KEYBOARD_LAYOUT = [
@@ -1516,6 +2448,45 @@
             { note: 74, label: "D5", type: "white", x: 600 },
             { note: 76, label: "E5", type: "white", x: 640 },
         ];
+        function updateMelodyGridOverflow(rowEl) {
+            if (!rowEl) return;
+            const melodyTrack = rowEl.querySelector(".melody-grid-track");
+            const melodyGrid = melodyTrack?.querySelector(".melody-grid");
+            if (melodyTrack && melodyGrid) {
+                const needsScroll = melodyGrid.scrollWidth - melodyTrack.clientWidth > 2;
+                melodyTrack.classList.toggle("needs-scroll", needsScroll);
+            }
+            const sampleTrack = rowEl.querySelector(".sample-grid-track");
+            const sampleGrid = sampleTrack?.querySelector(".sample-grid");
+            if (sampleTrack && sampleGrid) {
+                const needsSampleScroll = sampleGrid.scrollWidth - sampleTrack.clientWidth > 2;
+                sampleTrack.classList.toggle("needs-scroll", needsSampleScroll);
+            }
+        }
+        function updateSubdivisionScrollbars(rowEl) {
+            if (!rowEl) return;
+            const wrappers = rowEl.querySelectorAll(".row-field-subdivisions .melody-subdivision-row-wrapper.inline");
+            wrappers.forEach((wrapper) => {
+                const needsScroll = wrapper.scrollWidth - wrapper.clientWidth > 2;
+                wrapper.classList.toggle("needs-scroll", needsScroll);
+            });
+        }
+        function refreshMelodyGridOverflow() {
+            document.querySelectorAll(".sequencer-row").forEach((rowEl) => {
+                updateSubdivisionScrollbars(rowEl);
+                updateMelodyGridOverflow(rowEl);
+            });
+        }
+        function scheduleMelodyGridOverflowRefresh() {
+            if (melodyGridOverflowHandle) {
+                cancelAnimationFrame(melodyGridOverflowHandle);
+            }
+            melodyGridOverflowHandle = requestAnimationFrame(() => {
+                melodyGridOverflowHandle = null;
+                refreshMelodyGridOverflow();
+            });
+        }
+        window.addEventListener("resize", () => scheduleMelodyGridOverflowRefresh());
         const BLACK_KEYS = [
             { note: 49, x: 26 }, { note: 51, x: 66 },
             { note: 54, x: 146 }, { note: 56, x: 186 }, { note: 58, x: 226 },
@@ -1908,6 +2879,14 @@
                 });
                 container.appendChild(btn);
             });
+            updateSequencerToggleText();
+        }
+        function updateSequencerToggleText() {
+            const toggle = document.getElementById("sequencerToggle");
+            if (!toggle) return;
+            const visible = isLocalWindowVisible("sequencer");
+            toggle.textContent = visible ? "Hide Sequencer" : "Open Sequencer";
+            toggle.setAttribute("aria-pressed", visible ? "true" : "false");
         }
         function applyRemoteWindowVisibility() {
             (DesktopState.windows || []).forEach(win => {
@@ -2356,6 +3335,10 @@
                     }
                 });
             }
+            const sequencerToggle = document.getElementById("sequencerToggle");
+            if (sequencerToggle) {
+                sequencerToggle.addEventListener("click", () => toggleLocalWindow("sequencer"));
+            }
             const velocityRange = document.getElementById("velocityRange");
             velocityRange.addEventListener("input", (event) => {
                 const value = parseInt(event.target.value, 10) || 0;
@@ -2380,32 +3363,10 @@
                     }
                 });
             }
-            const strudelBrowserReload = document.getElementById("strudelBrowserReload");
-            if (strudelBrowserReload) {
-                strudelBrowserReload.addEventListener("click", () => {
-                    reloadStrudelView();
-                });
-            }
-            const strudelBack = document.getElementById("strudelBack");
-            if (strudelBack) {
-                strudelBack.addEventListener("click", () => navigateStrudelHistory(-1));
-            }
-            const strudelForward = document.getElementById("strudelForward");
-            if (strudelForward) {
-                strudelForward.addEventListener("click", () => navigateStrudelHistory(1));
-            }
-            const strudelHome = document.getElementById("strudelHome");
-            if (strudelHome) {
-                strudelHome.addEventListener("click", () => {
-                    const home = StrudelState.remoteHome || "https://strudel.cc/";
-                    requestStrudelUrl(home);
-                });
-            }
             const actionButtons = [
-                ["strudelLearn", "learn"],
+                ["strudelPlay", "update"],
                 ["strudelUpdate", "update"],
                 ["strudelStop", "stop"],
-                ["strudelShare", "share"],
             ];
             actionButtons.forEach(([id, action]) => {
                 const btn = document.getElementById(id);
@@ -2548,6 +3509,7 @@
             applyThemeStylesheet();
             syncWindowThemeClasses();
             applyWallpaper();
+            renderScaleReference();
             const initialStatus = document.getElementById("strudelStatus");
             if (initialStatus) initialStatus.textContent = "Strudel idle";
             initializeWindowFocus();
@@ -2656,6 +3618,12 @@
                 }
             }
         }
+        function updateSequencerPreview() {
+            const preview = document.getElementById("sequencerCodePreview");
+            if (preview) {
+                preview.value = buildSequencerCode();
+            }
+        }
         function clampNumber(value, min, max) {
             if (!Number.isFinite(value)) return min;
             return Math.min(Math.max(value, min), max);
@@ -2678,14 +3646,22 @@
                 instrument: (instrument || "").trim(),
                 bank: (bank || "").toLowerCase(),
                 steps: total,
-                structDivisor: total,
                 pitchMode: "scale",
                 pitchSequence: "",
                 scaleList: "",
+                melodyPaintLength: 1,
+                melodyLabels: "",
+                noteBaseOctave: DEFAULT_NOTE_BASE_OCTAVE,
+                noteOctaveOffset: 0,
+                melodyGrid: [],
+                melodyColumnLengths: [],
+                melodySubdivisions: [],
                 beats: Array.from({ length: total }, () => false),
+                sampleSubBeats: Array.from({ length: total }, () => [false]),
             };
             ensureRowBank(row);
             ensureRowInstrument(row);
+            ensureMelodyGrid(row);
             return row;
         }
         function addSequencerRow(instrument, bank, steps) {
@@ -2694,6 +3670,31 @@
         }
         function removeSequencerRow(rowId) {
             SequencerState.rows = SequencerState.rows.filter((row) => row.id !== rowId);
+            renderSequencer();
+        }
+        function resetSequencerRow(rowId) {
+            const index = SequencerState.rows.findIndex((row) => row.id === rowId);
+            if (index === -1) return;
+            const existing = SequencerState.rows[index];
+            const steps = existing.steps || SequencerState.defaultSteps;
+            const baseBank = existing.mode === "melody" ? "" : (DrumCatalog.banks.has(existing.bank) ? existing.bank : getDefaultBankId());
+            const baseInstrument = existing.mode === "melody" ? "sin" : getDefaultInstrumentValue(baseBank);
+            const fresh = createSequencerRow(baseInstrument, baseBank, steps);
+            fresh.mode = existing.mode;
+            if (fresh.mode === "melody") {
+                fresh.bank = "";
+                fresh.instrument = "sin";
+                fresh.pitchMode = "scale";
+                fresh.pitchSequence = "";
+                fresh.scaleList = "C:major";
+                fresh.melodyLabels = "";
+                fresh.melodyPaintLength = 1;
+                fresh.melodyColumnLengths = Array(steps).fill(1);
+                fresh.melodySubdivisions = Array(steps).fill(1);
+                const rowCount = getMelodyRowCount(fresh);
+                fresh.melodyGrid = Array(steps).fill(null).map(() => [Array(rowCount).fill(false)]);
+            }
+            SequencerState.rows[index] = fresh;
             renderSequencer();
         }
         function ensureRowBeatLength(row) {
@@ -2714,46 +3715,193 @@
             const row = getSequencerRow(rowId);
             if (!row) return;
             ensureRowBeatLength(row);
+            ensureSampleBeatGrid(row);
             if (step < 0 || step >= row.beats.length) return;
-            row.beats[step] = !row.beats[step];
+            const next = !row.beats[step];
+            row.beats[step] = next;
+            if (row.mode !== "melody" && Array.isArray(row.sampleSubBeats?.[step])) {
+                row.sampleSubBeats[step] = row.sampleSubBeats[step].map(() => next);
+            }
             renderSequencer();
         }
-        function updateSequencerField(rowId, field, value) {
+        function shiftRowOctave(rowId, direction) {
+            const row = getSequencerRow(rowId);
+            if (!row || row.pitchMode !== "note") return;
+            const delta = clampNumber(Number(direction) || 0, -1, 1);
+            if (!delta) return;
+            const current = Number(row.noteOctaveOffset) || 0;
+            const next = clampNumber(current + delta, -6, 6);
+            if (next === current) return;
+            row.noteOctaveOffset = next;
+            ensureMelodyGrid(row);
+            renderSequencer();
+        }
+        function toggleMelodyGridCell(rowId, columnIndex, subIndex, labelIndex, cellEl) {
             const row = getSequencerRow(rowId);
             if (!row) return;
+            ensureMelodyGrid(row);
+            const rowCount = getMelodyRowCount(row);
+            if (!row.melodyGrid[columnIndex]) {
+                row.melodyGrid[columnIndex] = [Array(rowCount).fill(false)];
+            }
+            if (!row.melodyGrid[columnIndex][subIndex]) {
+                row.melodyGrid[columnIndex][subIndex] = Array(rowCount).fill(false);
+            }
+            row.melodyGrid[columnIndex][subIndex][labelIndex] = !row.melodyGrid[columnIndex][subIndex][labelIndex];
+            if (row.melodyGrid[columnIndex][subIndex][labelIndex]) {
+                const len = clampNumber(Number(row.melodyPaintLength) || 1, 1, row.steps || row.melodyGrid.length || 1);
+                row.melodyColumnLengths[columnIndex] = len;
+            }
+            if (cellEl) {
+                cellEl.classList.toggle("active", row.melodyGrid[columnIndex][subIndex][labelIndex]);
+            }
+            updateSequencerPreview();
+        }
+        function toggleSampleSubdivision(rowId, columnIndex, subIndex, cellEl) {
+            const row = getSequencerRow(rowId);
+            if (!row) return;
+            ensureSampleBeatGrid(row);
+            const column = row.sampleSubBeats[columnIndex];
+            if (!column || typeof column[subIndex] === "undefined") return;
+            column[subIndex] = !column[subIndex];
+            const isActive = column[subIndex];
+            if (row.mode !== "melody" && Array.isArray(row.beats)) {
+                row.beats[columnIndex] = column.some(Boolean);
+            }
+            if (cellEl) {
+                cellEl.classList.toggle("active", isActive);
+                const rowEl = cellEl.closest(".sequencer-row");
+                const beatButton = rowEl?.querySelector(`.sequencer-beat[data-beat="${columnIndex}"]`);
+                if (beatButton) {
+                    beatButton.classList.toggle("active", !!row.beats?.[columnIndex]);
+                }
+            }
+            updateSequencerPreview();
+        }
+        function normalizeSequencerRow(row) {
+            if (!row.mode) row.mode = "sample";
+            if (!Array.isArray(row.beats)) row.beats = Array.from({ length: row.steps || SequencerState.defaultSteps }, () => false);
+            if (!row.pitchMode) row.pitchMode = "scale";
+            if (typeof row.noteBaseOctave === "undefined") row.noteBaseOctave = DEFAULT_NOTE_BASE_OCTAVE;
+            if (typeof row.noteOctaveOffset === "undefined") row.noteOctaveOffset = 0;
+            ensureMelodyGrid(row);
+            return row;
+        }
+        function updateSequencerField(rowId, field, value, options = {}) {
+            const row = getSequencerRow(rowId);
+            if (!row) return;
+            const rerender = options.rerender !== false;
             if (field === "steps") {
                 const newSteps = clampNumber(Number(value), 1, 64);
                 row.steps = newSteps;
                 ensureRowBeatLength(row);
+                ensureMelodyGrid(row);
             } else if (field === "bank") {
                 row.bank = (value || "").toLowerCase();
                 ensureRowBank(row);
                 ensureRowInstrument(row);
             } else if (field === "instrument") {
-                row.instrument = (value || "").toLowerCase();
+                row.instrument = row.mode === "melody" ? (value || "").trim() : (value || "").toLowerCase();
                 ensureRowInstrument(row);
+            } else if (field === "mode") {
+                const wasMelody = row.mode === "melody";
+                row.mode = value === "melody" ? "melody" : "sample";
+                if (row.mode === "melody") {
+                    if (!wasMelody) {
+                        row.bank = "";
+                        row.instrument = "sin";
+                        if (!row.scaleList) {
+                            row.scaleList = "C:major";
+                        }
+                    }
+                    row.pitchMode = row.pitchMode || "scale";
+                } else {
+                    ensureRowBank(row);
+                    ensureRowInstrument(row);
+                }
+                ensureMelodyGrid(row);
+            } else if (field === "pitchMode") {
+                row.pitchMode = value === "note" ? "note" : "scale";
+                ensureMelodyGrid(row);
+            } else if (field === "pitchSequence") {
+                row.pitchSequence = value || "";
+            } else if (field === "scaleList") {
+                row.scaleList = value || "";
+            } else if (field === "melodyPaintLength") {
+                row.melodyPaintLength = clampNumber(Number(value) || 1, 1, row.steps || row.melodyGrid?.length || 1);
+            } else if (field === "melodyLabels") {
+                row.melodyLabels = value || "";
             } else {
                 row[field] = value;
             }
+            if (rerender) {
+                renderSequencer();
+            } else {
+                updateSequencerPreview();
+            }
+        }
+        function setMelodySubdivision(rowId, columnIndex, value) {
+            const row = getSequencerRow(rowId);
+            if (!row) return;
+            ensureMelodyGrid(row);
+            const currentValue = Number(row.melodySubdivisions[columnIndex]) || 1;
+            const nextValue = clampNumber(Number(value) || 1, 1, 16);
+            if (currentValue === nextValue) {
+                return;
+            }
+            row.melodySubdivisions[columnIndex] = nextValue;
+            ensureMelodyGrid(row);
+            renderSequencer();
+        }
+        function adjustMelodySubdivision(rowId, columnIndex, delta) {
+            const row = getSequencerRow(rowId);
+            if (!row) return;
+            ensureMelodyGrid(row);
+            const currentValue = Number(row.melodySubdivisions[columnIndex]) || 1;
+            const nextValue = clampNumber(currentValue + delta, 1, 16);
+            if (currentValue === nextValue) {
+                return;
+            }
+            row.melodySubdivisions[columnIndex] = nextValue;
+            ensureMelodyGrid(row);
             renderSequencer();
         }
         function buildSequencerCode() {
-            const cpm = Math.max(1, Number(SequencerState.cpm) || 120);
-            const cps = (cpm / 60).toFixed(4);
+            const cpm = Math.max(1, Number(SequencerState.cpm) || 60);
             const voices = SequencerState.rows.map((row) => {
                 ensureRowBeatLength(row);
                 const structBits = row.beats.map((active) => (active ? "1" : "0")).join(" ");
-                const steps = row.steps || row.beats.length;
-                const patternSteps = clampNumber(Number(steps), 1, 64);
+                const structCall = row.mode === "melody" ? "" : `.struct("{${structBits}}")`;
+                if (row.mode === "melody") {
+                    const gridPattern = buildMelodyGridPattern(row);
+                    const pitchMode = row.pitchMode === "note" ? "note" : "n";
+                    const userPattern = (row.pitchSequence || "").trim();
+                    const pattern = gridPattern || userPattern || buildDefaultPitchPattern(row);
+                    let voice = `${pitchMode}("${pattern}")`;
+                    if (pitchMode !== "note") {
+                        const scaleParts = (row.scaleList || "")
+                            .split(/[,]/)
+                            .map((item) => item.trim())
+                            .filter(Boolean);
+                        if (scaleParts.length) {
+                            const joined = scaleParts
+                                .map((item) => `"${item.replace(/"/g, '\"')}"`)
+                                .join(", ");
+                            voice += `.scale(${joined})`;
+                        }
+                    }
+                    const synthName = (row.instrument || "").trim().replace(/"/g, "") || "sin";
+                    voice += `.s("${synthName}")`;
+                    return voice;
+                }
                 const instrument = (row.instrument || "").trim().replace(/"/g, "") || "~";
                 const bank = (row.bank || "").trim().replace(/"/g, "");
-                const structCall = `.struct("{${structBits}}%${patternSteps}")`;
                 const bankCall = bank ? `.bank("${bank}")` : "";
                 return `s("${instrument}")${structCall}${bankCall}`;
             }).filter(Boolean);
             const rowLines = voices.map((voice) => `$: ${voice}`);
             const body = rowLines.length ? rowLines.join("\n") : "$: s(\"~\")";
-            const code = `setcps(${cps});\n${body}`;
+            const code = `setcpm(${cpm});\n${body}`;
             SequencerState.lastCode = code;
             return code;
         }
@@ -2771,18 +3919,134 @@
                 rowsHost.innerHTML = "";
                 const fragment = document.createDocumentFragment();
                 SequencerState.rows.forEach((row) => {
+                    normalizeSequencerRow(row);
                     ensureRowBeatLength(row);
                     const rowEl = document.createElement("div");
                     rowEl.className = "sequencer-row";
                     rowEl.dataset.rowId = row.id;
-                    const structValue = clampNumber(Number(row.structDivisor) || row.steps, 1, 256);
+                    const melodyLabels = getMelodyLabels(row);
+                    const totalSubdivs = getTotalMelodySubdivisions(row);
+                    const flattenedCells = row.mode === "melody" ? flattenMelodyCells(row) : [];
+                    const sampleCells = row.mode === "melody" ? [] : flattenSampleCells(row);
+                    const noteOctaveDisplay = (row.noteBaseOctave || DEFAULT_NOTE_BASE_OCTAVE) + (row.noteOctaveOffset || 0);
+                    const renderBracketRow = () => {
+                        let offset = 0;
+                        const pieces = (row.melodySubdivisions || []).map((count, index) => {
+                            const span = Math.max(1, count || 1);
+                            const html = `<div class="melody-bracket" style="grid-column:${offset + 1} / span ${span};">${index + 1}</div>`;
+                            offset += span;
+                            return html;
+                        }).join("");
+                        return `
+                            <div class="melody-bracket-row">
+                                <span class="melody-grid-spacer"></span>
+                                <div class="melody-brackets" style="--melody-total-subdivs:${totalSubdivs};">${pieces}</div>
+                            </div>
+                        `;
+                    };
+                    const renderSubdivisionRow = (includeSpacer = true) => {
+                        let offset = 0;
+                        const pieces = (row.melodySubdivisions || []).map((value, columnIndex) => {
+                            const span = Math.max(1, value || 1);
+                            const html = `<label style="grid-column:${offset + 1} / span ${span};">
+                                <span>${columnIndex + 1}</span>
+                                <div class="melody-subdivision-controls" data-melody-col="${columnIndex}">
+                                    <button type="button" data-action="subdiv-dec">-</button>
+                                    <span class="melody-subdivision-value">${value || 1}</span>
+                                    <button type="button" data-action="subdiv-inc">+</button>
+                                </div>
+                            </label>`;
+                            offset += span;
+                            return html;
+                        }).join("");
+                        const inlineClass = includeSpacer ? "" : " inline";
+                        const spacerHtml = includeSpacer ? '<span class="melody-grid-spacer"></span>' : "";
+                        const rowStyle = includeSpacer
+                            ? `style="--melody-total-subdivs:${totalSubdivs};"`
+                            : `style="--melody-total-subdivs:${totalSubdivs}; --melody-step-count:${row.steps};"`;
+                        return `
+                            <div class="melody-subdivision-row-wrapper${inlineClass}">
+                                ${spacerHtml}
+                                <div class="melody-subdivision-row" ${rowStyle}>
+                                    ${pieces}
+                                </div>
+                            </div>
+                        `;
+                    };
+                    const bracketRowHtml = renderBracketRow();
+                    const inlineSubdivisionControls = `
+                        <label class="row-field-subdivisions">
+                            Subdivide
+                            ${renderSubdivisionRow(false)}
+                        </label>
+                    `;
+
+                    const melodyGridHtml = row.mode === "melody"
+                        ? `
+                            <div class="melody-grid-wrapper" style="--melody-total-subdivs:${totalSubdivs}; --melody-step-count:${row.steps};">
+                                <div class="melody-grid-controls">
+                                    <label class="row-field-labels">
+                                        Row Labels
+                                        <input type="text" value="${escapeHtml(row.melodyLabels || melodyLabels.join(", "))}" data-field="melodyLabels">
+                                    </label>
+                                    <label class="row-field-length">
+                                        Paint Length
+                                        <input type="number" min="1" max="${row.steps}" value="${row.melodyPaintLength || 1}" data-field="melodyPaintLength">
+                                    </label>
+                                </div>
+                                <div class="melody-grid-track">
+                                    ${bracketRowHtml}
+                                    <div class="melody-grid">
+                                        ${melodyLabels.map((label, labelIndex) => `
+                                            <div class="melody-grid-row">
+                                                <span class="melody-grid-label">
+                                                    ${row.pitchMode === "note" ? `<button type="button" class="melody-note-preview" data-action="preview-note" data-note="${escapeHtml(label)}" title="Preview ${escapeHtml(label)}">&#9658;</button>` : ""}
+                                                    <span class="melody-grid-label-text">${escapeHtml(label)}</span>
+                                                </span>
+                                                <div class="melody-grid-cells">
+                                                    ${flattenedCells.map(({ columnIndex, subIndex }) => {
+                                                        const column = row.melodyGrid[columnIndex] || [];
+                                                        const subColumn = column[subIndex] || [];
+                                                        const isActive = !!subColumn[labelIndex];
+                                                        const splitCount = row.melodySubdivisions[columnIndex] || 1;
+                                                        const titleSuffix = splitCount > 1 ? ` ? ${subIndex + 1}/${splitCount}` : "";
+                                                        return `<button type="button" class="melody-grid-cell${isActive ? " active" : ""}" data-melody-col="${columnIndex}" data-melody-sub="${subIndex}" data-melody-row="${labelIndex}" title="Beat ${columnIndex + 1}${titleSuffix}"></button>`;
+                                                    }).join("") }
+                                                </div>
+                                            </div>
+                                        `).join("") }
+                                    </div>
+                                </div>
+                            </div>
+                        `
+                        : "";
+                    const sampleSubdivisionTopHtml = row.mode === "melody" ? "" : `
+                        <div class="melody-grid-wrapper sample-subdivisions" style="--melody-total-subdivs:${totalSubdivs}; --melody-step-count:${row.steps}; --melody-label-width:0px; --melody-grid-offset:0px;">
+                            ${bracketRowHtml}
+                        </div>
+                    `;
+                    const sampleGridHtml = row.mode === "melody" ? "" : `
+                        <div class="sample-grid-wrapper" style="--melody-total-subdivs:${totalSubdivs}; --melody-step-count:${row.steps};">
+                            <div class="sample-grid-track">
+                                <div class="sample-grid" style="--melody-total-subdivs:${totalSubdivs};">
+                                    ${sampleCells.map(({ columnIndex, subIndex }) => {
+                                        const column = row.sampleSubBeats?.[columnIndex] || [];
+                                        const isActive = !!column[subIndex];
+                                        const splitCount = row.melodySubdivisions[columnIndex] || 1;
+                                        const titleSuffix = splitCount > 1 ? ` ? ${subIndex + 1}/${splitCount}` : "";
+                                        return `<button type="button" class="melody-grid-cell sample-grid-cell${isActive ? " active" : ""}" data-sample-col="${columnIndex}" data-sample-sub="${subIndex}" title="Beat ${columnIndex + 1}${titleSuffix}"></button>`;
+                                    }).join("")}
+                                </div>
+                            </div>
+                        </div>
+                    `;
                     rowEl.innerHTML = `
                         <div class="sequencer-row-header">
                             <label>Type
-                                <select data-field="mode">
-                                    <option value="sample"${row.mode === "melody" ? "" : " selected"}>Sample</option>
-                                    <option value="melody"${row.mode === "melody" ? " selected" : ""}>Melody</option>
-                                </select>
+                                <div class="toggle-switch" data-toggle-field="mode">
+                                    <button type="button" data-toggle-value="sample" class="${row.mode === "melody" ? "" : "active"}">Sample</button>
+                                    <button type="button" data-toggle-value="melody" class="${row.mode === "melody" ? "active" : ""}">Melody</button>
+                                </div>
                             </label>
                             <label class="row-field-voice row-field-voice-sample">
                                 Instrument
@@ -2796,46 +4060,69 @@
                                 Bank
                                 <select data-field="bank"></select>
                             </label>
-                            <label>Steps
-                                <input type="number" min="1" max="64" value="${row.steps}" data-field="steps">
-                            </label>
-                            <label>Struct %
-                                <input type="number" min="1" max="256" value="${structValue}" data-field="structDivisor">
-                            </label>
-                            <div class="row-actions">
-                                <button type="button" data-action="remove-row">Remove</button>
+                            <div class="row-measurements">
+                                <label>Steps
+                                    <input type="number" min="1" max="64" value="${row.steps}" data-field="steps">
+                                </label>
+                                ${inlineSubdivisionControls}
+                                <div class="row-actions">
+                                    <button type="button" class="sequencer-action-button" data-action="remove-row">Remove</button>
+                                    <button type="button" class="sequencer-action-button" data-action="reset-row">Reset</button>
+                                </div>
                             </div>
                         </div>
                         <div class="sequencer-row-extra">
                             <label>Pitch Mode
-                                <select data-field="pitchMode">
-                                    <option value="scale"${row.pitchMode === "note" ? "" : " selected"}>Scale Degree</option>
-                                    <option value="note"${row.pitchMode === "note" ? " selected" : ""}>Explicit Note</option>
-                                </select>
+                                <div class="toggle-switch" data-toggle-field="pitchMode">
+                                    <button type="button" data-toggle-value="scale" class="${row.pitchMode === "note" ? "" : "active"}">Scale</button>
+                                    <button type="button" data-toggle-value="note" class="${row.pitchMode === "note" ? "active" : ""}">Explicit</button>
+                                </div>
                             </label>
-                            <label>Pitch Pattern
+                            <div class="row-field-note-only">
+                                <span>Octave</span>
+                                <div class="octave-controls">
+                                    <button type="button" class="sequencer-action-button" data-action="octave-shift" data-direction="-1">-</button>
+                                    <span>${noteOctaveDisplay}</span>
+                                    <button type="button" class="sequencer-action-button" data-action="octave-shift" data-direction="1">+</button>
+                                </div>
+                            </div>
+                            <label class="row-field-pitch-sequence">Pitch Pattern
                                 <input type="text" value="${escapeHtml(row.pitchSequence || "")}" data-field="pitchSequence" placeholder="${row.pitchMode === "note" ? "c4 e4 g4" : "0 2 4 5"}">
                             </label>
                             <label class="row-field-scale">
                                 Scale List
                                 <input type="text" value="${escapeHtml(row.scaleList || "")}" data-field="scaleList" placeholder="A:minor,B:major">
                             </label>
+                            ${row.mode === "melody" ? `
+                            <label class="row-field-labels">
+                                Row Labels
+                                <input type="text" value="${escapeHtml(row.melodyLabels || melodyLabels.join(", "))}" data-field="melodyLabels">
+                            </label>
+                            <label class="row-field-length">
+                                Paint Length
+                                <input type="number" min="1" max="${row.steps}" value="${row.melodyPaintLength || 1}" data-field="melodyPaintLength">
+                            </label>
+                            ` : ""}
                         </div>
+                        ${melodyGridHtml}
+                        ${sampleSubdivisionTopHtml}
+                        ${sampleGridHtml}
                         <div class="sequencer-beats" style="--sequencer-steps:${row.steps};">
-                            ${row.beats.map((active, index) => `<button type="button" class="sequencer-beat${active ? " active" : ""}" data-beat="${index}">${index + 1}</button>`).join("")}
+                            ${row.beats.map((active, index) => `<button type="button" class="sequencer-beat${active ? " active" : ""}" data-beat="${index}" aria-label="Step ${index + 1}"></button>`).join("")}
                         </div>
                     `;
+                    const activeTheme = document.body.dataset.theme || "flat";
+                    const cellSize = THEME_CELL_SIZES[activeTheme] || 24;
+                    rowEl.style.setProperty("--sequencer-cell-size", `${cellSize}px`);
                     fragment.appendChild(rowEl);
                     hydrateSequencerRowSelectors(rowEl, row);
                     applySequencerRowModeClasses(rowEl, row);
                 });
                 rowsHost.appendChild(fragment);
+                scheduleMelodyGridOverflowRefresh();
             }
             if (updatePreview) {
-                const preview = document.getElementById("sequencerCodePreview");
-                if (preview) {
-                    preview.value = buildSequencerCode();
-                }
+                updateSequencerPreview();
             }
             updateStrudelFrameBounds();
         }
@@ -2849,8 +4136,7 @@
             ensureStrudelVisible();
             const code = buildSequencerCode();
             sendStrudelCode(code);
-            const preview = document.getElementById("sequencerCodePreview");
-            if (preview) preview.value = code;
+            updateSequencerPreview();
             if (play) {
                 setTimeout(() => sendStrudelAction("update"), 200);
             }
@@ -2869,16 +4155,66 @@
                 rowsHost.dataset.handlersAttached = "true";
                 rowsHost.addEventListener("click", (event) => {
                     const beatButton = event.target.closest(".sequencer-beat");
+                    const previewBtn = event.target.closest("[data-action='preview-note']");
+                    if (previewBtn) {
+                        playSequencerPreviewNote(previewBtn.dataset.note || "");
+                        return;
+                    }
                     const rowEl = event.target.closest(".sequencer-row");
                     if (!rowEl) return;
                     const rowId = rowEl.dataset.rowId;
+                    const subdivButton = event.target.closest("[data-action='subdiv-inc'], [data-action='subdiv-dec']");
+                    if (subdivButton) {
+                        const controls = subdivButton.closest(".melody-subdivision-controls");
+                        if (controls) {
+                            const columnIndex = Number(controls.dataset.melodyCol);
+                            if (!Number.isNaN(columnIndex)) {
+                                const delta = subdivButton.dataset.action === "subdiv-inc" ? 1 : -1;
+                                adjustMelodySubdivision(rowId, columnIndex, delta);
+                            }
+                        }
+                        return;
+                    }
+                    const sampleCellBtn = event.target.closest(".sample-grid-cell");
+                    if (sampleCellBtn) {
+                        const col = Number(sampleCellBtn.dataset.sampleCol);
+                        const sub = Number(sampleCellBtn.dataset.sampleSub || 0);
+                        toggleSampleSubdivision(rowId, col, sub, sampleCellBtn);
+                        return;
+                    }
                     if (event.target.matches("[data-action='remove-row']")) {
                         removeSequencerRow(rowId);
+                        return;
+                    }
+                    if (event.target.matches("[data-action='reset-row']")) {
+                        resetSequencerRow(rowId);
+                        return;
+                    }
+                    if (event.target.matches("[data-action='octave-shift']")) {
+                        const dir = Number(event.target.dataset.direction) || 0;
+                        shiftRowOctave(rowId, dir);
+                        return;
+                    }
+                    const toggleBtn = event.target.closest(".toggle-switch button");
+                    if (toggleBtn) {
+                        const toggleField = toggleBtn.closest(".toggle-switch")?.dataset.toggleField;
+                        const nextValue = toggleBtn.dataset.toggleValue;
+                        if (toggleField && typeof nextValue !== "undefined") {
+                            updateSequencerField(rowId, toggleField, nextValue);
+                        }
                         return;
                     }
                     if (beatButton) {
                         const step = Number(beatButton.dataset.beat);
                         toggleSequencerBeat(rowId, step);
+                        return;
+                    }
+                    const melodyCell = event.target.closest(".melody-grid-cell");
+                    if (melodyCell) {
+                        const col = Number(melodyCell.dataset.melodyCol);
+                        const sub = Number(melodyCell.dataset.melodySub || 0);
+                        const labelIndex = Number(melodyCell.dataset.melodyRow);
+                        toggleMelodyGridCell(rowId, col, sub, labelIndex, melodyCell);
                         return;
                     }
                 });
@@ -2887,8 +4223,30 @@
                     const rowEl = target.closest(".sequencer-row");
                     if (!rowEl) return;
                     const rowId = rowEl.dataset.rowId;
-                    if (target.dataset.field === "steps") {
-                        updateSequencerField(rowId, target.dataset.field, target.value);
+                    const field = target.dataset.field;
+                    if (!field) return;
+                    const row = getSequencerRow(rowId);
+                    if (["pitchSequence", "scaleList"].includes(field)) {
+                        updateSequencerField(rowId, field, target.value, { rerender: false });
+                        return;
+                    }
+                    if (field === "instrumentInput") {
+                        updateSequencerField(rowId, "instrument", target.value, { rerender: false });
+                        if (row) {
+                            target.value = row.instrument || "";
+                        }
+                        return;
+                    }
+                    if (field === "melodyPaintLength") {
+                        updateSequencerField(rowId, field, target.value, { rerender: false });
+                        if (row) {
+                            target.value = row.melodyPaintLength || 1;
+                        }
+                        return;
+                    }
+                    if (field === "melodyLabels") {
+                        updateSequencerField(rowId, field, target.value, { rerender: false });
+                        return;
                     }
                 });
                 rowsHost.addEventListener("change", (event) => {
@@ -2896,17 +4254,34 @@
                     const rowEl = target.closest(".sequencer-row");
                     if (!rowEl) return;
                     const rowId = rowEl.dataset.rowId;
-                    if (target.dataset.field === "bank") {
-                        updateSequencerField(rowId, "bank", target.value);
+                    const field = target.dataset.field;
+                    if (field === "bank") {
+                        updateSequencerField(rowId, "bank", target.value, { rerender: false });
                         const row = getSequencerRow(rowId);
                         if (row) {
-                            const instrumentSelect = rowEl.querySelector('select[data-field="instrument"]');
+                            const instrumentSelect = rowEl.querySelector('select[data-field="instrumentSelect"]');
                             populateInstrumentSelect(instrumentSelect, row);
                         }
                         return;
                     }
-                    if (target.dataset.field === "instrument") {
-                        updateSequencerField(rowId, "instrument", target.value);
+                    if (field === "steps") {
+                        updateSequencerField(rowId, "steps", target.value);
+                        return;
+                    }
+                    if (field === "instrumentSelect") {
+                        updateSequencerField(rowId, "instrument", target.value, { rerender: false });
+                        return;
+                    }
+                    if (field === "melodyPaintLength") {
+                        updateSequencerField(rowId, field, target.value, { rerender: false });
+                        return;
+                    }
+                    if (field === "melodyLabels") {
+                        updateSequencerField(rowId, field, target.value);
+                        return;
+                    }
+                    if (field === "mode" || field === "pitchMode") {
+                        updateSequencerField(rowId, field, target.value);
                     }
                 });
             }
@@ -2916,3 +4291,20 @@
     </script>
 </body>
 </html>
+        .sample-subdivisions .melody-grid-spacer {
+            width: 0;
+            display: none;
+        }
+        .sample-subdivisions .melody-bracket-row {
+            margin-left: 0;
+            gap: 0;
+        }
+        .sample-subdivisions .melody-subdivision-row-wrapper {
+            margin-left: 0;
+        }
+
+
+
+
+
+

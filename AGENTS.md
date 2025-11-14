@@ -13,6 +13,7 @@
 - **`basic.py`**: `SineWaveSource` (pure tone), `NoiseSource` (white noise with seed control)
 - **`integrated.py`**: `ResonantInstrumentSource` (plucked modal tone), `VocalFormantSource` (formant-based vowel synthesis with vibrato)
 - All sources are dataclasses with `to_dict()` for JSON serialization
+- **Windows theme CSS note**: When using xp.css, 7.css, or 98.css the base styles include `button` rules that enforce `min-width`, `min-height`, padding, and shadows. Any custom grid/button sizing (e.g., sequencer beats, melody cells, play toggles) must explicitly reset these properties (often with `!important`) or the vendor styles will override your dimensions.
 
 ### Effects (`src/ambiance/effects/`)
 - **`spatial.py`**: `ReverbEffect` (Schroeder-style feedback delay network), `DelayEffect` (ping-pong delay), `LowPassFilterEffect` (one-pole IIR filter)
