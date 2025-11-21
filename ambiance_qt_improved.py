@@ -1,8 +1,8 @@
-"""Ambiance - Improved Qt application (Plugin Rack shell).
+﻿"""Ambiance - Improved Qt application (Plugin Rack shell).
 
 This file provides a clean, minimal Qt application with a working Plugin Rack
 UI backed by PluginRackManager and an optional Carla host for auditioning the
-selected plugin. It’s structured to keep VS Code/Pylance happy and is easy to
+selected plugin. Itâ€™s structured to keep VS Code/Pylance happy and is easy to
 extend.
 """
 
@@ -14,9 +14,13 @@ import logging
 import json
 from collections import deque
 from pathlib import Path, PurePosixPath
-from typing import Optional, TYPE_CHECKING
+from typing import Iterable, Optional, TYPE_CHECKING
 
-os.environ.setdefault("JACK_NO_START_SERVER", "1")
+# Ensure repo root is on sys.path for ambiance.* imports
+REPO_ROOT = Path(__file__).resolve().parent
+PACKAGE_SRC = REPO_ROOT / "ambiance" / "src"
+if str(PACKAGE_SRC) not in sys.path:
+    sys.path.insert(0, str(PACKAGE_SRC))
 
 if TYPE_CHECKING:
     from ambiance.integrations.carla_host import CarlaVSTHost
@@ -92,9 +96,12 @@ from qtpy.QtWidgets import (
     QScrollArea,
     QSpinBox,
     QTextEdit,
+    QStackedLayout,
     QMdiArea,
     QMdiSubWindow,
     QMessageBox,
+    QToolButton,
+    QSplitter,
 )
 
 # Windows-specific imports for window embedding
@@ -109,6 +116,134 @@ if os.name == 'nt':
     WS_VISIBLE = 0x10000000
     SWP_NOZORDER = 0x0004
     SWP_NOACTIVATE = 0x0010
+    SWP_NOMOVE = 0x0002
+    SWP_NOSIZE = 0x0001
+    SWP_SHOWWINDOW = 0x0040
+    HWND_TOPMOST = -1
+
+    # WinMM MIDI support
+    winmm = ctypes.windll.winmm
+    HMIDIIN = wintypes.HANDLE
+    DWORD_PTR = getattr(wintypes, "DWORD_PTR", ctypes.c_size_t)
+    MIDIINPROC = ctypes.WINFUNCTYPE(
+        None,
+        HMIDIIN,
+        wintypes.UINT,
+        DWORD_PTR,
+        DWORD_PTR,
+        DWORD_PTR,
+    )
+    CALLBACK_FUNCTION = 0x00030000
+    MIM_DATA = 0x3C3
+
+    class MIDIINCAPSW(ctypes.Structure):
+        _fields_ = [
+            ("wMid", wintypes.WORD),
+            ("wPid", wintypes.WORD),
+            ("vDriverVersion", wintypes.DWORD),
+            ("szPname", wintypes.WCHAR * 32),
+            ("dwSupport", wintypes.DWORD),
+        ]
+
+    winmm.midiInGetNumDevs.restype = wintypes.UINT
+    winmm.midiInGetDevCapsW.argtypes = [
+        wintypes.UINT,
+        ctypes.POINTER(MIDIINCAPSW),
+        wintypes.UINT,
+    ]
+    winmm.midiInGetDevCapsW.restype = wintypes.UINT
+    winmm.midiInOpen.argtypes = [
+        ctypes.POINTER(HMIDIIN),
+        wintypes.UINT,
+        MIDIINPROC,
+        DWORD_PTR,
+        wintypes.DWORD,
+    ]
+    winmm.midiInOpen.restype = wintypes.UINT
+    winmm.midiInStart.argtypes = [HMIDIIN]
+    winmm.midiInStop.argtypes = [HMIDIIN]
+    winmm.midiInReset.argtypes = [HMIDIIN]
+    winmm.midiInClose.argtypes = [HMIDIIN]
+    winmm.midiInGetErrorTextW.argtypes = [wintypes.UINT, wintypes.LPWSTR, wintypes.UINT]
+    winmm.midiInGetErrorTextW.restype = wintypes.UINT
+
+class WindowsMidiInput:
+    """Simple WinMM MIDI input helper that routes messages back to Python callbacks."""
+
+    def __init__(self, log_fn, note_on_cb, note_off_cb, device_index: int = 0) -> None:
+        self._log = log_fn
+        self._note_on_cb = note_on_cb
+        self._note_off_cb = note_off_cb
+        self._handle = HMIDIIN()
+        self.device_name = "Unknown MIDI Device"
+        self.device_index = int(device_index)
+        self._callback = MIDIINPROC(self._midi_proc)
+        self._open_device(self.device_index)
+
+    @staticmethod
+    def list_devices() -> list[dict[str, object]]:
+        devices: list[dict[str, object]] = []
+        count = int(winmm.midiInGetNumDevs())
+        for index in range(count):
+            caps = MIDIINCAPSW()
+            if winmm.midiInGetDevCapsW(index, ctypes.byref(caps), ctypes.sizeof(caps)) == 0:
+                devices.append({"index": index, "name": caps.szPname})
+        return devices
+
+    def _describe(self, result: int) -> str:
+        buffer = ctypes.create_unicode_buffer(256)
+        if winmm.midiInGetErrorTextW(result, buffer, len(buffer)) == 0:
+            return buffer.value
+        return f"MMRESULT {result}"
+
+    def _open_device(self, device_index: int) -> None:
+        devices = self.list_devices()
+        if not devices:
+            raise RuntimeError("No Windows MIDI input devices detected")
+        target = max(0, min(device_index, len(devices) - 1))
+        self.device_index = target
+        self.device_name = devices[target]["name"]
+        result = winmm.midiInOpen(
+            ctypes.byref(self._handle),
+            target,
+            self._callback,
+            0,
+            CALLBACK_FUNCTION,
+        )
+        if result != 0:
+            raise RuntimeError(f"midiInOpen failed: {self._describe(result)}")
+        result = winmm.midiInStart(self._handle)
+        if result != 0:
+            raise RuntimeError(f"midiInStart failed: {self._describe(result)}")
+
+    def reconnect(self, device_index: int) -> None:
+        self.close()
+        self._handle = HMIDIIN()
+        self._open_device(device_index)
+
+    def close(self) -> None:
+        if not self._handle:
+            return
+            winmm.midiInStop(self._handle)
+            winmm.midiInReset(self._handle)
+            winmm.midiInClose(self._handle)
+            self._handle = None
+
+        def _midi_proc(self, handle, msg, instance, param1, param2) -> None:  # pylint: disable=unused-argument
+            if msg != MIM_DATA:
+                return
+            data = int(param1)
+            status = data & 0xFF
+            data1 = (data >> 8) & 0xFF
+            data2 = (data >> 16) & 0xFF
+            command = status & 0xF0
+            if command == 0x90:  # Note on
+                if data2 == 0:
+                    self._note_off_cb(data1)
+                else:
+                    self._note_on_cb(data1, data2 / 127.0)
+            elif command == 0x80:  # Note off
+                self._note_off_cb(data1)
 
 # Make in-repo src importable without installation
 _ROOT = Path(__file__).resolve().parent
@@ -122,6 +257,11 @@ try:
 except Exception as _e:  # pragma: no cover
     PluginRackManager = None  # type: ignore
     _PLUGINS_IMPORT_ERROR = str(_e)
+
+from ambiance.integrations.supercollider_service import (
+    SuperColliderService,
+    SuperColliderServiceError,
+)
 
 # Optional Carla host
 try:
@@ -269,9 +409,45 @@ class PluginStudioBridge(QObject):
     def loadChainIndex(self, index: int) -> None:
         self._rack.load_chain_index(index)
 
+    @Slot(int, bool)
+    def setBranchStart(self, index: int, enabled: bool) -> None:
+        if hasattr(self._rack, "set_branch_start"):
+            self._rack.set_branch_start(index, enabled)
+
+    @Slot(bool)
+    def setWorkspaceMode(self, enabled: bool) -> None:
+        if hasattr(self._rack, "set_workspace_mode"):
+            self._rack.set_workspace_mode(bool(enabled))
+
     @Slot(int)
     def focusChainIndex(self, index: int) -> None:
         self._rack.select_chain_index(index)
+
+    @Slot(int)
+    def focusChainUi(self, index: int) -> None:
+        if hasattr(self._rack, "focus_chain_index"):
+            self._rack.focus_chain_index(index, show_ui=True)
+
+    @Slot()
+    def activateChain(self) -> None:
+        if hasattr(self._rack, "_activate_chain"):
+            self._rack._activate_chain(show_ui=True)
+
+    @Slot(str)
+    def setScanDirectories(self, payload: str) -> None:
+        """Update plugin discovery directories from the web UI."""
+        try:
+            paths = json.loads(payload)
+            if not isinstance(paths, list):
+                raise TypeError("expected list")
+        except Exception as exc:
+            print(f"[WEB] Failed to parse scan directories: {exc}")
+            return
+        try:
+            self._rack.set_plugin_scan_dirs(paths)
+        except Exception as exc:
+            print(f"[WEB] Failed to update scan directories: {exc}")
+            raise
 
     @Slot()
     def saveSession(self) -> None:
@@ -282,6 +458,11 @@ class PluginStudioBridge(QObject):
     def loadSession(self) -> None:
         if hasattr(self._rack, "load_session"):
             self._rack.load_session()
+
+    @Slot()
+    def clearChain(self) -> None:
+        if hasattr(self._rack, "clear_chain"):
+            self._rack.clear_chain()
 
 
 class PluginUIBridge(QObject):
@@ -468,8 +649,18 @@ class StrudelBridge(QObject):
 class AmbianceMainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("Ambiance – Studio")
+        self.setWindowTitle("Ambiance â€“ Studio")
         self.resize(1200, 800)
+
+        self.plugin_host_mode = os.environ.get("AMB_PLUGIN_HOST", "carla").lower()
+        self.sc_service: Optional[SuperColliderService] = None
+        if self.plugin_host_mode == "sc":
+            try:
+                self.sc_service = SuperColliderService(enabled=True, auto_boot=True)
+            except SuperColliderServiceError as exc:
+                print(f"[SC] Failed to boot SuperCollider host: {exc}")
+            except Exception as exc:  # pragma: no cover - defensive
+                print(f"[SC] Unexpected SuperCollider initialization error: {exc}")
 
         # Main container - Desktop environment
         central = QWidget(self)
@@ -532,7 +723,11 @@ class AmbianceMainWindow(QMainWindow):
         self.plugin_rack_widget = None
 
         if PluginRackManager is not None:
-            self.plugin_rack_widget = PluginRackWidget(self)
+            self.plugin_rack_widget = PluginRackWidget(
+                self,
+                plugin_host_mode=self.plugin_host_mode,
+                sc_service=self.sc_service,
+            )
             # Hide the main widget since we only use its children in MDI windows
             self.plugin_rack_widget.hide()
 
@@ -560,6 +755,11 @@ class AmbianceMainWindow(QMainWindow):
         self._carla_warmup_timer: QTimer | None = None
         self.web_desktop_active = False
         self._native_viewport_rect = (0.0, 0.0, 0.0, 0.0)
+        self._plugin_ui_host = "overlay"
+        self.plugin_ui_workspace_window = None
+        self.plugin_ui_workspace_container = None
+        self.plugin_ui_workspace_placeholder = None
+        self._overlay_visible_before_workspace = False
 
         self.plugin_studio_webview = None
         self.plugin_ui_webview = None
@@ -835,9 +1035,17 @@ class AmbianceMainWindow(QMainWindow):
         if wallpapers_dir.exists():
             mounts["/wallpapers/"] = wallpapers_dir
 
+        host_mode = self.plugin_host_mode
+        sc_service = self.sc_service
+
         global _desktop_http_server
         if _desktop_http_server is None:
-            _desktop_http_server = StaticHTTPServer(root_dir, mounts=mounts)
+            _desktop_http_server = StaticHTTPServer(
+                root_dir,
+                mounts=mounts,
+                plugin_host_mode=host_mode,
+                sc_service=sc_service,
+            )
 
         try:
             port = _desktop_http_server.start()
@@ -852,6 +1060,7 @@ class AmbianceMainWindow(QMainWindow):
         windows: list[dict[str, object]] = []
         mdi_windows = getattr(self, "mdi_windows", {})
         plugin_ui = mdi_windows.get("Plugin UI") if isinstance(mdi_windows, dict) else None
+        visible = False
         if plugin_ui is not None:
             visible = plugin_ui.isVisible()
             if hasattr(plugin_ui, "isMinimized"):
@@ -859,11 +1068,11 @@ class AmbianceMainWindow(QMainWindow):
                     visible = visible and not plugin_ui.isMinimized()
                 except Exception:
                     pass
-            windows.append({
-                "id": "plugin_ui",
-                "name": "Plugin UI",
-                "visible": bool(visible),
-            })
+        windows.append({
+            "id": "plugin_ui",
+            "name": "Plugin UI",
+            "visible": bool(visible),
+        })
         windows.append({
             "id": "strudel",
             "name": "Strudel",
@@ -921,6 +1130,8 @@ class AmbianceMainWindow(QMainWindow):
     def _sync_native_ui_geometry(self) -> None:
         if not hasattr(self, "mdi_windows"):
             return
+        if getattr(self, "_plugin_ui_host", "overlay") != "overlay":
+            return
         plugin_window = self.mdi_windows.get("Plugin UI")
         if not plugin_window:
             return
@@ -953,6 +1164,9 @@ class AmbianceMainWindow(QMainWindow):
 
     def _set_plugin_ui_visible(self, visible: bool) -> None:
         if not hasattr(self, "mdi_windows"):
+            return
+        if getattr(self, "_plugin_ui_host", "overlay") == "workspace":
+            self._toggle_plugin_ui_workspace(visible)
             return
         window = self.mdi_windows.get("Plugin UI")
         if not window:
@@ -1131,6 +1345,82 @@ class AmbianceMainWindow(QMainWindow):
         overlay.hide()
         return overlay
 
+    def _create_plugin_ui_workspace_window(self):
+        """Workspace window is not used when floating plugin UIs on the desktop."""
+        self.plugin_ui_workspace_container = None
+        self.plugin_ui_workspace_placeholder = None
+        self.plugin_ui_workspace_window = None
+        return None
+
+    def _install_plugin_ui_workspace_filter(self, window) -> None:
+        """Ensure the plugin UI widget is reparented when the workspace visibility changes."""
+        if not window:
+            return
+
+        main_window = self
+
+        class _WorkspaceFilter(QObject):
+            def eventFilter(self, obj, event):
+                if event.type() == event.Type.Show:
+                    main_window._set_plugin_ui_host("workspace")
+                    main_window._notify_desktop_bridge()
+                elif event.type() == event.Type.Hide:
+                    main_window._set_plugin_ui_host("overlay")
+                    main_window._notify_desktop_bridge()
+                return False
+
+        filt = _WorkspaceFilter(window)
+        window.installEventFilter(filt)
+        if not hasattr(self, "_window_filters"):
+            self._window_filters = []
+        self._window_filters.append(filt)
+
+    def _set_plugin_ui_host(self, target: str) -> None:
+        """Reparent the plugin UI container to the overlay or workspace."""
+        if target == self._plugin_ui_host:
+            return
+        if not self.plugin_rack_widget:
+            return
+        widget = getattr(self.plugin_rack_widget, "plugin_ui_holder", None)
+        if widget is None:
+            return
+
+        if hasattr(self.plugin_rack_widget, "set_ui_embed_target"):
+            self.plugin_rack_widget.set_ui_embed_target(target)
+
+        if target == "workspace":
+            overlay = getattr(self, "plugin_ui_overlay", None)
+            if overlay:
+                self._overlay_visible_before_workspace = overlay.isVisible()
+                overlay.hide()
+            try:
+                parent_window = self.parent()
+                if parent_window and hasattr(parent_window, "showMaximized"):
+                    parent_window.showMaximized()
+            except Exception:
+                pass
+            self._plugin_ui_host = "workspace"
+        else:
+            overlay = getattr(self, "plugin_ui_overlay", None)
+            if not overlay:
+                return
+            widget.setParent(overlay)
+            layout = overlay.layout()
+            if layout:
+                layout.addWidget(widget)
+            self._plugin_ui_host = "overlay"
+            self._sync_native_ui_geometry()
+            if self._overlay_visible_before_workspace:
+                self._overlay_visible_before_workspace = False
+                self._set_plugin_ui_visible(True)
+
+    def _toggle_plugin_ui_workspace(self, force_visible: bool | None = None) -> None:
+        """Toggle whether plugin UIs are detached to the desktop."""
+        current = getattr(self.plugin_rack_widget, "_ui_embed_target", "overlay") == "workspace"
+        target = (not current) if force_visible is None else bool(force_visible)
+        self._set_plugin_ui_host("workspace" if target else "overlay")
+        self._notify_desktop_bridge()
+
     def _create_desktop_windows(self) -> None:
         """Create moveable windows on the desktop for each component."""
         if not self.plugin_rack_widget:
@@ -1146,6 +1436,10 @@ class AmbianceMainWindow(QMainWindow):
         plugin_ui_overlay = self._create_plugin_ui_overlay()
         self.plugin_ui_overlay = plugin_ui_overlay
         self.mdi_windows["Plugin UI"] = plugin_ui_overlay
+
+        workspace_window = self._create_plugin_ui_workspace_window()
+        if workspace_window:
+            self.plugin_ui_workspace_window = workspace_window
 
         self._sync_native_ui_geometry()
 
@@ -1375,6 +1669,8 @@ class AmbianceMainWindow(QMainWindow):
                 except Exception:
                     pass
             self._set_plugin_ui_visible(not visible)
+        elif window_id == "plugin_ui_workspace":
+            self._toggle_plugin_ui_workspace()
         elif window_id == "strudel":
             self._toggle_strudel_window()
 
@@ -1386,8 +1682,14 @@ class AmbianceMainWindow(QMainWindow):
                 window.show()
                 window.raise_()
                 window.activateWindow()
+        elif window_id == "plugin_ui_workspace":
+            self._toggle_plugin_ui_workspace(True)
         elif window_id == "strudel":
             self._show_strudel()
+
+    def closeEvent(self, event) -> None:  # type: ignore[override]
+        self._teardown_windows_midi()
+        super().closeEvent(event)
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
         self._stop_strudel_proxy()
@@ -1403,23 +1705,58 @@ class PluginRackWidget(QFrame):
     logMessage = Signal(str)
     keyboardStateChanged = Signal(dict)
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        *,
+        plugin_host_mode: str = "carla",
+        sc_service: Optional[SuperColliderService] = None,
+    ) -> None:
         super().__init__(parent)
         self.setFrameShape(QFrame.Shape.NoFrame)
         # Removed inline stylesheet to allow global theme to apply
         # Use a string forward reference to avoid evaluating the type at runtime
         self.carla = None  # type: ignore # type: Optional['CarlaVSTHost']
+        self._plugin_host_mode = plugin_host_mode
+        self._sc_service = sc_service
+        self._embedded_hwnd: Optional[int] = None
+        self._embedded_original_parent: Optional[int] = None
+        self._embedded_original_style: Optional[int] = None
 
         self.manager = PluginRackManager()  # type: ignore[arg-type]
         self.param_sliders: dict[object, dict[str, object]] = {}
         self._updating_from_host = False
         self._current_loaded_path: Optional[str] = None
+        self._current_chain_paths: list[str] = []
+        self._active_chain_index: int = -1
         self._log_history: deque[str] = deque(maxlen=500)
         self._keyboard_enabled = False
+        self._key_to_note: dict[int, int] = {}
 
         # Window embedding state
         self._embedded_original_parent: Optional[int] = None
         self._embedded_original_style: Optional[int] = None
+        self._embedded_hwnd: Optional[int] = None
+        self._embed_retry_timer: Optional[QTimer] = None
+        self._embed_retry_count = 0
+        self._ui_embed_target = "overlay"
+        self._workspace_window: Optional[QWidget] = None
+        self._workspace_window_hwnd: Optional[int] = None
+        self._workspace_container: Optional[QWidget] = None
+        self._workspace_layout: Optional[QVBoxLayout] = None
+        self._workspace_placeholder: Optional[QWidget] = None
+        self._workspace_stack: Optional['QStackedLayout'] = None  # type: ignore[name-defined]
+        self._workspace_mdi: Optional[QMdiArea] = None
+        self._workspace_embeds: dict[int, dict[str, object]] = {}
+        self._workspace_monitor: Optional[QTimer] = None
+        self._workspace_splitter: Optional[QSplitter] = None
+        self._workspace_mode = False
+        self._floating_windows: set[int] = set()
+        self._current_plugin_descriptor: dict | None = None
+        self._chain_locked = False
+        self._windows_midi = None
+        self._external_midi_notes: set[int] = set()
+        self._scan_paths: list[str] = []
 
         # Scroll area for entire content
         scroll = QScrollArea(self)
@@ -1460,6 +1797,8 @@ class PluginRackWidget(QFrame):
 
         header_layout.addLayout(top_row)
 
+        self._init_midi_controls(header_layout)
+
         self._display_host_status("")
 
         # Main content area: discovered plugins (left) and plugin chain (right)
@@ -1470,12 +1809,21 @@ class PluginRackWidget(QFrame):
         self.discover_group = QGroupBox("Discovered Plugins")
         self.discover_group.setStyleSheet("QGroupBox { font-size: 16px; }")
         discover_layout = QVBoxLayout(self.discover_group)
+        list_style = """
+            QListWidget {
+                min-height: 200px;
+                color: palette(text);
+                background-color: palette(base);
+                selection-background-color: palette(highlight);
+                selection-color: palette(highlighted-text);
+            }
+        """
         self.plugins_list = QListWidget()
-        self.plugins_list.setStyleSheet("QListWidget { min-height: 200px; }")
+        self.plugins_list.setStyleSheet(list_style)
         discover_layout.addWidget(self.plugins_list)
 
         add_btn_row = QHBoxLayout()
-        self.add_plugin_btn = QPushButton("Add to Chain →")
+        self.add_plugin_btn = QPushButton("Add to Chain â†’")
         self.add_plugin_btn.clicked.connect(self.add_selected_to_chain)
         add_btn_row.addWidget(self.add_plugin_btn)
         discover_layout.addLayout(add_btn_row)
@@ -1487,21 +1835,23 @@ class PluginRackWidget(QFrame):
         self.chain_group.setStyleSheet("QGroupBox { font-size: 16px; }")
         chain_layout = QVBoxLayout(self.chain_group)
         self.chain_list = QListWidget()
-        self.chain_list.setStyleSheet("QListWidget { min-height: 200px; }")
+        self.chain_list.setStyleSheet(list_style)
         self.chain_list.currentRowChanged.connect(self._on_chain_selection)
         chain_layout.addWidget(self.chain_list)
 
         chain_btn_row = QHBoxLayout()
-        self.load_plugin_btn = QPushButton("Load Selected")
-        self.load_plugin_btn.clicked.connect(self._load_selected_plugin)
-        chain_btn_row.addWidget(self.load_plugin_btn)
+        self.activate_chain_btn = QPushButton("Activate All")
+        self.activate_chain_btn.setToolTip("Load the entire chain so every stage processes audio")
+        self.activate_chain_btn.clicked.connect(lambda: self._activate_chain(show_ui=True))
+        chain_btn_row.addWidget(self.activate_chain_btn)
 
         self.remove_plugin_btn = QPushButton("Remove")
         self.remove_plugin_btn.clicked.connect(self.remove_selected_from_chain)
         chain_btn_row.addWidget(self.remove_plugin_btn)
 
         self.show_ui_btn = QPushButton("Show UI")
-        self.show_ui_btn.clicked.connect(self.show_host_ui)
+        self.show_ui_btn.setToolTip("Open the native editor for the selected plugin")
+        self.show_ui_btn.clicked.connect(lambda: self._focus_selected_plugin(show_ui=True))
         chain_btn_row.addWidget(self.show_ui_btn)
 
         self.unload_btn = QPushButton("Unload")
@@ -1598,6 +1948,11 @@ class PluginRackWidget(QFrame):
 
         self._emit_keyboard_state()
 
+    def _midi_backend_active(self) -> bool:
+        if self._plugin_host_mode == "sc":
+            return self._sc_service is not None
+        return self.carla is not None
+
         # Console log viewer
         self.log_group = QGroupBox("Console Log")
         self.log_group.setStyleSheet("QGroupBox { font-size: 14px; }")
@@ -1624,7 +1979,6 @@ class PluginRackWidget(QFrame):
         # outer.addWidget(viewport_group)
 
         # Plugin UI embedding state
-        self._embedded_hwnd = None
         self._carla_warmup_started = False
 
         # Initial state
@@ -1703,6 +2057,13 @@ class PluginRackWidget(QFrame):
                 self._resize_embedded_window()
             return super().eventFilter(obj, event)
 
+        if event is not None and event.type() == event.Type.Resize and getattr(self, "_workspace_embeds", None):
+            for hwnd, entry in list(self._workspace_embeds.items()):
+                holder = entry.get("holder")
+                if holder is obj:
+                    self._workspace_resize_plugin_hwnd(hwnd)
+                    break
+
         # Handle mouse events on keyboard widget and its children
         is_keyboard_widget = False
         if hasattr(self, 'keyboard'):
@@ -1729,7 +2090,7 @@ class PluginRackWidget(QFrame):
                     if midi_note is not None:
                         self._play_note_immediate(midi_note)
                         # Debug logging disabled for performance
-                        # self._log(f"🖱️ Click note: {midi_note}")
+                        # self._log(f"ðŸ–±ï¸ Click note: {midi_note}")
                         return True  # Consume event to prevent double-triggering
                 return False
 
@@ -1739,7 +2100,7 @@ class PluginRackWidget(QFrame):
                 if self._current_drag_note is not None:
                     self._stop_note_immediate(self._current_drag_note)
                     # Debug logging disabled for performance
-                    # self._log(f"🖱️ Release note: {self._current_drag_note}")
+                    # self._log(f"ðŸ–±ï¸ Release note: {self._current_drag_note}")
                     self._current_drag_note = None
                     return True  # Consume event
                 return False
@@ -1754,7 +2115,7 @@ class PluginRackWidget(QFrame):
                             # Switch to new note immediately (removed debounce as it was causing issues)
                             self._play_note_immediate(midi_note)
                             # Debug logging disabled for performance
-                            # self._log(f"🎹 Drag to note: {midi_note}")
+                            # self._log(f"ðŸŽ¹ Drag to note: {midi_note}")
                     else:
                         # Mouse not over any key - stop current note
                         if self._current_drag_note is not None:
@@ -1780,9 +2141,8 @@ class PluginRackWidget(QFrame):
 
     def _play_note_immediate(self, note: int) -> None:
         """Play a note immediately with bypass for latency, stopping current note first."""
-        if not self.carla:
+        if not self._midi_backend_active():
             return
-
         # Stop current note if different
         if self._current_drag_note is not None and self._current_drag_note != note:
             try:
@@ -1796,13 +2156,12 @@ class PluginRackWidget(QFrame):
             velocity = self.keyboard.velocity_slider.value() / 127.0
             self._send_midi_fast(note, velocity)
         except Exception as e:
-            self._log(f"⚠️ Note on error: {e}")
+            self._log(f"âš ï¸ Note on error: {e}")
 
     def _stop_note_immediate(self, note: int) -> None:
         """Stop a note immediately with bypass for latency."""
-        if not self.carla:
+        if not self._midi_backend_active():
             return
-
         try:
             self._send_midi_fast(note, 0)  # Velocity 0 = note off
         except Exception:
@@ -1810,53 +2169,51 @@ class PluginRackWidget(QFrame):
 
     def _send_midi_fast(self, note: int, velocity: float) -> None:
         """Send MIDI directly, bypassing the slow waits in carla_host."""
+        if self._plugin_host_mode == "sc":
+            self._send_sc_midi(note, velocity)
+            return
+
         if not self.carla:
-            return
-
-        # Access the backend (CarlaVSTHost wraps CarlaBackend)
-        if not hasattr(self.carla, '_backend'):
-            return
-
-        backend = self.carla._backend
-
-        # Check if host is properly initialized
-        if not hasattr(backend, 'host') or backend.host is None:
-            return
-
-        if not hasattr(backend, '_plugin_id') or backend._plugin_id is None:
             return
 
         try:
-            # Convert velocity to MIDI range
-            note = int(note)
             vel = max(0.0, min(1.0, float(velocity)))
-            value = int(round(vel * 127.0))
-            value = max(0, min(127, value))
-
-            # Send MIDI directly, no waits!
-            backend.host.send_midi_note(backend._plugin_id, 0, note, value)
-            # self._log(f"✓ Fast: note={note} vel={value}")  # Debug logging disabled
+            self.carla.send_midi_direct(int(note), vel)
         except Exception as e:
-            self._log(f"❌ Fast MIDI failed: {e}")
+            self._log(f"âŒ Fast MIDI failed: {e}")
+
+    def _send_sc_midi(self, note: int, velocity: float) -> None:
+        service = self._sc_service
+        if not service:
+            return
+        vel = max(0.0, min(1.0, float(velocity)))
+        value = int(round(vel * 127.0))
+        value = max(0, min(127, value))
+        status = 0x90 if value > 0 else 0x80
+        try:
+            service.send_midi(status, int(note), value)
+        except SuperColliderServiceError as exc:
+            self._log(f"[SC] MIDI error: {exc}")
+
 
     def _on_key_pressed(self, note: int) -> None:
         """Handle keyboard button press (mouse click)."""
-        if not self.carla:
+        if not self._midi_backend_active():
             return
         try:
             velocity = self.keyboard.velocity_slider.value() / 127.0
             self._send_midi_fast(note, velocity)
         except Exception as e:
-            self._log(f"⚠️ Key click error: {e}")
+            self._log(f"âš ï¸ Key click error: {e}")
 
     def _on_key_released(self, note: int) -> None:
         """Handle keyboard button release (mouse release)."""
-        if not self.carla:
+        if not self._midi_backend_active():
             return
         try:
             self._send_midi_fast(note, 0)  # Velocity 0 = note off
         except Exception as e:
-            self._log(f"⚠️ Key release error: {e}")
+            self._log(f"âš ï¸ Key release error: {e}")
 
     def keyPressEvent(self, event):
         """Handle keyboard input for playing notes."""
@@ -1874,7 +2231,7 @@ class PluginRackWidget(QFrame):
             return
 
         # Check if this is a mapped piano key
-        if key in self._key_to_note and self.is_keyboard_enabled() and self.carla:
+        if key in self._key_to_note and self.is_keyboard_enabled() and self._midi_backend_active():
             note = self._key_to_note[key]
             # Only send note-on if not already playing
             if note not in self._active_keyboard_notes:
@@ -1882,7 +2239,7 @@ class PluginRackWidget(QFrame):
                 try:
                     self._send_midi_note_on(note)
                 except Exception as e:
-                    self._log(f"⚠️ Key press error: {e}")
+                    self._log(f"âš ï¸ Key press error: {e}")
                     self._active_keyboard_notes.discard(note)
             event.accept()
             return
@@ -1907,7 +2264,7 @@ class PluginRackWidget(QFrame):
                 try:
                     self._send_midi_note_off(note)
                 except Exception as e:
-                    self._log(f"⚠️ Key release error: {e}")
+                    self._log(f"âš ï¸ Key release error: {e}")
             event.accept()
             return
 
@@ -1932,7 +2289,7 @@ class PluginRackWidget(QFrame):
                 SWP_NOZORDER | SWP_NOACTIVATE
             )
         except Exception as exc:
-            self._log(f"⚠️ Error resizing embedded window: {exc}")
+            self._log(f"âš ï¸ Error resizing embedded window: {exc}")
 
     def resize_plugin_viewport(self, width: int, height: int) -> None:
         """Ensure the plugin viewport matches the requested size."""
@@ -1949,6 +2306,242 @@ class PluginRackWidget(QFrame):
         if hasattr(self, "param_layout"):
             self.param_layout.invalidate()
         self._resize_embedded_window()
+
+    def _set_chain_locked(self, locked: bool) -> None:
+        self._chain_locked = bool(locked)
+        widgets = [
+            getattr(self, "plugins_list", None),
+            getattr(self, "add_plugin_btn", None),
+            getattr(self, "remove_plugin_btn", None),
+            getattr(self, "activate_chain_btn", None),
+        ]
+        for widget in widgets:
+            if widget is not None:
+                widget.setEnabled(not self._chain_locked)
+
+    # Workspace UI helpers
+    def configure_workspace_host(
+        self,
+        *,
+        window: QWidget | None,
+        container: QWidget | None,
+        layout: QVBoxLayout | None,
+        placeholder: QWidget | None,
+        splitter: QSplitter | None,
+        stack: QStackedLayout | None = None,
+        mdi_area: QMdiArea | None = None,
+    ) -> None:
+        self._workspace_window = window
+        self._workspace_window_hwnd = int(window.winId()) if window else None
+        self._workspace_container = container
+        self._workspace_layout = layout
+        self._workspace_placeholder = placeholder
+        self._workspace_splitter = splitter
+        self._workspace_stack = stack
+        self._workspace_mdi = mdi_area
+        if splitter:
+            splitter.setChildrenCollapsible(False)
+            splitter.hide()
+        if placeholder:
+            placeholder.setVisible(True)
+        self._workspace_update_placeholder()
+
+    def set_ui_embed_target(self, target: str) -> None:
+        target = target or "overlay"
+        if target == self._ui_embed_target:
+            if target == "workspace":
+                self._promote_plugin_window()
+            else:
+                self._start_embed_retry()
+            return
+        self._ui_embed_target = target
+        if target == "workspace":
+            self._workspace_mode = True
+            self._workspace_stop_monitor()
+            self._workspace_release_all()
+            hwnd = self._unembed_plugin_ui()
+            self._promote_plugin_window(hwnd)
+        else:
+            self._workspace_mode = False
+            self._workspace_stop_monitor()
+            self._floating_windows.clear()
+            self._start_embed_retry()
+        self._emit_state()
+
+    def set_workspace_mode(self, enabled: bool) -> None:
+        parent = self.parent()
+        while parent is not None and not hasattr(parent, "_set_plugin_ui_host"):
+            try:
+                parent = parent.parent()
+            except Exception:
+                parent = None
+        if parent is None:
+            return
+        self._workspace_mode = bool(enabled)
+        parent._set_plugin_ui_host("workspace" if enabled else "overlay")
+        if enabled:
+            self._pin_floating_windows_front()
+
+    def _workspace_start_monitor(self) -> None:
+        if os.name != 'nt':
+            return
+        if self._workspace_monitor is None:
+            self._workspace_monitor = QTimer(self)
+            self._workspace_monitor.timeout.connect(self._workspace_prune_handles)
+        self._workspace_monitor.start(1500)
+
+    def _workspace_stop_monitor(self) -> None:
+        if self._workspace_monitor:
+            self._workspace_monitor.stop()
+
+    def _workspace_update_placeholder(self) -> None:
+        pass
+
+    def _workspace_prune_handles(self) -> None:
+        if os.name != 'nt':
+            return
+        invalid: list[int] = []
+        handles = list(getattr(self, "_floating_windows", set()))
+        for hwnd in handles:
+            if not user32 or not user32.IsWindow(hwnd):
+                invalid.append(hwnd)
+        for hwnd in invalid:
+            self._floating_windows.discard(hwnd)
+
+    def _workspace_capture_existing_windows(self) -> None:
+        if self._ui_embed_target != "workspace":
+            return
+        if os.name != 'nt' or not self.carla or not hasattr(self.carla, "list_process_windows"):
+            return
+        try:
+            windows = self.carla.list_process_windows()
+        except Exception:
+            return
+        for hwnd, _ in windows:
+            self._promote_plugin_window(hwnd)
+
+    def _promote_plugin_window(self, hwnd: int | None = None) -> None:
+        if os.name != 'nt' or not user32:
+            return
+        target = hwnd
+        if target is None and self.carla and hasattr(self.carla, "get_plugin_window_handle"):
+            try:
+                target = self.carla.get_plugin_window_handle(attempts=2)
+            except Exception:
+                target = None
+        if not target or target <= 0:
+            return
+        try:
+            user32.SetParent(target, 0)
+            style = user32.GetWindowLongW(target, GWL_STYLE)
+            style = (style | WS_VISIBLE) & (~WS_CHILD)
+            user32.SetWindowLongW(target, GWL_STYLE, style)
+            user32.SetWindowPos(
+                target,
+                HWND_TOPMOST,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW | SWP_NOACTIVATE,
+            )
+            self._floating_windows.add(target)
+            if self.carla and hasattr(self.carla, "focus_plugin_window"):
+                try:
+                    self.carla.focus_plugin_window()
+                except Exception:
+                    pass
+        except Exception as exc:
+            self._log(f"Failed to float plugin window: {exc}")
+        self._pin_floating_windows_front()
+
+    def _pin_floating_windows_front(self) -> None:
+        if os.name != 'nt' or not user32:
+            return
+        for hwnd in list(self._floating_windows):
+            try:
+                if not user32.IsWindow(hwnd):
+                    self._floating_windows.discard(hwnd)
+                    continue
+                user32.SetWindowPos(
+                    hwnd,
+                    HWND_TOPMOST,
+                    0,
+                    0,
+                    0,
+                    0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW | SWP_NOACTIVATE,
+                )
+            except Exception:
+                continue
+
+    def _workspace_expected_title_tokens(self) -> set[str]:
+        tokens: set[str] = set()
+        for idx in range(self.chain_list.count()):
+            item = self.chain_list.item(idx)
+            text = (item.text() or "").strip().lower()
+            if text:
+                tokens.add(text)
+            path = str(item.data(Qt.UserRole) or "").strip()
+            if path:
+                tokens.add(Path(path).stem.lower())
+        descriptor = self._current_plugin_descriptor or {}
+        if descriptor.get("name"):
+            tokens.add(str(descriptor["name"]).strip().lower())
+        if descriptor.get("path"):
+            tokens.add(Path(str(descriptor["path"])).stem.lower())
+        return {token for token in tokens if token}
+
+    def _workspace_capture_plugin_window(self, hwnd: int, *, label: str | None = None) -> None:
+        self._promote_plugin_window(hwnd)
+
+    def _workspace_resize_plugin_hwnd(self, hwnd: int) -> None:
+        if os.name != 'nt' or not user32:
+            return
+        entry = self._workspace_embeds.get(hwnd)
+        if not entry:
+            return
+        holder: QWidget = entry["holder"]  # type: ignore[assignment]
+        base_w, base_h = entry.get("size", (holder.width(), holder.height()))
+        width = max(base_w, holder.width())
+        height = max(base_h, holder.height())
+        user32.SetWindowPos(
+            hwnd,
+            0,
+            0,
+            0,
+            width,
+            height,
+            SWP_NOZORDER | SWP_NOACTIVATE,
+        )
+
+    def _workspace_move_panel(self, panel: QWidget, direction: int) -> None:
+        splitter = getattr(self, "_workspace_splitter", None)
+        if splitter is None:
+            return
+        index = splitter.indexOf(panel)
+        if index < 0:
+            return
+        new_index = max(0, min(splitter.count() - 1, index + direction))
+        if new_index == index:
+            return
+        splitter.insertWidget(new_index, panel)
+
+    def _splitter_widgets(self) -> list[QWidget]:
+        splitter = getattr(self, "_workspace_splitter", None)
+        if not splitter:
+            return []
+        return [splitter.widget(i) for i in range(splitter.count()) if splitter.widget(i) is not None]
+
+    def _workspace_release_plugin_window(self, hwnd: int) -> None:
+        if os.name != 'nt' or not user32:
+            return
+        self._floating_windows.discard(hwnd)
+        self._workspace_update_placeholder()
+
+    def _workspace_release_all(self) -> None:
+        self._floating_windows.clear()
+        self._workspace_update_placeholder()
 
     # Plugin chain data (simple list of plugin paths)
     @property
@@ -1971,6 +2564,8 @@ class PluginRackWidget(QFrame):
             "chain": self._collect_chain(),
             "hostStatus": host_status_label.text() if host_status_label else "",
             "currentPluginPath": self._current_loaded_path,
+            "workspace_detached": self._ui_embed_target == "workspace",
+            "scanPaths": list(self._scan_paths),
         }
         return state
 
@@ -1996,14 +2591,19 @@ class PluginRackWidget(QFrame):
         if chain_list is None:
             return []
         chain: list[dict] = []
+        engaged_paths = {str(path or "") for path in self._current_chain_paths}
         for idx in range(chain_list.count()):
             item = chain_list.item(idx)
             path_value = item.data(Qt.UserRole)
+            path_str = str(path_value or "")
+            branch_flag = bool(item.data(Qt.ItemDataRole.UserRole + 1))
             chain.append({
                 "label": item.text(),
-                "path": str(path_value or ""),
+                "path": path_str,
                 "index": idx,
-                "active": str(path_value or "") == (self._current_loaded_path or ""),
+                "active": path_str in engaged_paths,
+                "focused": idx == self._active_chain_index,
+                "branchStart": branch_flag,
             })
         return chain
 
@@ -2014,6 +2614,87 @@ class PluginRackWidget(QFrame):
             print(f"[PLUGIN STUDIO] Failed to serialize state: {exc}")
             return
         self.stateChanged.emit(state)
+
+    def _sync_host_status(self, status: Optional[dict]) -> None:
+        """Update local bookkeeping based on Carla status payload."""
+        if not status:
+            self._current_chain_paths = []
+            self._active_chain_index = -1
+            self._current_loaded_path = None
+            self._set_keyboard_enabled(False)
+            self._set_chain_locked(False)
+            self.currentPluginChanged.emit({})
+            return
+        chain_entries = status.get("chain") or []
+        chain_has_instrument = any(
+            bool(entry.get("instrument") or entry.get("supports_midi"))
+            for entry in chain_entries
+        )
+        self._current_chain_paths = [
+            str(entry.get("path") or "")
+            for entry in chain_entries
+            if entry.get("path")
+        ]
+        self._set_chain_locked(bool(self._current_chain_paths))
+        active_index = status.get("active_index")
+        self._active_chain_index = int(active_index) if isinstance(active_index, int) else -1
+        plugin_info = status.get("plugin") or {}
+        self._current_loaded_path = plugin_info.get("path")
+        capabilities = status.get("capabilities", {})
+        active_supports_midi = bool(capabilities.get("instrument") or capabilities.get("midi"))
+        self._set_keyboard_enabled(chain_has_instrument or active_supports_midi)
+        if plugin_info:
+            metadata = plugin_info.get("metadata") or {}
+            descriptor = {
+                "path": plugin_info.get("path"),
+                "name": metadata.get("name") or (Path(plugin_info.get("path") or "").stem or "Plugin"),
+            }
+        else:
+            descriptor = {}
+        self._current_plugin_descriptor = descriptor or {}
+        self.currentPluginChanged.emit(descriptor)
+
+    def _after_chain_change(self, status: Optional[dict], *, show_ui: bool) -> None:
+        """Common housekeeping after Carla loads/focuses a chain."""
+        warnings = []
+        if status:
+            warnings = list(status.get("warnings") or [])
+        self._sync_host_status(status)
+        if warnings:
+            latest = warnings[-1]
+            self._log(f"[WARN] {latest}")
+            self._display_host_status(latest)
+        else:
+            self._update_host_status()
+        self.no_plugin_label.setVisible(False if status else True)
+        if show_ui:
+            self._embed_retry_count = 0
+            self._start_embed_retry()
+            parent_window = self.parent()
+            if parent_window and hasattr(parent_window, "_set_plugin_ui_visible"):
+                parent_window._set_plugin_ui_visible(True)
+            if parent_window and hasattr(parent_window, "_set_plugin_ui_host"):
+                parent_window._set_plugin_ui_host("workspace")
+            if parent_window and hasattr(parent_window, "_toggle_plugin_ui_workspace"):
+                parent_window._toggle_plugin_ui_workspace(True)
+            self._show_all_plugin_uis()
+        self._emit_state()
+
+    def _show_all_plugin_uis(self) -> None:
+        if not self._current_chain_paths or not self.carla:
+            return
+        original_index = self._active_chain_index
+        for idx in range(len(self._current_chain_paths)):
+            try:
+                self.carla.focus_plugin(idx, show_ui=True)
+            except Exception as exc:
+                self._log(f"UI load error for stage {idx}: {exc}")
+        if original_index is not None and original_index >= 0:
+            try:
+                self.carla.focus_plugin(original_index, show_ui=False)
+            except Exception:
+                pass
+        self._workspace_capture_existing_windows()
 
     def get_log_history(self) -> list[str]:
         return list(self._log_history)
@@ -2029,6 +2710,124 @@ class PluginRackWidget(QFrame):
         if not hasattr(self, "keyboard"):
             return
         self.keyboardStateChanged.emit(self.serialize_keyboard_state())
+
+    def _init_midi_controls(self, header_layout: QVBoxLayout) -> None:
+        self.midi_input_combo: QComboBox | None = None
+        self.midi_status_label: QLabel | None = None
+        self._available_midi_devices: list[dict[str, object]] = []
+        self._selected_midi_device_index: int | None = None
+        midi_group = QGroupBox("MIDI Input")
+        midi_group.setStyleSheet("QGroupBox { font-size: 13px; }")
+        midi_row = QHBoxLayout(midi_group)
+        midi_row.setContentsMargins(10, 8, 10, 8)
+        midi_label = QLabel("Device:")
+        midi_row.addWidget(midi_label)
+        self.midi_input_combo = QComboBox()
+        self.midi_input_combo.setMinimumWidth(220)
+        self.midi_input_combo.currentIndexChanged.connect(self._on_midi_device_selected)
+        midi_row.addWidget(self.midi_input_combo, 1)
+        midi_refresh = QPushButton("Refresh")
+        midi_refresh.setMaximumHeight(24)
+        midi_refresh.clicked.connect(self._refresh_midi_devices)
+        midi_row.addWidget(midi_refresh)
+        self.midi_status_label = QLabel("Waiting for devices…")
+        self.midi_status_label.setMinimumWidth(200)
+        midi_row.addWidget(self.midi_status_label, 1)
+        header_layout.addWidget(midi_group)
+        if os.name != "nt":
+            self.midi_input_combo.setEnabled(False)
+            midi_refresh.setEnabled(False)
+            self._set_midi_status("MIDI input available on Windows only")
+            return
+        self._refresh_midi_devices()
+
+    def _set_midi_status(self, message: str) -> None:
+        if self.midi_status_label:
+            self.midi_status_label.setText(message)
+
+    def _refresh_midi_devices(self) -> None:
+        if os.name != "nt" or not self.midi_input_combo:
+            return
+        try:
+            devices = WindowsMidiInput.list_devices()
+        except Exception as exc:
+            devices = []
+            self._set_midi_status(f"MIDI error: {exc}")
+        self._available_midi_devices = devices
+        self.midi_input_combo.blockSignals(True)
+        self.midi_input_combo.clear()
+        for dev in devices:
+            self.midi_input_combo.addItem(str(dev["name"]), dev["index"])
+        self.midi_input_combo.blockSignals(False)
+        if not devices:
+            self._teardown_windows_midi()
+            self._set_midi_status("No MIDI inputs found")
+            return
+        desired = self._selected_midi_device_index
+        indices = [int(dev["index"]) for dev in devices]
+        if desired is None or desired not in indices:
+            desired = indices[0]
+        combo_index = indices.index(desired)
+        self.midi_input_combo.blockSignals(True)
+        self.midi_input_combo.setCurrentIndex(combo_index)
+        self.midi_input_combo.blockSignals(False)
+        self._open_windows_midi_device(desired)
+
+    def _on_midi_device_selected(self, combo_index: int) -> None:
+        if combo_index < 0 or not self.midi_input_combo:
+            return
+        device_data = self.midi_input_combo.itemData(combo_index)
+        if device_data is None:
+            return
+        self._open_windows_midi_device(int(device_data))
+
+    def _open_windows_midi_device(self, device_index: int) -> None:
+        if os.name != "nt":
+            return
+        self._selected_midi_device_index = int(device_index)
+        try:
+            if self._windows_midi is None:
+                self._windows_midi = WindowsMidiInput(
+                    self._log,
+                    self._handle_windows_midi_note_on,
+                    self._handle_windows_midi_note_off,
+                    device_index=device_index,
+                )
+            else:
+                self._windows_midi.reconnect(device_index)
+            self._set_midi_status(f"Receiving: {self._windows_midi.device_name}")
+        except Exception as exc:
+            self._teardown_windows_midi()
+            self._set_midi_status(f"MIDI error: {exc}")
+            self._log(f"Windows MIDI input unavailable: {exc}")
+
+    def _teardown_windows_midi(self) -> None:
+        if getattr(self, "_windows_midi", None) is None:
+            return
+        try:
+            self._windows_midi.close()
+        except Exception:
+            pass
+        self._windows_midi = None
+
+    def _handle_windows_midi_note_on(self, note: int, velocity: float) -> None:
+        if not self._midi_backend_active():
+            return
+        vel = max(0.0, min(1.0, float(velocity)))
+        try:
+            self._external_midi_notes.add(int(note))
+            self._send_midi_fast(int(note), vel)
+        except Exception as exc:
+            self._log(f"[MIDI] External note-on failed: {exc}")
+
+    def _handle_windows_midi_note_off(self, note: int) -> None:
+        if not self._midi_backend_active():
+            return
+        try:
+            self._external_midi_notes.discard(int(note))
+            self._send_midi_fast(int(note), 0.0)
+        except Exception as exc:
+            self._log(f"[MIDI] External note-off failed: {exc}")
 
     def _set_keyboard_enabled(self, enabled: bool) -> None:
         """Enable/disable keyboard logic without surfacing the legacy widget."""
@@ -2072,9 +2871,15 @@ class PluginRackWidget(QFrame):
 
     def load_chain_index(self, index: int) -> bool:
         if self.select_chain_index(index):
-            self._load_selected_plugin()
+            self._activate_chain(show_ui=True)
             return True
         return False
+
+    def focus_chain_index(self, index: int, *, show_ui: bool = False) -> bool:
+        if not self.select_chain_index(index):
+            return False
+        self._focus_chain_slot(index, show_ui=show_ui)
+        return True
 
     # --- Data ops
     def refresh(self) -> None:
@@ -2082,6 +2887,10 @@ class PluginRackWidget(QFrame):
         workspace = status.get('workspace', '(unknown)')
         self.workspace_label.setText(f"Workspace: {workspace}")
         self._log(f"Refreshing plugins from: {workspace}")
+        scan_paths = status.get("scan_paths") or []
+        self._scan_paths = [str(path) for path in scan_paths]
+        if self._scan_paths:
+            self._log(f"Scanning directories: {', '.join(self._scan_paths)}")
 
         # Discovered plugins
         self.plugins_list.clear()
@@ -2123,6 +2932,9 @@ class PluginRackWidget(QFrame):
         li = QListWidgetItem(f"{name} [{fmt}]")
         li.setToolTip(str(path))
         li.setData(Qt.UserRole, path)
+        # Default the very first stage to Instrument so MIDI has a target.
+        is_first_stage = self.chain_list.count() == 0
+        li.setData(Qt.ItemDataRole.UserRole + 1, is_first_stage)
         self.chain_list.addItem(li)
         self._log(f"Added to chain: {name}")
         self._emit_state()
@@ -2137,73 +2949,65 @@ class PluginRackWidget(QFrame):
                 self.unload_host()
             self.chain_list.takeItem(row)
             self._emit_state()
+            if self.chain_list.count() == 0:
+                self.unload_host()
+            elif self._current_chain_paths:
+                self._activate_chain(show_ui=False)
+    def clear_chain(self) -> None:
+        """Remove all plugins from the chain and unload Carla."""
+        self.chain_list.clear()
+        self.unload_host()
+        self._emit_state()
 
     def _on_chain_selection(self, row: int) -> None:
         """Handle selection change in the plugin chain list."""
-        # Could auto-preview the selected plugin here
-        pass
+        if row < 0:
+            return
+        chain_paths = [str(p) for p in self.plugin_chain if p]
+        if not chain_paths or chain_paths != self._current_chain_paths:
+            return
+        if row == self._active_chain_index:
+            return
+        self._focus_chain_slot(row, show_ui=False)
 
-    def _load_selected_plugin(self) -> None:
-        """Load the currently selected plugin in the chain."""
-        item = self.chain_list.currentItem()
-        if not item:
+    def _focus_selected_plugin(self, *, show_ui: bool = False) -> None:
+        """Focus currently selected plugin without reloading the chain."""
+        row = self.chain_list.currentRow()
+        if row < 0:
             self._log("No plugin selected in chain")
             return
-        path = item.data(Qt.UserRole)
-        if not path:
-            self._log("Selected plugin has no path")
+        if not self._current_chain_paths:
+            self._log("Activate the chain first")
             return
+        if row >= len(self._current_chain_paths):
+            self._log("Selected plugin not in active chain")
+            return
+        self._focus_chain_slot(row, show_ui=show_ui)
 
+    def _activate_chain(self, *, show_ui: bool = False) -> None:
+        """Activate the entire Carla chain and optionally show the focused UI."""
+        if self._plugin_host_mode == "sc":
+            self._log("SuperCollider mode does not support chain activation")
+            return
         if not self._ensure_carla():
             self._log("Carla not available")
             return
 
-        try:
-            # Unload current plugin if different
-            if self._current_loaded_path != str(path):
-                self._log(f"Loading plugin: {path}")
-                try:
-                    self.carla.unload()
-                except Exception:
-                    pass
-                # Load and show UI (we'll embed it)
-                self.carla.load_plugin(path, show_ui=True)
-                self._current_loaded_path = str(path)
-                self._log("Plugin loaded successfully")
-                self._update_host_status()
-                descriptor = {
-                    "path": str(path),
-                    "name": Path(str(path)).stem if path else "Plugin",
-                }
-                self.currentPluginChanged.emit(descriptor)
-                self._emit_state()
-
-                # Try to embed the plugin UI with retry
-                self._embed_retry_count = 0
-                self._start_embed_retry()
-
-                # Show plugin UI window
-                parent_window = self.parent()
-                if parent_window and hasattr(parent_window, '_set_plugin_ui_visible'):
-                    parent_window._set_plugin_ui_visible(True)
-
-                # Enable MIDI keyboard if plugin exposes instrument capabilities
-                try:
-                    status = self.carla.status()
-                    caps = status.get("capabilities", {})
-                    is_instrument = caps.get("instrument", False) or caps.get("midi", False)
-                    self._set_keyboard_enabled(is_instrument)
-                    self._log(f"Plugin is instrument: {is_instrument}")
-                except Exception as e:
-                    self._log(f"Error checking instrument: {e}")
-                    self._set_keyboard_enabled(False)
-        except Exception as exc:
-            self._log(f"Load error: {exc}")
-            self._display_host_status(f"Load error: {exc}")
-            self._set_keyboard_enabled(False)
+        chain_paths = [str(p) for p in self.plugin_chain if p]
+        if not chain_paths:
+            self._log("Plugin chain is empty")
+            self.unload_host()
+            return
+        focus_index = self.chain_list.currentRow()
+        if focus_index < 0 or focus_index >= len(chain_paths):
+            focus_index = 0
+        self._load_carla_chain(chain_paths, focus_index, show_ui=show_ui)
 
     # --- Carla integration
     def _init_carla(self) -> None:
+        if self._plugin_host_mode == "sc":
+            self.carla = None
+            return
         if not CARLA_AVAILABLE:
             self.carla = None
             return
@@ -2223,6 +3027,38 @@ class PluginRackWidget(QFrame):
             self.host_status.setVisible(bool(message))
         self.hostStatusChanged.emit(message)
         self._emit_state()
+
+    def set_plugin_scan_dirs(self, paths: Iterable[str]) -> list[str]:
+        """Persist plugin scan directories and refresh the discovery list."""
+        normalized = self.manager.set_scan_paths(list(paths))
+        self._scan_paths = [str(path) for path in normalized]
+        self._log(f"Updated plugin scan directories: {', '.join(self._scan_paths)}")
+        self.refresh()
+        return self._scan_paths
+
+    @Slot(int, bool)
+    def set_branch_start(self, index: int, enabled: bool) -> None:
+        if 0 <= index < self.chain_list.count():
+            item = self.chain_list.item(index)
+            previous = bool(item.data(Qt.ItemDataRole.UserRole + 1))
+            if previous == bool(enabled):
+                return
+            item.setData(Qt.ItemDataRole.UserRole + 1, bool(enabled))
+            if not any(
+                bool(self.chain_list.item(i).data(Qt.ItemDataRole.UserRole + 1))
+                for i in range(self.chain_list.count())
+            ):
+                # Ensure at least one instrument remains
+                fallback = self.chain_list.item(0)
+                if fallback:
+                    fallback.setData(Qt.ItemDataRole.UserRole + 1, True)
+                    self._log("At least one stage must be an instrument; Stage 1 set as Instrument.")
+            self._emit_state()
+            if self._current_chain_paths:
+                self._log(
+                    f"{'Instrument' if enabled else 'Effect'} role set for stage {index + 1}"
+                )
+                self._activate_chain(show_ui=False)
 
     def _schedule_carla_warmup(self) -> None:
         if self._carla_warmup_started or not CARLA_AVAILABLE:
@@ -2266,6 +3102,8 @@ class PluginRackWidget(QFrame):
             self._display_host_status(f"Carla error: {exc}")
 
     def _ensure_carla(self) -> bool:
+        if self._plugin_host_mode == "sc":
+            return False
         if self.carla:
             return True
         if not CARLA_AVAILABLE:
@@ -2282,12 +3120,73 @@ class PluginRackWidget(QFrame):
             self._display_host_status(f"Carla unavailable: {exc}")
             return False
 
+    def _load_carla_chain(self, paths: list[str], focus_index: int, *, show_ui: bool) -> None:
+        if not self._ensure_carla():
+            return
+        try:
+            assert self.carla is not None
+            plugin_configs: list[dict[str, object]] = []
+            for idx, path in enumerate(paths):
+                branch_start = False
+                if hasattr(self, "chain_list") and self.chain_list is not None and idx < self.chain_list.count():
+                    item = self.chain_list.item(idx)
+                    branch_start = bool(item.data(Qt.ItemDataRole.UserRole + 1))
+                descriptor = {
+                    "path": path,
+                    "force_instrument": branch_start,
+                    "branch_start": branch_start,
+                }
+                plugin_configs.append(descriptor)
+            try:
+                summary = ", ".join(
+                    f"{Path(cfg.get('path', '')).name} (branch={cfg.get('branch_start')})"
+                    for cfg in plugin_configs
+                )
+                self._log(f"Loading chain config: {summary}")
+            except Exception:
+                pass
+            status = self.carla.load_chain(plugin_configs, focus_index=focus_index, show_ui=show_ui)
+            self._log(f"Loaded Carla chain with {len(paths)} stages")
+            self._after_chain_change(status, show_ui=show_ui)
+        except Exception as exc:
+            self._log(f"Load error: {exc}")
+            self._display_host_status(f"Load error: {exc}")
+            self._set_keyboard_enabled(False)
+
+    def _focus_chain_slot(self, index: int, *, show_ui: bool = False) -> None:
+        if not self._current_chain_paths:
+            return
+        if not self._ensure_carla():
+            return
+        try:
+            assert self.carla is not None
+            status = self.carla.focus_plugin(index, show_ui=show_ui)
+            self._log(f"Focused Carla plugin index {index}")
+            self._after_chain_change(status, show_ui=show_ui)
+        except Exception as exc:
+            self._log(f"Focus error: {exc}")
+            self._display_host_status(f"Focus error: {exc}")
+
 
     # --- Host UI helpers
     def show_host_ui(self) -> None:
+        if self._plugin_host_mode == "sc":
+            if not self._sc_service:
+                self._display_host_status("SuperCollider service unavailable")
+                return
+            try:
+                self._sc_service.show_editor()
+                self._display_host_status("SuperCollider editor opened")
+            except SuperColliderServiceError as exc:
+                self._display_host_status(f"[SC] Show UI error: {exc}")
+            return
         if not self.carla:
             return
         try:
+            current_index = self.chain_list.currentRow()
+            if current_index >= 0 and current_index != self._active_chain_index:
+                self._focus_chain_slot(current_index, show_ui=True)
+                return
             self.carla.show_ui()
             # Try to embed after showing with retry
             self._embed_retry_count = 0
@@ -2296,6 +3195,20 @@ class PluginRackWidget(QFrame):
             self._display_host_status(f"Show UI error: {exc}")
 
     def unload_host(self) -> None:
+        if self._plugin_host_mode == "sc":
+            if not self._sc_service:
+                return
+            try:
+                self._sc_service.unload_plugin()
+                self._current_loaded_path = None
+                self._set_keyboard_enabled(False)
+                self.currentPluginChanged.emit({})
+                self._emit_state()
+                self._display_host_status("SuperCollider plugin unloaded")
+                self.no_plugin_label.setVisible(True)
+            except SuperColliderServiceError as exc:
+                self._display_host_status(f"[SC] Unload error: {exc}")
+            return
         if not self.carla:
             return
         try:
@@ -2309,6 +3222,7 @@ class PluginRackWidget(QFrame):
             self._embed_retry_count = 0
 
             # Unembed first
+            self._workspace_release_all()
             self._unembed_plugin_ui()
             self.carla.unload()
             self._update_host_status()
@@ -2316,6 +3230,8 @@ class PluginRackWidget(QFrame):
             # Reset container size
             self.plugin_ui_container.setMinimumSize(400, 400)
             self._current_loaded_path = None
+            self._current_chain_paths = []
+            self._active_chain_index = -1
             self._set_keyboard_enabled(False)
             self.currentPluginChanged.emit({})
             self._emit_state()
@@ -2363,20 +3279,26 @@ class PluginRackWidget(QFrame):
                 # Retry if we haven't exceeded max attempts
                 self._embed_retry_count += 1
                 if self._embed_retry_count < 10:  # Max 10 retries (3 seconds total)
-                    self._log(f"⏳ Plugin window not ready yet, retrying... ({self._embed_retry_count}/10)")
+                    self._log(f"â³ Plugin window not ready yet, retrying... ({self._embed_retry_count}/10)")
                     self._start_embed_retry()
                 else:
-                    self._log("⚠️ Could not find plugin window after multiple attempts")
+                    self._log("âš ï¸ Could not find plugin window after multiple attempts")
                     self._log("   Plugin UI may open in a separate window")
                 return
 
             # Found the window, proceed with embedding
             self._embed_retry_count = 0  # Reset counter
 
+            if self._ui_embed_target == "workspace":
+                descriptor = self._current_plugin_descriptor or {}
+                label = descriptor.get("name") or descriptor.get("path")
+                self._workspace_capture_plugin_window(plugin_hwnd, label=label)
+                return
+
             # Get our container's window handle
             container_hwnd = int(self.plugin_ui_container.winId())
 
-            self._log(f"🔧 Embedding plugin window {plugin_hwnd} into container {container_hwnd}")
+            self._log(f"ðŸ”§ Embedding plugin window {plugin_hwnd} into container {container_hwnd}")
 
             # Store original state before modifying
             self._embedded_hwnd = plugin_hwnd
@@ -2389,7 +3311,7 @@ class PluginRackWidget(QFrame):
             plugin_width = rect_struct.right - rect_struct.left
             plugin_height = rect_struct.bottom - rect_struct.top
 
-            self._log(f"📐 Plugin window size: {plugin_width}x{plugin_height}")
+            self._log(f"ðŸ“ Plugin window size: {plugin_width}x{plugin_height}")
 
             # Reparent the plugin window
             user32.SetParent(plugin_hwnd, container_hwnd)
@@ -2418,34 +3340,36 @@ class PluginRackWidget(QFrame):
 
             self.no_plugin_label.setVisible(False)
 
-            self._log("✅ Plugin UI embedded successfully")
+            self._log("âœ… Plugin UI embedded successfully")
 
         except Exception as exc:
-            self._log(f"❌ Failed to embed plugin UI: {exc}")
+            self._log(f"âŒ Failed to embed plugin UI: {exc}")
             import traceback
             self._log(traceback.format_exc())
 
-    def _unembed_plugin_ui(self) -> None:
+    def _unembed_plugin_ui(self) -> Optional[int]:
         """Restore the plugin window to its original state."""
         if os.name != 'nt' or not self._embedded_hwnd:
-            return
+            return None
 
         try:
-            # Restore original parent and style
             if hasattr(self, '_embedded_original_parent') and self._embedded_original_parent:
                 user32.SetParent(self._embedded_hwnd, self._embedded_original_parent)
             else:
-                user32.SetParent(self._embedded_hwnd, 0)  # Make top-level
+                user32.SetParent(self._embedded_hwnd, 0)
 
             if hasattr(self, '_embedded_original_style'):
                 user32.SetWindowLongW(self._embedded_hwnd, GWL_STYLE, self._embedded_original_style)
 
+            restored = self._embedded_hwnd
             self._embedded_hwnd = None
             self._embedded_original_parent = None
             self._embedded_original_style = None
-            self._log("🔓 Plugin UI unembedded and restored")
+            self._log("Plugin UI unembedded and restored")
+            return restored
         except Exception as exc:
-            self._log(f"❌ Error unembedding: {exc}")
+            self._log(f"Error unembedding: {exc}")
+            return None
 
 
     # --- MIDI helpers
@@ -2463,9 +3387,8 @@ class PluginRackWidget(QFrame):
 
     def _send_midi_note_on(self, note: int) -> None:
         """Send MIDI note-on to Carla immediately using fast path."""
-        if not self.carla:
+        if not self._midi_backend_active():
             return
-
         # Get velocity from slider (0-127)
         velocity = self.keyboard.velocity_slider.value()
         # Normalize to 0.0-1.0 range
@@ -2478,9 +3401,8 @@ class PluginRackWidget(QFrame):
 
     def _send_midi_note_off(self, note: int) -> None:
         """Send MIDI note-off to Carla immediately using fast path."""
-        if not self.carla:
+        if not self._midi_backend_active():
             return
-
         # Use fast path with velocity 0 = note off
         self._send_midi_fast(note, 0.0)
         self._active_keyboard_notes.discard(int(note))
@@ -2488,7 +3410,7 @@ class PluginRackWidget(QFrame):
 
     def _emergency_all_notes_off(self) -> None:
         """Emergency: Turn off all currently playing notes."""
-        if not self.carla:
+        if not self._midi_backend_active():
             return
 
         # Only turn off notes we're actually tracking (not all 128!)
@@ -2499,7 +3421,7 @@ class PluginRackWidget(QFrame):
 
         for note in all_notes:
             try:
-                self.carla.note_off(note)
+                self._send_midi_fast(note, 0.0)
             except Exception:
                 pass
 
@@ -2510,13 +3432,9 @@ class PluginRackWidget(QFrame):
         self._emit_keyboard_state()
 
     def trigger_note_on(self, note: int) -> None:
-        if not self.carla:
-            return
         self._send_midi_note_on(int(note))
 
     def trigger_note_off(self, note: int) -> None:
-        if not self.carla:
-            return
         self._send_midi_note_off(int(note))
 
     def set_keyboard_velocity(self, value: int) -> None:
@@ -2536,7 +3454,7 @@ class PluginRackWidget(QFrame):
     def load_session(self) -> None:
         self._log("Session load not implemented yet.")
 
-        self._log("🛑 All notes off (emergency)")
+        self._log("ðŸ›‘ All notes off (emergency)")
 
     def _update_keyboard_mapping(self, new_octave: int) -> None:
         """Update keyboard mapping to start at the specified octave."""
@@ -2591,7 +3509,7 @@ class PluginRackWidget(QFrame):
             Qt.Key.Key_0: base_note + 27,   # D#
         }
 
-        self._log(f"⌨️ Keyboard mapping updated to octave {new_octave}")
+        self._log(f"âŒ¨ï¸ Keyboard mapping updated to octave {new_octave}")
 
     def _all_notes_off(self) -> None:
         """Turn off all notes (called on cleanup)."""
@@ -2599,11 +3517,14 @@ class PluginRackWidget(QFrame):
 
     def _log(self, message: str) -> None:
         """Add message to console log viewer."""
-        self.log_viewer.append(message)
-        # Auto-scroll to bottom
-        cursor = self.log_viewer.textCursor()
-        cursor.movePosition(QTextCursor.End)
-        self.log_viewer.setTextCursor(cursor)
+        viewer = getattr(self, "log_viewer", None)
+        if viewer is not None:
+            viewer.append(message)
+            cursor = viewer.textCursor()
+            cursor.movePosition(QTextCursor.End)
+            viewer.setTextCursor(cursor)
+        else:
+            print(message)
         self._log_history.append(message)
         self.logMessage.emit(message)
 
@@ -2772,7 +3693,15 @@ class InstrumentKeyboardWidget(QGroupBox):
 class StaticHTTPServer:
     """Simple HTTP server for serving local assets (web desktop, Strudel, etc.)."""
 
-    def __init__(self, root: Path, mounts: Optional[dict[str, Path]] = None, fallback: Optional[Path] = None, port: int = 0):
+    def __init__(
+        self,
+        root: Path,
+        mounts: Optional[dict[str, Path]] = None,
+        fallback: Optional[Path] = None,
+        port: int = 0,
+        plugin_host_mode: str = "carla",
+        sc_service: Optional[SuperColliderService] = None,
+    ):
         self.root = Path(root).resolve()
         self.mounts = self._normalize_mounts(mounts or {})
         self.fallback = Path(fallback).resolve() if fallback else None
@@ -2783,6 +3712,8 @@ class StaticHTTPServer:
         self.strudel_proxy_user_agent = STRUDEL_PROXY_USER_AGENT
         self.strudel_asset_prefixes = STRUDEL_PROXY_ASSET_PREFIXES
         self.strudel_asset_exact = STRUDEL_PROXY_ASSET_EXACT
+        self.plugin_host_mode = plugin_host_mode
+        self.sc_service = sc_service
         self.server: socketserver.TCPServer | None = None
         self.thread: threading.Thread | None = None
         self.actual_port: int | None = None
@@ -2813,7 +3744,7 @@ class StaticHTTPServer:
         strudel_asset_exact = self.strudel_asset_exact
 
         class MultiRootHandler(http.server.SimpleHTTPRequestHandler):
-            def __init__(self, *args, **kwargs):
+            def __init__(self, *args, plugin_host_mode="carla", sc_service=None, **kwargs):
                 self._root = root
                 self._mounts = mounts
                 self._fallback = fallback
@@ -2823,9 +3754,88 @@ class StaticHTTPServer:
                 self._strudel_proxy_user_agent = strudel_proxy_user_agent
                 self._strudel_asset_prefixes = strudel_asset_prefixes
                 self._strudel_asset_exact = strudel_asset_exact
+                self._plugin_host_mode = plugin_host_mode
+                self._sc_service = sc_service
                 super().__init__(*args, directory=str(root), **kwargs)
 
             def do_GET(self):
+                parsed = urlparse(self.path)
+                clean_path = parsed.path or "/"
+                if clean_path == "/api/sc/status":
+                    service = self._sc_service
+                    if service and service.enabled:
+                        self._send_json({"ok": True, "status": service.status()})
+                    else:
+                        self._send_json(
+                            {"ok": False, "error": "SuperCollider host not configured"},
+                            HTTPStatus.BAD_REQUEST,
+                        )
+                    return
+                if clean_path == "/api/sc/plugins":
+                    service = self._require_sc_service()
+                    if service is None:
+                        return
+                    try:
+                        plugins = service.list_plugins()
+                    except SuperColliderServiceError as exc:
+                        self._handle_sc_failure(exc, HTTPStatus.INTERNAL_SERVER_ERROR)
+                    else:
+                        self._send_json({"ok": True, "plugins": plugins})
+                    return
+                if self._handle_strudel_proxy():
+                    return
+                super().do_GET()
+
+            def do_POST(self):
+                parsed = urlparse(self.path)
+                clean_path = parsed.path or "/"
+                if clean_path == "/api/sc/plugins/load":
+                    service = self._require_sc_service()
+                    if service is None:
+                        return
+                    payload = self._read_json()
+                    plugin_path = payload.get("path")
+                    channels = payload.get("channels", 2)
+                    editor = bool(payload.get("editor", True))
+                    if not plugin_path:
+                        self._send_json({"ok": False, "error": "Missing 'path'"}, HTTPStatus.BAD_REQUEST)
+                        return
+                    try:
+                        info = service.load_plugin(plugin_path, channels=channels, editor=editor)
+                    except SuperColliderServiceError as exc:
+                        self._handle_sc_failure(exc)
+                    else:
+                        self._send_json({"ok": True, "plugin": info})
+                    return
+                if clean_path == "/api/sc/plugins/unload":
+                    service = self._require_sc_service()
+                    if service is None:
+                        return
+                    try:
+                        service.unload_plugin()
+                    except SuperColliderServiceError as exc:
+                        self._handle_sc_failure(exc)
+                    else:
+                        self._send_json({"ok": True})
+                    return
+                if clean_path == "/api/sc/plugins/param":
+                    service = self._require_sc_service()
+                    if service is None:
+                        return
+                    payload = self._read_json()
+                    if "index" not in payload or "value" not in payload:
+                        self._send_json(
+                            {"ok": False, "error": "Missing 'index' or 'value'"},
+                            HTTPStatus.BAD_REQUEST,
+                        )
+                        return
+                    try:
+                        result = service.set_parameter(int(payload["index"]), float(payload["value"]))
+                    except (ValueError, SuperColliderServiceError) as exc:
+                        self._handle_sc_failure(exc)
+                    else:
+                        self._send_json({"ok": True, "parameter": result})
+                    return
                 if self._handle_strudel_proxy():
                     return
                 super().do_GET()
@@ -2960,10 +3970,48 @@ class StaticHTTPServer:
                 self.end_headers()
                 self.wfile.write(body)
 
+            def _send_json(self, payload: dict[str, object], status: HTTPStatus = HTTPStatus.OK) -> None:
+                data = json.dumps(payload).encode("utf-8")
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+            def _read_json(self) -> dict[str, object]:
+                length = int(self.headers.get("Content-Length", "0") or 0)
+                raw = self.rfile.read(length) if length else b"{}"
+                try:
+                    return json.loads(raw.decode("utf-8"))
+                except json.JSONDecodeError:
+                    return {}
+
+            def _require_sc_service(self) -> Optional[SuperColliderService]:
+                service = self._sc_service
+                if service and service.enabled:
+                    return service
+                self._send_json(
+                    {"ok": False, "error": "SuperCollider host not enabled"},
+                    HTTPStatus.BAD_REQUEST,
+                )
+                return None
+
+            def _handle_sc_failure(
+                self,
+                exc: Exception,
+                status: HTTPStatus = HTTPStatus.BAD_REQUEST,
+            ) -> None:
+                print(f"[SC] API error: {exc}")
+                self._send_json({"ok": False, "error": str(exc)}, status)
+
             def log_message(self, format: str, *args) -> None:
                 pass
 
-        handler = partial(MultiRootHandler)
+        handler = partial(
+            MultiRootHandler,
+            plugin_host_mode=self.plugin_host_mode,
+            sc_service=self.sc_service,
+        )
 
         class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
             allow_reuse_address = True
@@ -3003,6 +4051,4 @@ def main(argv: Optional[list[str]] = None) -> int:
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(main())
-
-
 

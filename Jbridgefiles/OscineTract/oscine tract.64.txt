@@ -1,0 +1,6 @@
+"C:\Ambiance2\included_plugins\32BitPlugins\OscineTract\oscine tract.dll"
+ID: 1869767540
+flags: effFlagsHasEditor
+flags: effFlagsIsSynth
+flags: effFlagsCanReplacing
+flags: effFlagsProgramChunks

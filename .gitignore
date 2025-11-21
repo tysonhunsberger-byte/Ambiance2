@@ -16,3 +16,9 @@ included_plugins/ProjectX1_new_v1.01/Legal & Distribution info.txt
 included_plugins/ProjectX1_new_v1.01/ProjectX1 Manual.pdf
 included_plugins/ProjectX1_new_v1.01/ProjectX1.dll
 node_modules/
+ambiance/deps/carla_binaries/Carla-2.5.10-win32/Carla-Control/Carla-Control.exe
+vstplugin-master/CMakeLists.txt
+vstplugin-master/deps/plf_nanotimer/plf_licensing.txt
+vstplugin-master/deps/plf_nanotimer/plf_nanotimer.h
+vstplugin-master/vst/WindowX11.h
+vstplugin-master/deps/plf_nanotimer/plf_nanotimer_readme.txt

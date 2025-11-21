@@ -1,11 +1,6 @@
 {
-  "streams": {
-    "Main": {
-      "active_lane": "A",
-      "lanes": {
-        "A": [],
-        "B": []
-      }
-    }
-  }
+  "scan_paths": [
+    "C:\\Ambiance2\\included_plugins"
+  ],
+  "streams": {}
 }

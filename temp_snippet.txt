@@ -1,0 +1,40 @@
+            var synthDefName = \\\\ambiance_vst_host;
+            if(SynthDescLib.global.at(synthDefName).isNil) {{
+                SynthDef(synthDefName, {{
+                    var sig = VSTPlugin.ar(Silent.ar({channels}), {channels}, id: \\\\ambianceVST);
+                    Out.ar(0, sig);
+                }}).add;
+                s.sync;
+            }};
+            if(~ambianceVSTSynth.notNil) {{ ~ambianceVSTSynth.free; }};
+            ~ambianceVSTSynth = Synth(synthDefName);
+            if(~ambianceVSTController.notNil) {{ ~ambianceVSTController.free; }};
+            ~ambianceVSTController = VSTPluginController(~ambianceVSTSynth, \\\\ambianceVST);
+            ~ambianceVSTController.open(path: "{escaped}", editor: {bool_literal});
+        }}
+        """
+        self.bridge.evaluate(code)
+
+    def close_plugin(self) -> None:
+        """Close and free the currently loaded plugin instance."""
+        self.ensure_booted()
+        code = """
+        {
+            if(~ambianceVSTController.notNil) { ~ambianceVSTController.close; ~ambianceVSTController = nil; };
+            if(~ambianceVSTSynth.notNil) { ~ambianceVSTSynth.free; ~ambianceVSTSynth = nil; };
+        }
+        """
+        self.bridge.evaluate(code)
+
+    def set_parameter(self, index: int, value: float) -> None:
+        """Set a plugin parameter by index."""
+        self.ensure_booted()
+        code = f"""
+        {{
+            if(~ambianceVSTController.notNil) {{
+                ~ambianceVSTController.set({index}, {float(value)});
+            }};
+        }}
+        """
+        self.bridge.evaluate(code)
+

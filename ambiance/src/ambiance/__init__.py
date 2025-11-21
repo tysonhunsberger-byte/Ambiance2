@@ -3,6 +3,9 @@
 from .core.engine import AudioEngine
 from .core.registry import registry
 from .integrations.plugins import PluginRackManager
+from .integrations.supercollider_host import SuperColliderBridge
+from .integrations.supercollider_service import SuperColliderService
+from .integrations.vstplugin_bridge import VSTPluginBridge
 from .server import serve
 from .sources.basic import NoiseSource, SineWaveSource
 from .sources.integrated import ResonantInstrumentSource, VocalFormantSource
@@ -21,5 +24,8 @@ __all__ = [
     "LowPassFilterEffect",
     "FlutterVSTEffect",
     "PluginRackManager",
+    "SuperColliderBridge",
+    "SuperColliderService",
+    "VSTPluginBridge",
     "serve",
 ]

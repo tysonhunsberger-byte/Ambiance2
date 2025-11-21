@@ -42,34 +42,78 @@ class PluginRackManager:
 
     def __post_init__(self) -> None:
         self.base_dir = Path(self.base_dir)
+        self._project_root = self._resolve_project_root()
         if self.workspace_dir is None:
-            self.workspace_dir = self.base_dir / ".cache" / "plugins"
-        else:
-            self.workspace_dir = Path(self.workspace_dir)
+            self.workspace_dir = self._project_root / "included_plugins"
+        self.workspace_dir = Path(self.workspace_dir)
         self.workspace_dir.mkdir(parents=True, exist_ok=True)
-        self._config_path = self.workspace_dir / self.config_filename
+        for subdir in ("Bridged32BitPlugins", "64BitPlugins"):
+            (self.workspace_dir / subdir).mkdir(parents=True, exist_ok=True)
+        self._config_path = (self.base_dir / ".cache" / "plugins")
+        self._config_path.mkdir(parents=True, exist_ok=True)
+        self._config_path = self._config_path / self.config_filename
         self._hydrate_modalys_bundle()
         if not self._config_path.exists():
             self._save_config({"streams": {}})
+        # Ensure scan paths exist in config so UI can manage them
+        config = self._load_config()
+        if not config.get("scan_paths"):
+            config["scan_paths"] = [str(self.workspace_dir)]
+            self._save_config(config)
 
     # ------------------------------------------------------------------
     # Workspace discovery
     def workspace_path(self) -> Path:
         return Path(self.workspace_dir)
 
+    def _resolve_project_root(self) -> Path:
+        """Locate the top-level project folder that holds included_plugins."""
+
+        ancestors = list(self.base_dir.parents)
+        search_order = list(reversed(ancestors)) + [self.base_dir]
+        for candidate in search_order:
+            included_dir = candidate / "included_plugins"
+            if included_dir.exists():
+                return candidate
+        return ancestors[-1] if ancestors else self.base_dir
+
+    def get_scan_paths(self) -> list[str]:
+        """Return configured directories (expanded) that should be scanned."""
+        config = self._load_config()
+        paths = config.get("scan_paths") or [str(self.workspace_path())]
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for entry in paths:
+            if not entry:
+                continue
+            expanded = str(Path(entry).expanduser())
+            if expanded not in seen:
+                normalized.append(expanded)
+                seen.add(expanded)
+        if not normalized:
+            normalized = [str(self.workspace_path())]
+        return normalized
+
+    def set_scan_paths(self, paths: Iterable[str]) -> list[str]:
+        """Persist human-configured plugin directories and return normalized list."""
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for entry in paths:
+            if not entry:
+                continue
+            expanded = str(Path(entry).expanduser())
+            if expanded not in seen:
+                normalized.append(expanded)
+                seen.add(expanded)
+        if not normalized:
+            normalized = [str(self.workspace_path())]
+        config = self._load_config()
+        config["scan_paths"] = normalized
+        self._save_config(config)
+        return normalized
+
     def _candidate_paths(self) -> Iterable[Path]:
-        # Scan both workspace and included_plugins folder
-        roots_to_scan = [self.workspace_path()]
-
-        # Add included_plugins folder if it exists
-        included_plugins = self.base_dir / "included_plugins"
-        included_plugins_parent = self.base_dir.parent / "included_plugins"
-
-        if included_plugins.exists():
-            roots_to_scan.append(included_plugins)
-        elif included_plugins_parent.exists():
-            roots_to_scan.append(included_plugins_parent)
-
+        roots_to_scan = [Path(path) for path in self.get_scan_paths()]
         def walker() -> Iterator[Path]:
             for root in roots_to_scan:
                 if not root.exists():
@@ -367,6 +411,7 @@ class PluginRackManager:
             "workspace": str(self.workspace_path()),
             "workspace_exists": self.workspace_path().exists(),
             "plugins": plugins,
+             "scan_paths": self.get_scan_paths(),
             "streams": streams,
             "notes": notes,
         }

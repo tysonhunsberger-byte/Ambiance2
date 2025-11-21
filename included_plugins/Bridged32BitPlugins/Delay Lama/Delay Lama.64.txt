@@ -1,0 +1,5 @@
+"C:\Ambiance2\included_plugins\32BitPlugins\Delay Lama\Delay Lama.dll"
+ID: 1097745516
+flags: effFlagsHasEditor
+flags: effFlagsIsSynth
+flags: effFlagsCanReplacing

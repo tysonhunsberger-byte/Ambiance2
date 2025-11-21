@@ -26,17 +26,25 @@ from typing import Any, Sequence
 
 from urllib.request import urlopen
 
+from .jbridge import JBridgeManager
 
-CARLA_REQUIRED_WINDOWS_BINARIES: tuple[str, ...] = (
-    "carla-bridge-win64.exe",
-)
+
+CARLA_REQUIRED_WINDOWS_BINARIES: dict[str, tuple[str, ...]] = {
+    "win64": ("carla-bridge-win64.exe",),
+    "win32": ("carla-bridge-win32.exe",),
+}
 
 
 CARLA_WIN_RELEASES: tuple[dict[str, Any], ...] = (
     {
         "name": "Carla-2.5.10-win64",
         "url": "https://github.com/falkTX/Carla/releases/download/v2.5.10/Carla-2.5.10-win64.zip",
-        "required": CARLA_REQUIRED_WINDOWS_BINARIES,
+        "required": CARLA_REQUIRED_WINDOWS_BINARIES["win64"],
+    },
+    {
+        "name": "Carla-2.5.10-win32",
+        "url": "https://github.com/falkTX/Carla/releases/download/v2.5.10/Carla-2.5.10-win32.zip",
+        "required": CARLA_REQUIRED_WINDOWS_BINARIES["win32"],
     },
 )
 
@@ -116,6 +124,37 @@ class CarlaParameterSnapshot:
         payload = self.to_status_entry()
         payload.pop("value", None)
         return payload
+
+
+@dataclass(frozen=True, slots=True)
+class CarlaPluginSlot:
+    """Track metadata about a plugin instance hosted by Carla."""
+
+    plugin_id: int
+    path: Path
+    name: str
+    format_label: str
+    supports_midi: bool
+    is_instrument: bool
+    has_editor: bool
+    bridge_path: Path | None = None
+    forced_instrument: bool = False
+    branch_start: bool = False
+
+    def to_status_entry(self, *, active: bool = False) -> dict[str, Any]:
+        return {
+            "id": self.plugin_id,
+            "path": str(self.path),
+            "name": self.name,
+            "format": self.format_label,
+            "supports_midi": self.supports_midi,
+            "instrument": self.is_instrument,
+            "has_editor": self.has_editor,
+            "active": bool(active),
+            "bridge_path": str(self.bridge_path) if self.bridge_path else None,
+            "forced_instrument": self.forced_instrument,
+            "branch_start": self.branch_start,
+        }
 
 
 if HAS_QT:
@@ -352,6 +391,251 @@ class CarlaBackend:
             drivers.append(name)
         return drivers
 
+    def _clear_chain_state(self) -> None:
+        """Reset runtime bookkeeping for hosted plugins."""
+        self._chain.clear()
+        self._active_slot_index = None
+        self._instrument_slot_index = None
+        self._instrument_plugin_id = None
+        self._instrument_plugin_ids = []
+        self._midi_target_plugin_id = None
+        self._audio_target_plugin_id = None
+        self._final_audio_sources = []
+        self._midi_routed_plugins.clear()
+        self._audio_routed_plugins.clear()
+        self._effect_warning_plugins.clear()
+        self._plugin_id = None
+        self._plugin_path = None
+        self._parameters = []
+        self._supports_midi = False
+        self._ui_visible = False
+
+    def _assign_active_slot(self, index: int | None) -> None:
+        """Select which plugin is considered 'active' for UI + parameter access."""
+        if not self._chain:
+            self._plugin_id = None
+            self._plugin_path = None
+            self._parameters = []
+            self._supports_midi = False
+            self._active_slot_index = None
+            self._ui_visible = False
+            return
+        clamped = max(0, min(index or 0, len(self._chain) - 1))
+        slot = self._chain[clamped]
+        self._active_slot_index = clamped
+        self._plugin_id = slot.plugin_id
+        self._plugin_path = slot.path
+        self._parameters = self._collect_parameters(slot.plugin_id)
+        self._supports_midi = slot.supports_midi
+        self._ui_visible = False
+
+    def _get_slot_by_plugin_id(self, plugin_id: int | None) -> CarlaPluginSlot | None:
+        if plugin_id is None:
+            return None
+        for slot in self._chain:
+            if slot.plugin_id == plugin_id:
+                return slot
+        return None
+
+    def _update_chain_targets(self) -> None:
+        self._instrument_slot_index = None
+        self._instrument_plugin_id = None
+        self._instrument_plugin_ids = []
+        if not self._chain:
+            self._midi_target_plugin_id = None
+            self._audio_target_plugin_id = None
+            self._midi_routed = False
+            self._midi_routed_plugins.clear()
+            self._audio_routed = False
+            self._audio_routed_plugins.clear()
+            self._midi_warning_emitted = False
+            self._audio_warning_emitted = False
+            return
+        explicit_markers = any(slot.branch_start or slot.forced_instrument for slot in self._chain)
+        seen: set[int] = set()
+        for idx, slot in enumerate(self._chain):
+            slot_is_head = False
+            if explicit_markers:
+                slot_is_head = slot.branch_start or slot.forced_instrument
+            elif idx == 0:
+                slot_is_head = True
+            else:
+                slot_is_head = (
+                    slot.branch_start
+                    or slot.forced_instrument
+                    or slot.supports_midi
+                    or slot.is_instrument
+                    or not self._instrument_plugin_ids
+                )
+            if slot_is_head and slot.plugin_id not in seen:
+                if self._instrument_slot_index is None:
+                    self._instrument_slot_index = idx
+                    self._instrument_plugin_id = slot.plugin_id
+                self._instrument_plugin_ids.append(slot.plugin_id)
+                seen.add(slot.plugin_id)
+        if not self._instrument_plugin_ids:
+            # Fall back to the first slot so at least one target exists.
+            first_slot = self._chain[0]
+            self._instrument_slot_index = 0
+            self._instrument_plugin_id = first_slot.plugin_id
+            self._instrument_plugin_ids = [first_slot.plugin_id]
+        self._midi_target_plugin_id = self._instrument_plugin_id
+        self._audio_target_plugin_id = self._chain[-1].plugin_id if self._chain else None
+        self._midi_routed = False
+        self._midi_routed_plugins.clear()
+        self._audio_routed = False
+        self._audio_routed_plugins.clear()
+        self._midi_warning_emitted = False
+        self._audio_warning_emitted = False
+        try:
+            import logging
+
+            logger = logging.getLogger(__name__)
+            if logger.isEnabledFor(logging.INFO):
+                names = []
+                for plugin_id in self._instrument_plugin_ids:
+                    slot = self._get_slot_by_plugin_id(plugin_id)
+                    if slot:
+                        names.append(
+                            f"{slot.name} (forced={slot.forced_instrument}, branch={slot.branch_start})"
+                        )
+                logger.info("Active MIDI branch heads: %s", ", ".join(names) or "none")
+        except Exception:
+            pass
+
+    def _chain_status(self) -> list[dict[str, Any]]:
+        return [
+            slot.to_status_entry(active=(idx == self._active_slot_index))
+            for idx, slot in enumerate(self._chain)
+        ]
+
+    def _connect_chain_audio(self) -> None:
+        """Connect plugin outputs -> inputs for serial chains with branch-aware routing."""
+        if self.host is None or not self._chain:
+            self._final_audio_sources = []
+            return
+
+        for slot in self._chain:
+            self._disconnect_plugin_outputs(slot.plugin_id)
+
+        branch_outputs: list[int] = []
+        shared_tail = False
+        explicit_branching = any(slot.branch_start or slot.forced_instrument for slot in self._chain)
+        logger = logging.getLogger(__name__)
+        for idx, slot in enumerate(self._chain):
+            slot_is_head = False
+            if explicit_branching:
+                slot_is_head = slot.branch_start or slot.forced_instrument
+            elif idx == 0:
+                slot_is_head = True
+            else:
+                slot_is_head = (
+                    slot.branch_start
+                    or slot.forced_instrument
+                    or slot.supports_midi
+                    or slot.is_instrument
+                    or not branch_outputs
+                )
+            if slot_is_head and not shared_tail:
+                branch_outputs.append(slot.plugin_id)
+                continue
+            if not self._plugin_has_audio_inputs(slot.plugin_id):
+                logger.info(
+                    "Skipping %s in audio chain (no audio inputs, treated as effect)", slot.name
+                )
+                if slot.plugin_id not in self._effect_warning_plugins:
+                    warning = (
+                        f"Effect '{slot.name}' has no audio inputs; set it to Instrument to hear it."
+                    )
+                    self.warnings.append(warning)
+                    self._effect_warning_plugins.add(slot.plugin_id)
+                continue
+            bypass_instrument = (
+                explicit_branching
+                and not slot_is_head
+                and (slot.branch_start or slot.forced_instrument)
+            )
+            if bypass_instrument:
+                if logger.isEnabledFor(logging.INFO):
+                    logger.info("Bypassing instrument slot %s (not marked as branch head)", slot.name)
+                continue
+            if not branch_outputs:
+                branch_outputs = [slot.plugin_id]
+                continue
+            sources = list(branch_outputs)
+            if shared_tail or len(branch_outputs) > 1:
+                for source_id in sources:
+                    self._connect_plugin_pair(source_id, slot.plugin_id)
+                branch_outputs = [slot.plugin_id]
+                shared_tail = True
+            else:
+                self._connect_plugin_pair(sources[0], slot.plugin_id)
+                branch_outputs = [slot.plugin_id]
+
+        if not branch_outputs and self._chain:
+            branch_outputs = [self._chain[-1].plugin_id]
+        self._final_audio_sources = branch_outputs
+
+    def _connect_plugin_pair(self, source_plugin_id: int, target_plugin_id: int) -> None:
+        if self.host is None:
+            return
+        with self._patch_lock:
+            source_group = self._plugin_patch_groups.get(source_plugin_id)
+            target_group = self._plugin_patch_groups.get(target_plugin_id)
+            source_ports = [
+                port_id
+                for port_id, port in self._patch_ports.get(source_group, {}).items()
+                if port.get("is_audio") and not port.get("is_input")
+            ] if source_group is not None else []
+            target_ports = [
+                port_id
+                for port_id, port in self._patch_ports.get(target_group, {}).items()
+                if port.get("is_audio") and port.get("is_input")
+            ] if target_group is not None else []
+        if not source_ports or not target_ports or source_group is None or target_group is None:
+            return
+        pairings = min(len(source_ports), len(target_ports))
+        success = False
+        for channel in range(pairings):
+            src_port = source_ports[channel]
+            dst_port = target_ports[channel]
+            with self._patch_lock:
+                existing = (source_group, src_port, target_group, dst_port)
+                if existing in self._patch_connections:
+                    continue
+            try:
+                if self.host.patchbay_connect(False, source_group, src_port, target_group, dst_port):
+                    success = True
+            except Exception as exc:
+                self.warnings.append(
+                    f"Failed to connect plugin {source_plugin_id} channel {channel}: {exc}"
+                )
+        if success:
+            self._wait_for_engine_idle(0.05)
+
+    def _disconnect_plugin_outputs(self, plugin_id: int) -> None:
+        if self.host is None:
+            return
+        with self._patch_lock:
+            plugin_group = self._plugin_patch_groups.get(plugin_id)
+            if plugin_group is None:
+                return
+            doomed: list[int] = []
+            for connection_id, key in self._patch_connection_ids.items():
+                if key[0] != plugin_group:
+                    continue
+                target_client = self._patch_clients.get(key[2], {})
+                if int(target_client.get("plugin_id", -1)) >= 0:
+                    continue
+                doomed.append(connection_id)
+        for connection_id in doomed:
+            try:
+                self.host.patchbay_disconnect(False, connection_id)
+            except Exception as exc:
+                self.warnings.append(
+                    f"Failed to disconnect plugin {plugin_id} output connection {connection_id}: {exc}"
+                )
+
     def __init__(
         self,
         base_dir: Path | None = None,
@@ -391,6 +675,18 @@ class CarlaBackend:
         self._midi_routed = False
         self._audio_routed = False
         self._audio_warning_emitted = False
+        self._jbridge = JBridgeManager(self.base_dir)
+        self._chain: list[CarlaPluginSlot] = []
+        self._active_slot_index: int | None = None
+        self._instrument_slot_index: int | None = None
+        self._instrument_plugin_id: int | None = None
+        self._instrument_plugin_ids: list[int] = []
+        self._midi_target_plugin_id: int | None = None
+        self._audio_target_plugin_id: int | None = None
+        self._final_audio_sources: list[int] = []
+        self._midi_routed_plugins: set[int] = set()
+        self._audio_routed_plugins: set[int] = set()
+        self._effect_warning_plugins: set[int] = set()
         self._patch_lock = threading.RLock()
         self._patch_clients: dict[int, dict[str, Any]] = {}
         self._patch_ports: dict[int, dict[int, dict[str, Any]]] = {}
@@ -811,6 +1107,87 @@ class CarlaBackend:
         except Exception as exc:
             self.warnings.append(f"Failed to apply {option_name}: {exc}")
 
+    def _bridge_binaries_root(self) -> Path:
+        """Return the canonical directory that should hold Carla bridges."""
+
+        return (self.base_dir / "deps" / "carla_binaries").resolve(strict=False)
+
+    @staticmethod
+    def _resolve_path(path: Path) -> Path:
+        try:
+            return path.resolve(strict=False)
+        except OSError:
+            return path
+
+    def _dedupe_paths(self, paths: list[Path]) -> list[Path]:
+        """Collapse duplicate directories while preserving order."""
+
+        deduped: list[Path] = []
+        seen: set[str] = set()
+        for path in paths:
+            resolved = self._resolve_path(path)
+            key = str(resolved).lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(resolved)
+        return deduped
+
+    def _format_bridge_failure_hints(
+        self,
+        arch_bits: int | None,
+        bridge_dirs: list[Path],
+        plugin_path: Path | None = None,
+    ) -> str:
+        """Return a human-readable explanation for bridge failures."""
+
+        lines: list[str] = []
+        if arch_bits:
+            lines.append(f"- Detected plugin architecture: {arch_bits}-bit")
+        host_bits = struct.calcsize("P") * 8
+        lines.append(f"- Host process architecture: {host_bits}-bit")
+
+        deduped = self._dedupe_paths(bridge_dirs)
+        root = self._bridge_binaries_root()
+        try:
+            resolved_root = root if root.exists() else None
+            if resolved_root is not None:
+                resolved_root = resolved_root.resolve(strict=False)
+        except OSError:
+            resolved_root = None
+
+        relative_entries: list[str] = []
+        absolute_entries: list[str] = []
+        for path in deduped:
+            try:
+                resolved = path.resolve(strict=False)
+            except OSError:
+                resolved = path
+            if resolved_root:
+                try:
+                    rel = resolved.relative_to(resolved_root)
+                except ValueError:
+                    rel = None
+                if rel is not None:
+                    text = str(rel) or "."
+                    relative_entries.append(text)
+                    continue
+            absolute_entries.append(str(resolved))
+
+        if resolved_root and relative_entries:
+            lines.append(f"- Bridge binaries root: {resolved_root}")
+            lines.append(f"  searched subdirectories: {', '.join(relative_entries)}")
+        if absolute_entries:
+            lines.append("- Additional bridge search paths:")
+            for entry in absolute_entries:
+                lines.append(f"  • {entry}")
+        lines.append("- Tip: Install the matching plugin build or keep Carla's Win32/Win64 bridges in this folder.")
+        if plugin_path is not None and arch_bits == 32 and self._jbridge:
+            jbridge_hint = self._jbridge.hint_for(plugin_path)
+            if jbridge_hint:
+                lines.append(jbridge_hint)
+        return "\n".join(lines)
+
     def _candidate_binary_dirs(self) -> list[Path]:
         """Return candidate directories that hold Carla bridge binaries."""
         candidates: list[Path] = []
@@ -922,6 +1299,23 @@ class CarlaBackend:
             self._binary_hints.add(parent_dir)
         return resolved
 
+    def _included_plugins_root(self) -> Path:
+        """Return the top-level included_plugins directory."""
+
+        ancestors = list(self.base_dir.parents)
+        search_order = list(reversed(ancestors)) + [self.base_dir]
+        for candidate in search_order:
+            if not candidate:
+                continue
+            try:
+                included = (candidate / "included_plugins").resolve(strict=False)
+            except OSError:
+                continue
+            if included.exists():
+                return included
+        fallback_base = ancestors[-1] if ancestors else self.base_dir
+        return (fallback_base / "included_plugins").resolve(strict=False)
+
     def _download_root_candidates(self) -> list[Path]:
         """Return preferred directories for downloaded Carla releases."""
 
@@ -975,7 +1369,11 @@ class CarlaBackend:
                 return
 
             name_lower = resolved.name.lower()
-            if "win32" in name_lower and "win64" not in name_lower:
+            if (
+                "win32" in name_lower
+                and "win64" not in name_lower
+                and not sys.platform.startswith("win")
+            ):
                 return
 
             # Windows archives often contain an extra nested "Carla" folder that
@@ -1004,6 +1402,7 @@ class CarlaBackend:
 
         def contains_bridge(directory: Path) -> bool:
             for bridge_name in (
+                "carla-bridge-win32.exe",
                 "carla-bridge-win64.exe",
                 "carla-bridge-native.exe",
             ):
@@ -1398,18 +1797,12 @@ class CarlaBackend:
         vst2 = self._get_constant("PLUGIN_VST2", 5)
         vst3 = self._get_constant("PLUGIN_VST3", 6)
 
-        cache_root = self.base_dir / ".cache" / "plugins"
-        data_root = self.base_dir / "data" / "vsts"
+        included_root = self._included_plugins_root()
+        bridged_plugins = included_root / "Bridged32BitPlugins"
+        native_plugins = included_root / "64BitPlugins"
 
-        # Add included_plugins folders regardless of where the app is launched
-        included_candidates: list[Path] = []
-        for ancestor in [self.base_dir] + list(self.base_dir.parents)[:4]:
-            candidate = ancestor / "included_plugins"
-            if candidate not in included_candidates:
-                included_candidates.append(candidate)
-
-        add(vst2, cache_root, data_root, *included_candidates)
-        add(vst3, cache_root, data_root, *included_candidates)
+        add(vst2, bridged_plugins, native_plugins)
+        add(vst3, bridged_plugins, native_plugins)
 
         if sys.platform.startswith("win"):
             program_files = Path(os.environ.get("PROGRAMFILES", "")).expanduser()
@@ -1456,6 +1849,7 @@ class CarlaBackend:
                 self._set_engine_option(option_name, 1)
 
         binary_paths = [path for path in self._candidate_binary_dirs() if path.exists()]
+        binary_paths = self._dedupe_paths(binary_paths)
         binary_dirs = [str(path) for path in binary_paths]
         if binary_dirs:
             payload = os.pathsep.join(dict.fromkeys(binary_dirs))
@@ -1756,6 +2150,21 @@ class CarlaBackend:
             return
         self._wait_for_engine_idle(timeout)
 
+    def _wait_for_patch_groups(self, plugin_ids: Sequence[int], timeout: float = 1.5) -> bool:
+        """Ensure patchbay metadata exists for the provided plugin IDs."""
+        if not plugin_ids:
+            return True
+        deadline = time.monotonic() + max(0.1, timeout)
+        while time.monotonic() < deadline:
+            with self._patch_lock:
+                if all(pid in self._plugin_patch_groups for pid in plugin_ids):
+                    return True
+            self._patch_update_event.wait(0.05)
+        # Final refresh attempt
+        self._refresh_patchbay_state(timeout=0.5)
+        with self._patch_lock:
+            return all(pid in self._plugin_patch_groups for pid in plugin_ids)
+
     def _midi_source_sort_key(
         self,
         client: dict[str, Any],
@@ -1831,17 +2240,32 @@ class CarlaBackend:
         )
         return [(group_id, port_id) for group_id, port_id, _, _ in candidates]
 
-    def _ensure_midi_routing(self) -> None:
-        if self._midi_routed:
-            return
-        if self.host is None or self._plugin_id is None or not self._supports_midi:
-            return
+    def _ensure_midi_routing(self, plugin_id: int | None = None) -> None:
+        targets = (
+            [plugin_id]
+            if plugin_id is not None
+            else (self._instrument_plugin_ids or ([self._plugin_id] if self._plugin_id else []))
+        )
+        routed = False
+        for target_id in targets:
+            if target_id is None:
+                continue
+            if self._ensure_midi_routing_for_plugin(target_id):
+                routed = True
+        if routed:
+            self._midi_routed = True
 
+    def _ensure_midi_routing_for_plugin(self, target_id: int) -> bool:
+        if self.host is None:
+            return False
+        if target_id in self._midi_routed_plugins:
+            return True
+        self._midi_target_plugin_id = target_id
         plugin_group: int | None = None
         midi_inputs: list[tuple[int, dict[str, Any]]] = []
         for attempt in range(3):
             with self._patch_lock:
-                plugin_group = self._plugin_patch_groups.get(self._plugin_id)
+                plugin_group = self._plugin_patch_groups.get(target_id)
                 if plugin_group is not None:
                     ports = self._patch_ports.get(plugin_group, {})
                     midi_inputs = [
@@ -1850,20 +2274,20 @@ class CarlaBackend:
                         if pdata.get("is_input") and pdata.get("is_midi")
                     ]
                     if any(conn[2] == plugin_group for conn in self._patch_connections):
-                        self._midi_routed = True
-                        return
+                        self._midi_routed_plugins.add(target_id)
+                        return True
             if plugin_group is not None and midi_inputs:
                 break
             self._refresh_patchbay_state()
         else:
-            return
+            return False
 
         if plugin_group is None or not midi_inputs:
-            return
+            return False
 
         sources = self._select_midi_sources()
         if not sources:
-            return
+            return False
 
         success = False
         for source_group, source_port in sources:
@@ -1883,91 +2307,108 @@ class CarlaBackend:
         if success:
             # Allow callbacks to populate the cached graph and mark routing as ready.
             self._wait_for_engine_idle(0.1)
+            self._midi_routed_plugins.add(target_id)
             self._midi_routed = True
             self._midi_warning_emitted = False
+            return True
         elif not self._midi_warning_emitted:
             self.warnings.append(
                 "Unable to find an internal MIDI source to connect to the hosted plugin automatically."
             )
             self._midi_warning_emitted = True
+        return False
 
-    def _ensure_audio_routing(self) -> None:
+    def _ensure_audio_routing(self, plugin_id: int | None = None) -> None:
+        targets = ([plugin_id] if plugin_id is not None else (self._final_audio_sources or ([self._audio_target_plugin_id] if self._audio_target_plugin_id else [])))
+        routed = False
+        for target_id in targets:
+            if target_id is None:
+                continue
+            if self._ensure_audio_routing_for_plugin(target_id):
+                routed = True
+        if routed:
+            self._audio_routed = True
+
+    def _ensure_audio_routing_for_plugin(self, target_id: int) -> bool:
         import logging
-        if self._audio_routed:
-            logging.info("🔊 Audio already routed")
-            return
-        if self.host is None or self._plugin_id is None:
-            logging.warning("⚠️ Cannot route audio: no plugin loaded")
-            return
 
-        logging.info("🔌 Setting up audio routing...")
+        if self.host is None:
+            logging.warning("?? Cannot route audio: no plugin loaded")
+            return False
+        if target_id in self._audio_routed_plugins:
+            logging.info("?? Audio already routed for plugin %s", target_id)
+            return True
+
+        logging.info("?? Setting up audio routing for plugin %s...", target_id)
         plugin_group: int | None = None
         audio_outputs: list[tuple[int, dict[str, Any]]] = []
         for attempt in range(3):
             with self._patch_lock:
-                plugin_group = self._plugin_patch_groups.get(self._plugin_id)
+                plugin_group = self._plugin_patch_groups.get(target_id)
                 if plugin_group is not None:
                     ports = self._patch_ports.get(plugin_group, {})
                     audio_outputs = [
                         (pid, pdata)
                         for pid, pdata in ports.items()
-                        if not pdata.get("is_input") and pdata.get("is_audio")
+                        if not pdata.get('is_input') and pdata.get('is_audio')
                     ]
                     if audio_outputs and any(
                         conn[0] == plugin_group
-                        and self._patch_ports.get(conn[2], {}).get(conn[3], {}).get("is_audio")
+                        and self._patch_ports.get(conn[2], {}).get(conn[3], {}).get('is_audio')
                         for conn in self._patch_connections
                     ):
-                        self._audio_routed = True
-                        logging.info(f"✓ Audio already connected (found {len(audio_outputs)} outputs)")
-                        return
+                        self._audio_routed_plugins.add(target_id)
+                        logging.info(f"? Audio already connected (found {len(audio_outputs)} outputs)")
+                        return True
             if plugin_group is not None and audio_outputs:
                 break
             self._refresh_patchbay_state()
         else:
-            return
+            return False
 
         if plugin_group is None or not audio_outputs:
-            return
+            return False
 
         targets = self._select_audio_targets()
         if not targets:
             if not self._audio_warning_emitted:
                 self.warnings.append("No audio output target found for Carla patchbay.")
                 self._audio_warning_emitted = True
-            return
+            return False
 
         audio_outputs.sort(key=lambda item: item[0])
         connections = min(len(audio_outputs), len(targets), 2)
-        logging.info(f"🔌 Connecting {connections} audio channels: plugin_group={plugin_group}")
+        logging.info(f"?? Connecting {connections} audio channels: plugin_group={plugin_group}")
         success = False
         for index in range(connections):
             source_port = audio_outputs[index][0]
             target_group, target_port = targets[index]
             with self._patch_lock:
                 if (plugin_group, source_port, target_group, target_port) in self._patch_connections:
-                    logging.info(f"  ✓ Channel {index}: already connected")
+                    logging.info(f"  ? Channel {index}: already connected")
                     continue
             try:
                 if self.host.patchbay_connect(False, plugin_group, source_port, target_group, target_port):
-                    logging.info(f"  ✓ Channel {index}: connected port {source_port} → {target_group}:{target_port}")
+                    logging.info(f"  ? Channel {index}: connected port {source_port} ? {target_group}:{target_port}")
                     success = True
                 else:
-                    logging.warning(f"  ✗ Channel {index}: connection failed (returned False)")
+                    logging.warning(f"  ? Channel {index}: connection failed (returned False)")
             except Exception as exc:
-                logging.error(f"  ✗ Channel {index}: connection error: {exc}")
+                logging.error(f"  ? Channel {index}: connection error: {exc}")
                 self.warnings.append(
                     f"Failed to connect audio port {source_port} -> {target_group}:{target_port}: {exc}"
                 )
         if success:
             self._wait_for_engine_idle(0.1)
-            self._audio_routed = True
+            self._audio_routed_plugins.add(target_id)
             self._audio_warning_emitted = False
-            logging.info("✓ Audio routing complete")
+            logging.info("? Audio routing complete")
+            return True
         elif not self._audio_warning_emitted:
-            logging.warning("⚠️ Audio routing failed - no audio will be heard")
+            logging.warning("?? Audio routing failed - no audio will be heard")
             self.warnings.append("Unable to connect plugin audio outputs; audio may be muted.")
             self._audio_warning_emitted = True
+        return False
 
     def _select_driver(self) -> str | None:
         assert self.host is not None
@@ -2062,6 +2503,7 @@ class CarlaBackend:
             qt_available = bool(
                 HAS_QT and self._qt_manager and self._qt_manager.is_available()
             )
+            active_plugin_id = self._plugin_id
             payload: dict[str, Any] = {
                 "available": self.available,
                 "toolkit_path": str(self.root) if self.root else None,
@@ -2069,6 +2511,9 @@ class CarlaBackend:
                 "warnings": list(self.warnings),
                 "ui_visible": self._ui_visible,
                 "qt_available": qt_available,
+                "chain": self._chain_status(),
+                "active_index": self._active_slot_index,
+                "midi_target_index": self._instrument_slot_index,
                 "engine": {
                     "running": self._engine_running,
                     "driver": self._driver_name,
@@ -2077,30 +2522,35 @@ class CarlaBackend:
                     "sample_rate": self._engine_sample_rate,
                     "buffer_size": self._engine_buffer_size,
                 },
+                "bridges": {
+                    "jbridge": self._jbridge.describe_environment() if self._jbridge else {},
+                },
             }
             if self._driver_name:
                 payload["driver"] = self._driver_name
             payload["capabilities"] = {
                 "editor": bool(
-                    self._plugin_id is not None
-                    and self._plugin_supports_custom_ui()
+                    active_plugin_id is not None
+                    and self._plugin_supports_custom_ui(active_plugin_id)
                     and qt_available
                 ),
                 "instrument": bool(
-                    self._plugin_id is not None and self._plugin_is_instrument()
+                    active_plugin_id is not None and self._plugin_is_instrument(active_plugin_id)
                 ),
-                "midi": bool(self._supports_midi),
+                "midi": bool(self._instrument_plugin_id is not None),
                 "midi_routed": bool(self._midi_routed),
                 "audio_routed": bool(self._audio_routed),
             }
-            if self._plugin_id is None:
+            if active_plugin_id is None:
                 payload["plugin"] = None
                 payload["parameters"] = []
             else:
-                payload["plugin"] = self._plugin_payload(include_parameters=include_parameters)
-                payload["parameters"] = [
-                    param.to_status_entry() for param in self._parameters
-                ] if include_parameters else []
+                payload["plugin"] = self._plugin_payload(include_parameters=include_parameters, plugin_id=active_plugin_id)
+                payload["parameters"] = (
+                    [param.to_status_entry() for param in self._parameters]
+                    if include_parameters
+                    else []
+                )
             if not include_parameters and payload.get("plugin"):
                 payload["plugin"]["metadata"]["parameters"] = []
                 payload["plugin"]["parameters"] = []
@@ -2116,9 +2566,60 @@ class CarlaBackend:
         path = Path(plugin_path).expanduser()
         if not path.exists():
             raise FileNotFoundError(f"Plugin not found: {path}")
+        return self._load_path_sequence([path], [parameters], 0, show_ui)
+
+    def load_chain(
+        self,
+        plugin_paths: Sequence[str | Path | dict[str, Any]],
+        parameters: Sequence[dict[str, float] | None] | None = None,
+        *,
+        focus_index: int = 0,
+        show_ui: bool = False,
+    ) -> dict[str, Any]:
+        paths: list[Path] = []
+        forced_flags: list[bool] = []
+        branch_flags: list[bool] = []
+        for raw in plugin_paths:
+            force_flag = False
+            branch_flag = False
+            if isinstance(raw, dict):
+                raw_path = raw.get("path")
+                if not raw_path:
+                    raise FileNotFoundError("Plugin descriptor missing path")
+                path = Path(raw_path).expanduser()
+                branch_flag = bool(raw.get("branch_start"))
+                force_flag = bool(raw.get("force_instrument")) or branch_flag
+            else:
+                path = Path(raw).expanduser()
+            if not path.exists():
+                raise FileNotFoundError(f"Plugin not found: {path}")
+            paths.append(path)
+            forced_flags.append(force_flag)
+            branch_flags.append(branch_flag or force_flag)
+        if not paths:
+            raise CarlaHostError("Plugin chain cannot be empty")
+        param_list: list[dict[str, float] | None]
+        if parameters is None:
+            param_list = [None] * len(paths)
+        else:
+            param_list = list(parameters)
+            if len(param_list) < len(paths):
+                param_list.extend([None] * (len(paths) - len(param_list)))
+        return self._load_path_sequence(paths, param_list, focus_index, show_ui, forced_flags, branch_flags)
+
+    def _load_path_sequence(
+        self,
+        paths: Sequence[Path],
+        parameter_maps: Sequence[dict[str, float] | None],
+        focus_index: int,
+        show_ui: bool,
+        forced_flags: Sequence[bool] | None = None,
+        branch_flags: Sequence[bool] | None = None,
+    ) -> dict[str, Any]:
         with self._lock:
-            if not self.can_handle_path(path):
-                raise CarlaHostError(f"Unsupported plugin format: {path.suffix}")
+            for path in paths:
+                if not self.can_handle_path(path):
+                    raise CarlaHostError(f"Unsupported plugin format: {path.suffix}")
             self._ensure_engine()
             assert self.host is not None
 
@@ -2127,34 +2628,122 @@ class CarlaBackend:
             # Critical: Ensure engine is completely idle before operations
             self._wait_for_engine_idle(timeout=1.5)
 
-            # Clear existing plugins with synchronization
-            if self._plugin_id is not None:
-                try:
-                    self.host.remove_plugin(self._plugin_id)
-                    self._wait_for_engine_idle(timeout=1.0)
-                except Exception:
-                    pass
-                self._plugin_id = None
-
             try:
                 self.host.remove_all_plugins()
                 self._wait_for_engine_idle(timeout=1.0)
             except Exception as exc:
                 self.warnings.append(f"Failed to clear existing plugins before load: {exc}")
-            plugin_type = self._plugin_type_for(path)
+            self._clear_chain_state()
+            slots: list[CarlaPluginSlot] = []
+            logger = logging.getLogger(__name__)
+            for idx, path in enumerate(paths):
+                force_flag = False
+                branch_flag = False
+                if forced_flags is not None and idx < len(forced_flags):
+                    force_flag = bool(forced_flags[idx])
+                if branch_flags is not None and idx < len(branch_flags):
+                    branch_flag = bool(branch_flags[idx])
+                slot = self._instantiate_plugin(
+                    path,
+                    forced_instrument=force_flag,
+                    branch_start=branch_flag or force_flag,
+                )
+                if logger.isEnabledFor(logging.INFO):
+                    logger.info(
+                        "Instantiated slot %s: forced=%s branch_start=%s supports_midi=%s",
+                        slot.name,
+                        slot.forced_instrument,
+                        slot.branch_start,
+                        slot.supports_midi,
+                    )
+                slots.append(slot)
+                param_map = parameter_maps[idx] if idx < len(parameter_maps) else None
+                if param_map:
+                    self._apply_parameter_map(slot.plugin_id, param_map)
+                slot_name = slot.name.lower()
+                if slot_name.startswith("[jbridge]"):
+                    logger.info("Skipping set_active for jBridge slot %s", slot.name)
+                    self._wait_for_engine_idle(timeout=0.2)
+                else:
+                    try:
+                        self.host.set_active(slot.plugin_id, True)
+                        self._wait_for_engine_idle(timeout=0.2)
+                    except Exception as exc:
+                        self.warnings.append(f"Failed to activate plugin {slot.plugin_id}: {exc}")
+            self._chain[:] = slots
+            self._assign_active_slot(focus_index)
+            self._update_chain_targets()
+            self._cancel_all_note_timers()
+            self._refresh_patchbay_state()
+            self._wait_for_patch_groups([slot.plugin_id for slot in self._chain], timeout=1.5)
+            self._connect_chain_audio()
+            self._ensure_audio_routing()
+            self._ensure_midi_routing()
+            try:
+                self.host.engine_idle()
+            except Exception:
+                pass
+            if show_ui:
+                try:
+                    self._show_plugin_ui(True)
+                except CarlaHostError as exc:
+                    self.warnings.append(str(exc))
+            return self.status()
+
+    def _instantiate_plugin(
+        self,
+        path: Path,
+        forced_instrument: bool = False,
+        branch_start: bool = False,
+    ) -> CarlaPluginSlot:
+        assert self.host is not None
+        source_path = path
+        source_arch_bits: int | None = None
+        if sys.platform.startswith("win"):
+            image = self._find_pe_image(source_path)
+            source_arch_bits = self._detect_pe_architecture(image)
+
+        path_candidates: list[tuple[Path, Path | None]] = []
+        if source_arch_bits == 32 and self._jbridge:
+            wrapper_candidate = self._jbridge.resolve_wrapper(source_path)
+            if wrapper_candidate and wrapper_candidate.exists():
+                path_candidates.append((wrapper_candidate, wrapper_candidate))
+        path_candidates.append((source_path, None))
+
+        options = getattr(self.module, "PLUGIN_OPTIONS_NULL", 0) if self.module else 0
+        load_errors: list[str] = []
+        chosen_binary_type: int | None = None
+        used_wrapper: Path | None = None
+        seen_candidates: set[str] = set()
+        handled_any = False
+
+        for candidate_path, bridge_reference in path_candidates:
+            resolved_candidate = self._resolve_path(candidate_path)
+            key = str(resolved_candidate).lower()
+            if key in seen_candidates:
+                continue
+            seen_candidates.add(key)
+
+            plugin_type = self._plugin_type_for(candidate_path) or self._plugin_type_for(source_path)
             if plugin_type is None:
-                raise CarlaHostError(f"Unsupported plugin type for {path}")
-            self._register_plugin_path(plugin_type, path.parent)
-            if path.suffix.lower() == ".vst3" and path.is_dir():
-                self._register_plugin_path(plugin_type, path)
-            image_path = self._find_pe_image(path) if sys.platform.startswith("win") else None
-            arch_bits = self._detect_pe_architecture(image_path) if sys.platform.startswith("win") else None
-            options = getattr(self.module, "PLUGIN_OPTIONS_NULL", 0) if self.module else 0
-            load_errors: list[str] = []
-            chosen_binary_type: int | None = None
+                continue
+            handled_any = True
+
+            self._register_plugin_path(plugin_type, candidate_path.parent)
+            if candidate_path.suffix.lower() == ".vst3" and candidate_path.is_dir():
+                self._register_plugin_path(plugin_type, candidate_path)
+
+            if sys.platform.startswith("win"):
+                image_path = self._find_pe_image(candidate_path)
+                arch_bits = self._detect_pe_architecture(image_path)
+            else:
+                image_path = None
+                arch_bits = None
+
+            descriptor_prefix = "jBridge wrapper" if bridge_reference else "native path"
 
             for binary_type in self._candidate_binary_types(
-                path,
+                candidate_path,
                 plugin_type,
                 image_path=image_path,
                 arch_bits=arch_bits,
@@ -2162,90 +2751,87 @@ class CarlaBackend:
                 added = self.host.add_plugin(
                     binary_type,
                     plugin_type,
-                    str(path),
+                    str(candidate_path),
                     None,
-                    path.stem,
+                    source_path.stem,
                     0,
                     None,
                     options,
                 )
 
-                # Wait for plugin to fully initialize with longer timeout
                 self._wait_for_engine_idle(timeout=2.0)
 
                 if added:
                     chosen_binary_type = binary_type
+                    used_wrapper = bridge_reference
                     break
 
                 message = self.host.get_last_error() if hasattr(self.host, "get_last_error") else "unknown"
-                descriptor = self._describe_binary_type(binary_type)
+                binary_label = self._describe_binary_type(binary_type)
+                entry_prefix = f"{descriptor_prefix} ({binary_label})"
                 if isinstance(message, str) and "cannot handle this binary" in message.lower():
-                    hints: list[str] = []
-                    if arch_bits:
-                        hints.append(f"Detected plugin architecture: {arch_bits}-bit")
-                    host_bits = struct.calcsize("P") * 8
-                    hints.append(f"Host process architecture: {host_bits}-bit")
-                    bridge_dirs = [str(dir_path) for dir_path in self._candidate_binary_dirs()]
-                    if bridge_dirs:
-                        hints.append(f"Bridge search path: {os.pathsep.join(bridge_dirs)}")
-                    hints.append("Install the matching architecture of the plugin or ensure Carla bridge executables are available.")
-                    message = f"{message} ({'; '.join(hints)})"
-                load_errors.append(f"{descriptor}: {message}")
+                    bridge_dirs = self._candidate_binary_dirs()
+                    hint_bits = source_arch_bits or arch_bits
+                    hint_text = self._format_bridge_failure_hints(hint_bits, bridge_dirs, source_path)
+                    message = f"{message}\n{hint_text}"
+                load_errors.append(f"{entry_prefix}: {message}".rstrip())
 
-                try:
-                    self.host.remove_all_plugins()
-                    self._wait_for_engine_idle(timeout=1.0)
-                except Exception as exc:
-                    self.warnings.append(
-                        "Failed to clear Carla engine after unsuccessful load attempt: "
-                        f"{exc}"
-                    )
+            if chosen_binary_type is not None:
+                if bridge_reference:
+                    logging.info("Using jBridge wrapper %s for %s", bridge_reference, source_path)
+                break
 
-            if chosen_binary_type is None:
-                combined = "; ".join(load_errors) if load_errors else "no binary type succeeded"
-                raise CarlaHostError(f"Failed to load plugin: {combined}")
+        if not handled_any:
+            raise CarlaHostError(f"Unsupported plugin type for {source_path}")
 
+        if chosen_binary_type is None:
             if load_errors:
-                self.warnings.append(
-                    "Plugin required fallback binary type. Attempts: " + "; ".join(load_errors)
-                )
-            self._plugin_id = 0
-            self._plugin_path = path
-            self._parameters = self._collect_parameters()
-            self._ui_visible = False
-            try:
-                self.host.set_active(self._plugin_id, True)
-                # Give plugin time to fully activate
-                self._wait_for_engine_idle(timeout=0.5)
-            except Exception as exc:
-                self.warnings.append(f"Failed to activate plugin: {exc}")
-            self._supports_midi = self._plugin_accepts_midi()
-            self._midi_routed = False
-            self._midi_warning_emitted = False
-            self._audio_routed = False
-            self._audio_warning_emitted = False
-            self._cancel_all_note_timers()
-            self._refresh_patchbay_state()
-            self._ensure_audio_routing()
-            if self._supports_midi:
-                self._ensure_midi_routing()
-            # Final engine idle to ensure all routing is complete
-            try:
-                self.host.engine_idle()
-            except Exception:
-                pass
-            if parameters:
-                for key, value in parameters.items():
-                    try:
-                        self.set_parameter(key, float(value))
-                    except CarlaHostError:
-                        continue
+                attempts = []
+                for entry in load_errors:
+                    attempts.append("  * " + entry.replace("\n", "\n    "))
+                combined = "\n" + "\n".join(attempts)
+            else:
+                combined = " no binary type succeeded"
+            raise CarlaHostError(f"Failed to load plugin:{combined}")
+
+        if load_errors:
+            compact_attempts = [
+                " ".join(segment.strip() for segment in entry.splitlines() if segment.strip())
+                or entry
+                for entry in load_errors
+            ]
+            self.warnings.append(
+                "Plugin required fallback binary type. Attempts: " + "; ".join(compact_attempts)
+            )
+        plugin_id = int(self.host.get_current_plugin_count()) - 1
+        info = self.host.get_plugin_info(plugin_id)
+        slot = CarlaPluginSlot(
+            plugin_id=plugin_id,
+            path=source_path,
+            name=info.get("name") or source_path.stem,
+            format_label=self._PLUGIN_TYPE_LABELS.get(info.get("type", 0), "Unknown"),
+            supports_midi=self._plugin_accepts_midi(plugin_id),
+            is_instrument=self._plugin_is_instrument(plugin_id),
+            has_editor=self._plugin_supports_custom_ui(plugin_id) and HAS_QT,
+            bridge_path=used_wrapper,
+            forced_instrument=bool(forced_instrument),
+            branch_start=bool(branch_start),
+        )
+        return slot
+
+    def focus_plugin(self, index: int, *, show_ui: bool = False) -> dict[str, Any]:
+        with self._lock:
+            if not self._chain:
+                raise CarlaHostError("No plugin hosted")
+            if index < 0 or index >= len(self._chain):
+                raise CarlaHostError(f"Invalid plugin index {index}")
+            self._assign_active_slot(index)
             if show_ui:
                 try:
                     self._show_plugin_ui(True)
                 except CarlaHostError as exc:
                     self.warnings.append(str(exc))
-            return self._plugin_payload()
+            return self.status()
 
     def unload(self) -> None:
         with self._lock:
@@ -2256,35 +2842,28 @@ class CarlaBackend:
                     self._show_plugin_ui(False)
                 except CarlaHostError:
                     pass
-                removed = False
-                try:
-                    result = self.host.remove_all_plugins()
-                    removed = bool(result) if result is not None else True
-                except Exception as exc:
-                    self.warnings.append(f"Failed to remove all plugins: {exc}")
-                if not removed:
+            removed = False
+            try:
+                result = self.host.remove_all_plugins()
+                removed = bool(result) if result is not None else True
+            except Exception as exc:
+                self.warnings.append(f"Failed to remove all plugins: {exc}")
+            if not removed and self._chain:
+                for slot in self._chain:
                     try:
-                        self.host.remove_plugin(self._plugin_id)
+                        self.host.remove_plugin(slot.plugin_id)
                         removed = True
                     except Exception as exc:
-                        self.warnings.append(f"Failed to remove plugin {self._plugin_id}: {exc}")
-                if not removed and hasattr(self.host, "get_last_error"):
-                    last_error = self.host.get_last_error() or ""
-                    if last_error:
-                        self.warnings.append(f"Carla reported during unload: {last_error}")
-                try:
-                    self.host.engine_idle()
-                except Exception:
-                    pass
-            self._plugin_id = None
-            self._plugin_path = None
-            self._parameters = []
-            self._ui_visible = False
-            self._supports_midi = False
-            self._midi_routed = False
-            self._midi_warning_emitted = False
-            self._audio_routed = False
-            self._audio_warning_emitted = False
+                        self.warnings.append(f"Failed to remove plugin {slot.plugin_id}: {exc}")
+            if not removed and hasattr(self.host, "get_last_error"):
+                last_error = self.host.get_last_error() or ""
+                if last_error:
+                    self.warnings.append(f"Carla reported during unload: {last_error}")
+            try:
+                self.host.engine_idle()
+            except Exception:
+                pass
+            self._clear_chain_state()
             self._cancel_all_note_timers()
 
     def close(self) -> None:
@@ -2305,7 +2884,7 @@ class CarlaBackend:
         with self._lock:
             if self._plugin_id is None or self.host is None:
                 raise CarlaHostError("No plugin hosted")
-            param_id = self._resolve_parameter_identifier(identifier)
+            param_id = self._resolve_parameter_identifier(identifier, parameters=self._parameters)
             self.host.set_parameter_value(self._plugin_id, param_id, float(value))
             for index, param in enumerate(self._parameters):
                 if param.identifier == param_id:
@@ -2342,16 +2921,25 @@ class CarlaBackend:
 
         needs_idle_sync = False
         with self._lock:
-            if self.host is None or self._plugin_id is None:
+            targets = list(self._instrument_plugin_ids)
+            if not targets:
+                fallback = self._instrument_plugin_id or self._plugin_id
+                if fallback is not None:
+                    targets = [fallback]
+            if self.host is None or not targets:
                 raise CarlaHostError("No plugin hosted")
-            if not self._supports_midi:
-                raise CarlaHostError("Hosted plugin does not accept MIDI input")
-            if not self._midi_routed:
-                # logging.info("🎹 MIDI not routed, calling _ensure_midi_routing()")
-                self._ensure_midi_routing()
-                needs_idle_sync = True
+            targets_to_send: list[int] = []
+            for target_id in targets:
+                slot = self._get_slot_by_plugin_id(target_id)
+                if slot is None:
+                    continue
+                if target_id not in self._midi_routed_plugins:
+                    self._ensure_midi_routing(plugin_id=target_id)
+                    needs_idle_sync = True
+                targets_to_send.append(target_id)
+            if not targets_to_send:
+                raise CarlaHostError("Hosted plugins do not accept MIDI input")
             if not self._audio_routed:
-                # logging.warning("⚠️ Audio not routed! Calling _ensure_audio_routing()")
                 self._ensure_audio_routing()
                 needs_idle_sync = True
 
@@ -2361,22 +2949,64 @@ class CarlaBackend:
             self._wait_for_engine_idle(0.05)
 
         with self._lock:
-            if self.host is None or self._plugin_id is None:
+            if self.host is None:
                 raise CarlaHostError("No plugin hosted")
             note = int(note)
             vel = max(0.0, min(1.0, float(velocity)))
             value = int(round(vel * 127.0))
             value = max(0, min(127, value))
 
-            # Logging disabled for performance
-            # logging.info(
-            #     f"🎹 Sending MIDI: note={note} (C4=60), velocity={value}, "
-            #     f"audio_routed={self._audio_routed}, midi_routed={self._midi_routed}"
-            # )
-            self.host.send_midi_note(self._plugin_id, 0, note, value)
-            # logging.info(f"✓ MIDI sent successfully for note {note}")
+            if logging.getLogger(__name__).isEnabledFor(logging.DEBUG):
+                target_names = []
+                for target_id in targets_to_send:
+                    slot = self._get_slot_by_plugin_id(target_id)
+                    if slot:
+                        target_names.append(f"{slot.name} (branch={slot.branch_start}, forced={slot.forced_instrument})")
+                logging.getLogger(__name__).debug(
+                    "Sending MIDI note %s to targets: %s",
+                    note,
+                    ", ".join(target_names) or "none",
+                )
+            for target_id in targets_to_send:
+                try:
+                    self.host.send_midi_note(target_id, 0, note, value)
+                except Exception as exc:
+                    logging.warning("Failed to send MIDI note to plugin %s: %s", target_id, exc)
 
         self._wait_for_engine_idle(0.1)
+
+    def send_midi_direct(self, note: int, velocity: float) -> None:
+        """Fast-path MIDI dispatch that skips idle waits for low latency."""
+        with self._lock:
+            if self.host is None:
+                raise CarlaHostError("No plugin hosted")
+            targets = list(self._instrument_plugin_ids)
+            if not targets:
+                fallback = self._instrument_plugin_id or self._plugin_id
+                if fallback is not None:
+                    targets = [fallback]
+            if not targets:
+                raise CarlaHostError("Hosted plugins do not accept MIDI input")
+            midi_value = int(max(0.0, min(1.0, float(velocity))) * 127.0)
+            midi_value = max(0, min(127, midi_value))
+            note = int(note)
+            logger = logging.getLogger(__name__)
+            descriptions: list[str] = []
+            for target_id in targets:
+                slot = self._get_slot_by_plugin_id(target_id)
+                if slot is None:
+                    continue
+                if not (slot.supports_midi or slot.forced_instrument or slot.branch_start):
+                    continue
+                descriptions.append(
+                    f"{slot.name} (branch={slot.branch_start}, forced={slot.forced_instrument})"
+                )
+                try:
+                    self.host.send_midi_note(target_id, 0, note, midi_value)
+                except Exception as exc:
+                    logger.warning("Fast MIDI send failed for plugin %s: %s", target_id, exc)
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug("Fast MIDI note %s -> %s", note, ", ".join(descriptions) or "none")
 
     def note_on(self, note: int, velocity: float = 0.8) -> None:
         with self._lock:
@@ -2514,6 +3144,10 @@ class CarlaBackend:
         if self._plugin_window_hwnd is None and self._ui_visible:
             return self._detect_plugin_window(attempts=attempts)
         return self._plugin_window_hwnd
+
+    def list_process_windows(self) -> list[tuple[int, str]]:
+        """Return visible top-level windows owned by this Carla process (Windows-only)."""
+        return self._enumerate_process_windows()
 
     def _restore_plugin_window_parent(self) -> None:
         if not self._windows_available():
@@ -2656,16 +3290,17 @@ class CarlaBackend:
             return getattr(self.module, "PLUGIN_VST2", 5)
         return None
 
-    def _collect_parameters(self) -> list[CarlaParameterSnapshot]:
+    def _collect_parameters(self, plugin_id: int | None = None) -> list[CarlaParameterSnapshot]:
         assert self.host is not None
-        if self._plugin_id is None:
+        target_id = self._plugin_id if plugin_id is None else plugin_id
+        if target_id is None:
             return []
-        count = int(self.host.get_parameter_count(self._plugin_id))
+        count = int(self.host.get_parameter_count(target_id))
         results: list[CarlaParameterSnapshot] = []
         for index in range(count):
-            info = self.host.get_parameter_info(self._plugin_id, index)
-            ranges = self.host.get_parameter_ranges(self._plugin_id, index)
-            value = float(self.host.get_current_parameter_value(self._plugin_id, index))
+            info = self.host.get_parameter_info(target_id, index)
+            ranges = self.host.get_parameter_ranges(target_id, index)
+            value = float(self.host.get_current_parameter_value(target_id, index))
             name = info.get("name") or f"Parameter {index}"
             display_name = info.get("symbol") or name
             units = info.get("unit") or ""
@@ -2685,50 +3320,98 @@ class CarlaBackend:
             )
         return results
 
-    def _resolve_parameter_identifier(self, identifier: int | str) -> int:
+    def _apply_parameter_map(self, plugin_id: int, mappings: dict[str, float]) -> None:
+        if self.host is None or not mappings:
+            return
+        snapshots = self._collect_parameters(plugin_id)
+        for key, value in mappings.items():
+            try:
+                param_id = self._resolve_parameter_identifier(key, parameters=snapshots)
+            except CarlaHostError:
+                continue
+            try:
+                self.host.set_parameter_value(plugin_id, param_id, float(value))
+            except Exception as exc:
+                self.warnings.append(
+                    f"Failed to set parameter {key} on plugin {plugin_id}: {exc}"
+                )
+        if self._plugin_id == plugin_id:
+            self._parameters = self._collect_parameters(plugin_id)
+
+    def _resolve_parameter_identifier(
+        self,
+        identifier: int | str,
+        *,
+        parameters: list[CarlaParameterSnapshot] | None = None,
+    ) -> int:
+        params = parameters if parameters is not None else self._parameters
         if isinstance(identifier, int):
             return identifier
         try:
             index = int(identifier)
         except (TypeError, ValueError):
             index = None
-        for param in self._parameters:
+        for param in params:
             if identifier == param.name or identifier == param.display_name:
                 return param.identifier
             if index is not None and param.identifier == index:
                 return param.identifier
         raise CarlaHostError(f"Unknown parameter '{identifier}'")
 
-    def _plugin_payload(self, include_parameters: bool = True) -> dict[str, Any]:
+    def _plugin_payload(
+        self,
+        include_parameters: bool = True,
+        *,
+        plugin_id: int | None = None,
+    ) -> dict[str, Any]:
         assert self.host is not None
-        if self._plugin_id is None or self._plugin_path is None:
+        target_id = self._plugin_id if plugin_id is None else plugin_id
+        if target_id is None:
             raise CarlaHostError("No plugin hosted")
-        info = self.host.get_plugin_info(self._plugin_id)
+        slot = self._get_slot_by_plugin_id(target_id)
+        path = slot.path if slot else self._plugin_path
+        if path is None:
+            raise CarlaHostError("Unknown plugin path")
+        info = self.host.get_plugin_info(target_id)
         metadata = {
-            "name": info.get("name") or self._plugin_path.stem,
+            "name": info.get("name") or path.stem,
             "vendor": info.get("maker") or "",
             "version": "",
             "category": self._PLUGIN_CATEGORY_LABELS.get(info.get("category", 0), "Unknown"),
             "bundle_identifier": None,
-            "parameters": [param.to_metadata_entry() for param in self._parameters] if include_parameters else [],
+            "parameters": (
+                [param.to_metadata_entry() for param in self._parameters]
+                if include_parameters and target_id == self._plugin_id
+                else []
+            ),
             "format": self._PLUGIN_TYPE_LABELS.get(info.get("type", 0), "Unknown"),
         }
         payload = {
-            "path": str(self._plugin_path),
+            "path": str(path),
             "metadata": metadata,
-            "parameters": [param.to_status_entry() for param in self._parameters] if include_parameters else [],
+            "parameters": (
+                [param.to_status_entry() for param in self._parameters]
+                if include_parameters and target_id == self._plugin_id
+                else []
+            ),
             "capabilities": {
-                "instrument": self._plugin_is_instrument(),
-                "editor": self._plugin_supports_custom_ui() and HAS_QT,
-                "midi": self._supports_midi,
+                "instrument": self._plugin_is_instrument(target_id),
+                "editor": self._plugin_supports_custom_ui(target_id) and HAS_QT,
+                "midi": bool(slot.supports_midi if slot else self._supports_midi),
             },
         }
         return payload
 
-    def _build_descriptor(self, include_parameters: bool = True) -> dict[str, Any]:
-        plugin = self._plugin_payload()
+    def _build_descriptor(
+        self,
+        include_parameters: bool = True,
+        *,
+        plugin_id: int | None = None,
+    ) -> dict[str, Any]:
+        plugin = self._plugin_payload(include_parameters=include_parameters, plugin_id=plugin_id)
         controls = []
-        for param in self._parameters:
+        params = self._parameters if (plugin_id is None or plugin_id == self._plugin_id) else self._collect_parameters(plugin_id)
+        for param in params:
             control = {
                 "id": param.identifier,
                 "name": param.display_name or param.name,
@@ -2743,46 +3426,65 @@ class CarlaBackend:
             controls.append(control)
 
         # Ensure MIDI capability is properly detected so the keyboard can show.
-        is_instrument = self._plugin_is_instrument()
-        accepts_midi = self._plugin_accepts_midi()
-        supports_midi = self._supports_midi or accepts_midi
+        target_id = self._plugin_id if plugin_id is None else plugin_id
+        is_instrument = self._plugin_is_instrument(target_id)
+        accepts_midi = self._plugin_accepts_midi(target_id)
+        supports_midi = accepts_midi
 
         descriptor = {
             "title": plugin["metadata"].get("name", plugin.get("path")),
             "subtitle": plugin["metadata"].get("vendor", ""),
             "keyboard": {"min_note": 0, "max_note": 96},
             "panels": [{"name": "Parameters", "controls": controls}],
-            "parameters": [param.to_status_entry() for param in self._parameters] if include_parameters else [],
+            "parameters": (
+                [param.to_status_entry() for param in params]
+                if include_parameters
+                else []
+            ),
             "plugin": plugin,
             "capabilities": {
                 "instrument": is_instrument,
-                "editor": self._plugin_supports_custom_ui() and HAS_QT,
+                "editor": self._plugin_supports_custom_ui(target_id) and HAS_QT,
                 "midi": supports_midi,
             },
         }
         return descriptor
 
-    def _plugin_is_instrument(self) -> bool:
-        if self.host is None or self._plugin_id is None:
+    def _plugin_is_instrument(self, plugin_id: int | None = None) -> bool:
+        target_id = self._plugin_id if plugin_id is None else plugin_id
+        if self.host is None or target_id is None:
             return False
-        info = self.host.get_plugin_info(self._plugin_id)
+        info = self.host.get_plugin_info(target_id)
         hints = int(info.get("hints", 0))
         flag = getattr(self.module, "PLUGIN_IS_SYNTH", 0x004) if self.module else 0x004
         return bool(hints & flag)
 
-    def _plugin_supports_custom_ui(self) -> bool:
-        if self.host is None or self._plugin_id is None:
+    def _plugin_supports_custom_ui(self, plugin_id: int | None = None) -> bool:
+        target_id = self._plugin_id if plugin_id is None else plugin_id
+        if self.host is None or target_id is None:
             return False
-        info = self.host.get_plugin_info(self._plugin_id)
+        info = self.host.get_plugin_info(target_id)
         hints = int(info.get("hints", 0))
         flag = getattr(self.module, "PLUGIN_HAS_CUSTOM_UI", 0x008) if self.module else 0x008
         return bool(hints & flag)
 
-    def _plugin_accepts_midi(self) -> bool:
-        if self.host is None or self._plugin_id is None:
+    def _plugin_has_audio_inputs(self, plugin_id: int) -> bool:
+        with self._patch_lock:
+            group = self._plugin_patch_groups.get(plugin_id)
+            if group is None:
+                return True
+            ports = self._patch_ports.get(group, {})
+            for pdata in ports.values():
+                if pdata.get("is_input") and pdata.get("is_audio"):
+                    return True
+        return False
+
+    def _plugin_accepts_midi(self, plugin_id: int | None = None) -> bool:
+        target_id = self._plugin_id if plugin_id is None else plugin_id
+        if self.host is None or target_id is None:
             return False
         try:
-            info = self.host.get_midi_port_count_info(self._plugin_id)
+            info = self.host.get_midi_port_count_info(target_id)
         except Exception:
             return False
         ins = info.get('ins') if isinstance(info, dict) else None
@@ -2865,11 +3567,20 @@ class CarlaBackend:
             self._reset_plugin_window_snapshot()
 
     def _snapshot_state(self) -> dict[str, Any] | None:
-        if self._plugin_id is None or self._plugin_path is None:
+        if not self._chain:
             return None
+        chain_state: list[dict[str, Any]] = []
+        for slot in self._chain:
+            params = self._collect_parameters(slot.plugin_id)
+            chain_state.append(
+                {
+                    "path": str(slot.path),
+                    "parameters": {param.identifier: param.value for param in params},
+                }
+            )
         return {
-            "path": str(self._plugin_path),
-            "parameters": {param.identifier: param.value for param in self._parameters},
+            "chain": chain_state,
+            "active_index": self._active_slot_index or 0,
             "ui_visible": self._ui_visible,
         }
 
@@ -2877,8 +3588,15 @@ class CarlaBackend:
         if state is None:
             self.unload()
             return
+        chain_entries = state.get("chain") or []
+        if not chain_entries:
+            self.unload()
+            return
+        paths = [entry.get("path") for entry in chain_entries]
+        params = [entry.get("parameters") for entry in chain_entries]
+        focus_index = int(state.get("active_index", 0) or 0)
         try:
-            self.load_plugin(state["path"], state.get("parameters"), show_ui=bool(state.get("ui_visible")))
+            self.load_chain(paths, params, focus_index=focus_index, show_ui=bool(state.get("ui_visible")))
         except Exception as exc:
             self.warnings.append(f"Failed to restore Carla plugin state: {exc}")
 
@@ -2896,7 +3614,7 @@ class CarlaVSTHost:
         buffer_size: int | None = None,
         client_name: str | None = None,
     ) -> None:
-        self.base_dir = Path(base_dir) if base_dir else Path(__file__).resolve().parents[2]
+        self.base_dir = Path(base_dir) if base_dir else Path(__file__).resolve().parents[3]
         self._backend = CarlaBackend(
             base_dir=self.base_dir,
             preferred_drivers=preferred_drivers,
@@ -2966,6 +3684,23 @@ class CarlaVSTHost:
                 raise CarlaHostError(f"Unsupported plugin format: {path.suffix}")
             return self._backend.load_plugin(path, parameters, show_ui=show_ui)
 
+    def load_chain(
+        self,
+        plugin_paths: Sequence[str | Path | dict[str, Any]],
+        parameters: Sequence[dict[str, float] | None] | None = None,
+        *,
+        focus_index: int = 0,
+        show_ui: bool = True,
+    ) -> dict[str, Any]:
+        with self._lock:
+            self.ensure_available()
+            return self._backend.load_chain(
+                plugin_paths,
+                parameters,
+                focus_index=focus_index,
+                show_ui=show_ui,
+            )
+
     def unload(self) -> None:
         with self._lock:
             self._backend.unload()
@@ -3002,6 +3737,11 @@ class CarlaVSTHost:
         with self._lock:
             self.ensure_available()
             self._backend.note_off(int(note))
+
+    def send_midi_direct(self, note: int, velocity: float) -> None:
+        with self._lock:
+            self.ensure_available()
+            self._backend.send_midi_direct(int(note), float(velocity))
 
     def describe_ui(
         self,
@@ -3042,6 +3782,15 @@ class CarlaVSTHost:
         with self._lock:
             self.ensure_available()
             return self._backend.hide_ui()
+
+    def focus_plugin(self, index: int, *, show_ui: bool = False) -> dict[str, Any]:
+        with self._lock:
+            self.ensure_available()
+            return self._backend.focus_plugin(index, show_ui=show_ui)
+
+    def list_process_windows(self) -> list[tuple[int, str]]:
+        with self._lock:
+            return self._backend.list_process_windows()
 
 
 _exports = ["CarlaVSTHost", "CarlaHostError", "HAS_QT", "HAS_PYQT5"]

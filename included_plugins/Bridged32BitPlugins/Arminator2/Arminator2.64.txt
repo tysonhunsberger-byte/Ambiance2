@@ -1,0 +1,6 @@
+"C:\Ambiance2\included_plugins\32BitPlugins\Arminator2\Arminator2.dll"
+ID: 1380796750
+flags: effFlagsHasEditor
+flags: effFlagsIsSynth
+flags: effFlagsCanReplacing
+flags: effFlagsProgramChunks
