@@ -3556,7 +3556,7 @@ const WindowStyleOverrides = {};
                         try {
                             await ensureBlocksAudio();
                             updateBlocksStatus("Audio engine running");
-                        } catch {
+                        } catch (error) {
                             return;
                         }
                     }
@@ -5386,17 +5386,17 @@ const WindowStyleOverrides = {};
                 return null;
             }
         }
-        function updateStrudelNavButtons() {
-            const backBtn = document.getElementById("strudelBack");
-            const forwardBtn = document.getElementById("strudelForward");
-            if (backBtn) backBtn.disabled = StrudelHistory.index <= 0;
-            if (forwardBtn) forwardBtn.disabled = StrudelHistory.index < 0 || StrudelHistory.index >= StrudelHistory.entries.length - 1;
+            } catch (error) {
+                return url;
+            }
         }
-        function requestStrudelUrl(url) {
-            if (!url) return;
-            if (Bridges.strudel) {
-                Bridges.strudel.open();
-                Bridges.strudel.navigate(url);
+            } catch (error) {
+                return null;
+            }
+        }
+                } catch (error) {
+                    return;
+                }
             } else {
                 const frame = document.getElementById("strudelFrame");
                 if (frame) frame.src = buildProxyUrl(url);
@@ -5577,12 +5577,12 @@ const WindowStyleOverrides = {};
             if (!Bridges.pluginStudio) return;
             const existing = PluginState.chain.find(entry => entry.path === path);
             if (existing && typeof existing.index === "number") {
-                if (activate) {
-                    Bridges.pluginStudio.loadChainIndex(existing.index);
-                } else {
-                    Bridges.pluginStudio.focusChainIndex && Bridges.pluginStudio.focusChainIndex(existing.index);
-                }
-                PendingPluginPath = null;
+                    } catch (error) {
+                        data = {};
+                    }
+                    } catch (error) {
+                        data = {};
+                    }
                 return;
             }
             PendingPluginPath = activate ? path : null;
@@ -7248,10 +7248,10 @@ const WindowStyleOverrides = {};
             win.classList.add("maximized");
             applyMaximizedBounds(win);
         }
-        function restoreWindow(win) {
-            if (!win.classList.contains("maximized")) return;
-            win.classList.remove("maximized");
-            if (win.dataset.prevLeft) win.style.left = win.dataset.prevLeft;
+            } catch (error) {
+                return null;
+            }
+        }
             if (win.dataset.prevTop) win.style.top = win.dataset.prevTop;
             if (win.dataset.prevWidth) win.style.width = win.dataset.prevWidth;
             if (win.dataset.prevHeight) win.style.height = win.dataset.prevHeight;
