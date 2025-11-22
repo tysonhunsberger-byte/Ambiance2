@@ -1,2 +1,0 @@
-jackbridge_port_get_buffer
-jackbridge_transport_query

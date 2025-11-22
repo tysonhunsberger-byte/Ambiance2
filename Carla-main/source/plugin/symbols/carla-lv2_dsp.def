@@ -1,3 +1,0 @@
-LIBRARY     CarlaLV2
-DESCRIPTION 'Carla LV2 Plugin'
-EXPORTS lv2_descriptor
