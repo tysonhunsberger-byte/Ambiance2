@@ -258,7 +258,7 @@ ensure_carla_win64(_ROOT)
 
 # Plugin rack manager (required)
 try:
-from ambiance.integrations.plugins import PluginRackManager  # type: ignore
+    from ambiance.integrations.plugins import PluginRackManager  # type: ignore
 except Exception as _e:  # pragma: no cover
     PluginRackManager = None  # type: ignore
     _PLUGINS_IMPORT_ERROR = str(_e)
