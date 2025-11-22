@@ -30,6 +30,7 @@ MODALYS_FILENAMES = {
 }
 
 LANES = ("A", "B")
+IGNORED_DIRECTORIES = {"32bitplugins"}
 
 
 @dataclass
@@ -120,6 +121,11 @@ class PluginRackManager:
                     continue
                 for dirpath, dirnames, filenames in os.walk(root):
                     current = Path(dirpath)
+                    dirnames[:] = [
+                        dirname
+                        for dirname in dirnames
+                        if dirname.lower() not in IGNORED_DIRECTORIES
+                    ]
                     for dirname in list(dirnames):
                         candidate = current / dirname
                         if self._looks_like_plugin(candidate):

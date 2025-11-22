@@ -28,6 +28,139 @@ TEXTUAL_MIME_PREFIXES = (
     "application/xml",
 )
 
+BRIDGE_SNIPPET = """
+<script id="ambiance-strudel-bridge">
+(function () {
+  if (window.__ambianceStrudelBridge) {
+    return;
+  }
+  window.__ambianceStrudelBridge = true;
+  const pending = [];
+  let flushTimer = null;
+  const flushPending = (mirror) => {
+    while (pending.length) {
+      const next = pending.shift();
+      if (typeof next === "function") {
+        try {
+          next(mirror);
+        } catch (err) {
+          console.error("[Ambiance] Strudel bridge callback failed", err);
+        }
+      }
+    }
+  };
+  const enqueue = (fn) => {
+    if (typeof fn !== "function") return;
+    pending.push(fn);
+    scheduleFlush();
+  };
+  const withMirror = (callback) => {
+    const mirror = window.strudelMirror;
+    if (mirror) {
+      callback(mirror);
+      return true;
+    }
+    return false;
+  };
+  const scheduleFlush = () => {
+    if (flushTimer !== null) {
+      return;
+    }
+    const tryFlush = () => {
+      if (pending.length === 0) {
+        clearInterval(flushTimer);
+        flushTimer = null;
+        return;
+      }
+      if (withMirror((mirror) => flushPending(mirror))) {
+        clearInterval(flushTimer);
+        flushTimer = null;
+      }
+    };
+    flushTimer = window.setInterval(tryFlush, 150);
+    tryFlush();
+    window.addEventListener(
+      "load",
+      () => {
+        tryFlush();
+      },
+      { once: true }
+    );
+  };
+  const handleAction = (mirror, action) => {
+    const repl = mirror && mirror.repl;
+    switch (action) {
+      case "play":
+      case "toggle":
+        if (typeof mirror.toggle === "function") {
+          mirror.toggle();
+        } else if (repl && typeof repl.toggle === "function") {
+          repl.toggle();
+        }
+        break;
+      case "stop":
+        if (repl && typeof repl.stop === "function") {
+          repl.stop();
+        } else if (typeof mirror.stop === "function") {
+          mirror.stop();
+        } else if (typeof mirror.toggle === "function") {
+          mirror.toggle();
+        }
+        break;
+      case "update":
+      case "evaluate":
+        if (typeof mirror.evaluate === "function") {
+          mirror.evaluate();
+        } else if (repl && typeof repl.evaluate === "function") {
+          repl.evaluate(mirror.getCode ? mirror.getCode() : undefined);
+        }
+        break;
+      default:
+        break;
+    }
+  };
+  const messageHandler = (event) => {
+    const data = event && event.data;
+    if (!data || typeof data !== "object") {
+      return;
+    }
+    if (data.type === "ambiance-strudel-action") {
+      const action = String(data.action || "").toLowerCase();
+      if (!action) {
+        return;
+      }
+      enqueue((mirror) => handleAction(mirror, action));
+    } else if (data.type === "ambiance-strudel-set-code" && typeof data.code === "string") {
+      enqueue((mirror) => {
+        try {
+          mirror.setCode && mirror.setCode(data.code);
+          if (data.autoPlay === true) {
+            if (typeof mirror.evaluate === "function") {
+              mirror.evaluate();
+            } else if (mirror.repl && typeof mirror.repl.evaluate === "function") {
+              mirror.repl.evaluate(mirror.getCode ? mirror.getCode() : undefined);
+            }
+          }
+        } catch (err) {
+          console.error("[Ambiance] Failed to sync code with Strudel", err);
+        }
+      });
+    }
+  };
+  window.addEventListener("message", messageHandler);
+  if (document.readyState === "complete" || document.readyState === "interactive") {
+    scheduleFlush();
+  } else {
+    window.addEventListener(
+      "DOMContentLoaded",
+      () => scheduleFlush(),
+      { once: true }
+    );
+  }
+})();
+</script>
+"""
+
 
 class _ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True
@@ -71,6 +204,8 @@ class StrudelProxyRequestHandler(SimpleHTTPRequestHandler):
             data = b""
             if not head_only:
                 data = candidate.read_bytes()
+                if self._is_textual(ctype):
+                    data = self._maybe_inject_bridge(data, ctype)
             self.send_response(HTTPStatus.OK)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(data)))
@@ -140,6 +275,8 @@ class StrudelProxyRequestHandler(SimpleHTTPRequestHandler):
     def _write_remote_response(self, status: int, headers, body: bytes) -> None:
         self.send_response(status)
         content_type = headers.get("Content-Type", "application/octet-stream") if headers else "application/octet-stream"
+        if body and self._is_textual(content_type):
+            body = self._maybe_inject_bridge(body, content_type)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         cache_control = headers.get("Cache-Control") if headers else None
@@ -175,6 +312,26 @@ class StrudelProxyRequestHandler(SimpleHTTPRequestHandler):
     @staticmethod
     def _is_textual(content_type: str) -> bool:
         return any(content_type.startswith(prefix) for prefix in TEXTUAL_MIME_PREFIXES)
+
+    def _maybe_inject_bridge(self, body: bytes, content_type: str) -> bytes:
+        """Inject the Ambiance bridge snippet into Strudel HTML responses."""
+        if not body or "html" not in content_type.lower():
+            return body
+        try:
+            html = body.decode("utf-8")
+        except UnicodeDecodeError:
+            return body
+        marker = "ambiance-strudel-bridge"
+        if marker in html:
+            return body
+        lower = html.lower()
+        needle = "</body>"
+        index = lower.rfind(needle)
+        if index == -1:
+            html = f"{html}{BRIDGE_SNIPPET}"
+        else:
+            html = f"{html[:index]}{BRIDGE_SNIPPET}{html[index:]}"
+        return html.encode("utf-8")
 
 
 class StrudelProxy:

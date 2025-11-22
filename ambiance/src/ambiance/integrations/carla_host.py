@@ -1527,6 +1527,8 @@ class CarlaBackend:
         download_root.mkdir(parents=True, exist_ok=True)
 
         for release in CARLA_WIN_RELEASES:
+            if "win32" in release.get("name", "").lower():
+                continue
             release_dir = download_root / release["name"]
             target = release_dir / "Carla"
 
@@ -1912,10 +1914,20 @@ class CarlaBackend:
     def warm_up_engine(self) -> None:
         """Start the audio engine ahead of time so first plugin loads faster."""
         with self._lock:
-            self.preload_jack_driver()
+            if self._should_preload_jack():
+                self.preload_jack_driver()
             if not self._engine_running:
                 self._ensure_engine()
             self._wait_for_engine_idle(0.5)
+
+    def _should_preload_jack(self) -> bool:
+        """Return True when JACK should be preloaded (explicitly requested)."""
+        if os.environ.get("AMB_USE_JACK") == "1":
+            return True
+        if getattr(self, "_forced_driver", None) and self._forced_driver.lower() == "jack":
+            return True
+        user_pref = getattr(self, "_user_preferred_drivers", [])
+        return any(driver.lower() == "jack" for driver in user_pref if isinstance(driver, str))
 
     def _ensure_engine(self) -> None:
         if not self.available or self.host is None:

@@ -41,6 +41,7 @@ if %errorlevel% equ 0 (
 
 echo.
 
+
 REM Check for PyQt6 + QtPy shim
 %PYTHON_CMD% -c "import PyQt6" >nul 2>&1
 if %errorlevel% neq 0 (
@@ -60,11 +61,15 @@ if %errorlevel% neq 0 (
     timeout /t 3 >nul
 )
 
+call :ensure_node_dependencies
+call :ensure_carla_win64
+
 REM Run the improved version
 echo.
 echo Launching Ambiance Improved...
 set "SCRIPT_ROOT=%~dp0"
 set "AMB_PLUGIN_HOST=carla"
+set "AMB_SC_ADDON=1"
 set "SCLANG_PATH=C:\Program Files\SuperCollider-3.13.0\sclang.exe"
 set "SCSYNTH_PATH=C:\Program Files\SuperCollider-3.13.0\scsynth.exe"
 set "PSHELL=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
@@ -144,3 +149,31 @@ echo Stopping SuperCollider processes...
 taskkill /IM sclang.exe /F >nul 2>&1
 taskkill /IM scsynth.exe /F >nul 2>&1
 exit /b
+
+:ensure_node_dependencies
+set "PROJECT_ROOT=C:\Ambiance2"
+set "CSS_SENTINEL=%PROJECT_ROOT%\node_modules\xp.css\dist\XP.css"
+if exist "%CSS_SENTINEL%" goto ensure_node_dependencies_end
+if not exist "%PROJECT_ROOT%\package.json" (
+    echo WARNING: package.json missing; cannot install vendor CSS automatically.
+    goto ensure_node_dependencies_end
+)
+where npm >nul 2>&1
+if errorlevel 1 (
+    echo WARNING: npm not found on PATH; CSS themes may not load.
+    goto ensure_node_dependencies_end
+)
+echo Ensuring vendor CSS and Node helpers are installed...
+pushd "%PROJECT_ROOT%"
+npm install --no-audit --no-fund
+if errorlevel 1 (
+    echo WARNING: npm install failed; desktop themes may be incomplete.
+)
+popd
+:ensure_node_dependencies_end
+goto :EOF
+
+:ensure_carla_win64
+set "PROJECT_ROOT=C:\Ambiance2"
+%PYTHON_CMD% -c "import sys; from pathlib import Path; sys.path.insert(0, r'C:\Ambiance2\ambiance\src'); from ambiance.utils.dependencies import ensure_carla_win64; ensure_carla_win64(Path(r'C:\Ambiance2'))"
+goto :EOF

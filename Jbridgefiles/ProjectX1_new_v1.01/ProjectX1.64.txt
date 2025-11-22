@@ -1,6 +1,0 @@
-"C:\Ambiance2\included_plugins\32BitPlugins\ProjectX1_new_v1.01\ProjectX1.dll"
-ID: 875639859
-flags: effFlagsHasEditor
-flags: effFlagsIsSynth
-flags: effFlagsCanReplacing
-flags: effFlagsProgramChunks

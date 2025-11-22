@@ -76,6 +76,8 @@ def sync_strudel(
         if install:
             _run(pnpm_cmd + ["install"], cwd=repo_root)
         if build:
+            # Ensure doc.json is generated before bundling the website.
+            _run(pnpm_cmd + ["run", "jsdoc-json"], cwd=repo_root)
             _run(pnpm_cmd + ["--filter", PNPM_FILTER, "build"], cwd=repo_root)
         dist_src = repo_root / "website" / "dist"
         if not dist_src.exists():
@@ -154,15 +156,35 @@ def _prepare_pnpm_command(raw: str) -> list[str]:
         parts[0] = str(first_candidate)
         return parts
 
-    if shutil.which(parts[0]) is None:
-        if parts[0] == "pnpm" and shutil.which("corepack"):
-            print("[sync-strudel] 'pnpm' not found on PATH; using 'corepack pnpm'.")
-            parts = ["corepack", "pnpm"] + parts[1:]
-        else:
-            raise FileNotFoundError(
-                f"Unable to locate '{parts[0]}' on PATH. "
-                "Install pnpm or pass --pnpm \"C:/path/to/pnpm.exe\" (or \"corepack pnpm\")."
-            )
+    def _resolve_windows_shim(cmd: str) -> str | None:
+        if os.name != "nt":
+            return None
+        pathext = os.environ.get("PATHEXT", "").split(";")
+        possible = [f"{cmd}{ext.lower()}" for ext in pathext if ext]
+        for suffix in [".cmd", ".bat", ".exe"]:
+            possible.append(cmd + suffix)
+        for name in possible:
+            path = shutil.which(name)
+            if path:
+                return path
+        return None
+
+    resolved_cmd = shutil.which(parts[0])
+    if not resolved_cmd:
+        resolved_cmd = _resolve_windows_shim(parts[0])
+
+    if resolved_cmd:
+        parts[0] = resolved_cmd
+        return parts
+
+    if parts[0] == "pnpm" and shutil.which("corepack"):
+        print("[sync-strudel] 'pnpm' not found on PATH; using 'corepack pnpm'.")
+        return ["corepack", "pnpm"] + parts[1:]
+
+    raise FileNotFoundError(
+        f"Unable to locate '{parts[0]}' on PATH. "
+        "Install pnpm or pass --pnpm \"C:/path/to/pnpm.exe\" (or \"corepack pnpm\")."
+    )
     return parts
 
 

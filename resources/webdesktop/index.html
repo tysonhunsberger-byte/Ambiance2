@@ -22,6 +22,18 @@
             --taskbar-height: 40px;
             --toolbar-height: 38px;
             --start-menu-width: 380px;
+            --start-menu-bg: rgba(3, 8, 18, 0.95);
+            --start-menu-color: #f7fbff;
+            --start-menu-border: rgba(255, 255, 255, 0.15);
+            --start-menu-shadow: 0 30px 70px rgba(3, 6, 12, 0.7);
+            --start-menu-section-bg: rgba(255, 255, 255, 0.04);
+            --start-menu-section-border: rgba(255, 255, 255, 0.08);
+            --start-menu-heading-color: rgba(255, 255, 255, 0.75);
+            --start-menu-label-color: #f7fbff;
+            --start-menu-small-color: rgba(255, 255, 255, 0.6);
+            --start-menu-input-bg: rgba(0, 0, 0, 0.35);
+            --start-menu-input-border: rgba(255, 255, 255, 0.2);
+            --start-menu-input-color: #f7fbff;
         }
         body {
             margin: 0;
@@ -61,7 +73,9 @@
             resize: both;
             min-width: 320px;
             min-height: 220px;
-            overflow: hidden;
+            overflow-x: hidden;
+            overflow-y: auto;
+            max-height: calc(100vh - var(--toolbar-height) - 12px);
             border-radius: 14px;
             background: var(--window-bg, var(--surface-bg, rgba(255, 255, 255, 0.98)));
             box-shadow: 0 18px 45px rgba(9, 14, 31, 0.35);
@@ -82,7 +96,6 @@
             height: 520px;
             min-height: 520px;
             max-height: 520px;
-            overflow: hidden;
             overflow-y: auto;
         }
         .window[data-window="sequencer"] .window-content {
@@ -92,7 +105,7 @@
             min-height: 0;
             display: flex;
             flex-direction: column;
-            overflow: hidden;
+            overflow-y: auto;
         }
         .window[data-window="keyboard"] {
             left: 30px;
@@ -181,12 +194,14 @@
         .window-body {
             flex: 1;
             display: flex;
-            overflow: auto;
+            overflow-x: hidden;
+            overflow-y: auto;
             min-height: 0;
         }
         .window[data-window="studio"] .window-body,
         .window[data-window="sequencer"] .window-body {
-            overflow: hidden;
+            overflow-x: hidden;
+            overflow-y: auto;
         }
         .window[data-window="strudel"] .window-body {
             overflow: hidden;
@@ -198,12 +213,14 @@
             display: flex;
             flex-direction: column;
             gap: 12px;
-            overflow: hidden;
+            overflow-x: hidden;
+            overflow-y: auto;
             min-height: 0;
         }
         .window[data-window="studio"] .window-body {
             max-height: calc(100vh - var(--toolbar-height) - var(--taskbar-height) - 30px);
-            overflow: hidden;
+            overflow-x: hidden;
+            overflow-y: auto;
         }
         .window[data-window="blocks"] {
             left: 70px;
@@ -1450,11 +1467,11 @@
             max-height: calc(100vh - var(--toolbar-height) - 60px);
             display: flex;
             flex-direction: column;
-            background: rgba(3, 8, 18, 0.95);
-            color: #f7fbff;
+            background: var(--start-menu-bg);
+            color: var(--start-menu-color);
             border-radius: 14px;
-            box-shadow: 0 30px 70px rgba(3, 6, 12, 0.7);
-            border: 1px solid rgba(255, 255, 255, 0.15);
+            box-shadow: var(--start-menu-shadow);
+            border: 1px solid var(--start-menu-border);
             backdrop-filter: blur(16px);
             opacity: 0;
             transform: translateY(12px) scale(0.98);
@@ -1462,17 +1479,179 @@
             transition: opacity 160ms ease, transform 160ms ease;
             z-index: 40;
         }
+        body[data-theme="win7"] #startMenu {
+            background: linear-gradient(180deg, rgba(34, 52, 84, 0.98), rgba(10, 18, 32, 0.95));
+            color: #eaf1ff;
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            box-shadow: 0 30px 70px rgba(5, 9, 16, 0.65);
+        }
+        body[data-theme="win7"] .start-menu-header {
+            background: linear-gradient(180deg, rgba(52, 82, 134, 0.95), rgba(24, 38, 62, 0.92));
+            border-bottom: 1px solid rgba(255, 255, 255, 0.18);
+        }
+        body[data-theme="win7"] .start-menu-body section {
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(20, 34, 58, 0.35));
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: inset 0 1px rgba(255, 255, 255, 0.15);
+        }
+        body[data-theme="win7"] .start-menu-body h4,
+        body[data-theme="win7"] .start-menu-body label,
+        body[data-theme="win7"] .start-menu-body small {
+            color: rgba(234, 241, 255, 0.85);
+        }
+        body[data-theme="win7"] .start-menu-body select,
+        body[data-theme="win7"] .start-menu-body input[type="color"],
+        body[data-theme="win7"] .start-menu-body input[type="url"],
+        body[data-theme="win7"] .start-menu-body input[type="text"],
+        body[data-theme="win7"] .start-menu-body input[type="file"] {
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(210, 224, 249, 0.95));
+            border: 1px solid rgba(83, 120, 176, 0.85);
+            color: #071631;
+            box-shadow: inset 0 1px rgba(255, 255, 255, 0.9), 0 1px 1px rgba(0, 0, 0, 0.25);
+            appearance: none;
+            background-image: none !important;
+        }
+        body[data-theme="win7"] .start-menu-body input[type="color"] {
+            background: #ffffff;
+        }
+        body[data-theme="winxp"] #startMenu {
+            background: linear-gradient(180deg, #fcfeff, #cfe5ff);
+            color: #0b1e3d;
+            border: 1px solid #7aa4d7;
+            box-shadow: 0 24px 40px rgba(9, 20, 41, 0.35);
+        }
+        body[data-theme="winxp"] .start-menu-header {
+            background: linear-gradient(180deg, #93c5ff, #4a7ecc);
+            color: #083061;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.65);
+        }
+        body[data-theme="winxp"] .start-menu-body section {
+            background: #fdfefe;
+            border: 1px solid #9fc4f7;
+            box-shadow: inset 0 1px #ffffff, inset 0 -1px rgba(136, 178, 233, 0.5);
+        }
+        body[data-theme="winxp"] .start-menu-body h4,
+        body[data-theme="winxp"] .start-menu-body label,
+        body[data-theme="winxp"] .start-menu-body small {
+            color: #0d2148;
+        }
+        body[data-theme="winxp"] .start-menu-body select,
+        body[data-theme="winxp"] .start-menu-body input[type="color"],
+        body[data-theme="winxp"] .start-menu-body input[type="url"],
+        body[data-theme="winxp"] .start-menu-body input[type="text"],
+        body[data-theme="winxp"] .start-menu-body input[type="file"] {
+            background: linear-gradient(180deg, #ffffff, #e0edff);
+            border: 1px solid #4d80c7;
+            color: #071b3c;
+            box-shadow: inset 0 1px #ffffff, 0 1px 1px rgba(0, 0, 0, 0.2);
+            appearance: none;
+            background-image: none !important;
+        }
+        body[data-theme="winxp"] .start-menu-body input[type="color"] {
+            background: linear-gradient(180deg, #ffffff, #dae6ff);
+        }
+        body[data-theme="win98"] #startMenu {
+            background: #d4d0c8;
+            color: #000;
+            border: 2px solid #000;
+            box-shadow: 6px 6px 0 #000, 8px 8px 0 #808080;
+        }
+        body[data-theme="win98"] .start-menu-header {
+            background: linear-gradient(180deg, #000080, #0a48c7);
+            color: #fff;
+            border-bottom: 1px solid #fff;
+        }
+        body[data-theme="win98"] .start-menu-body {
+            color: #000;
+        }
+        body[data-theme="win98"] .start-menu-body section {
+            background: #c3c3c3;
+            border: 1px solid #fff;
+            box-shadow: inset -1px -1px #808080, inset 1px 1px #ffffff;
+        }
+        body[data-theme="win98"] .start-menu-body h4,
+        body[data-theme="win98"] .start-menu-body label,
+        body[data-theme="win98"] .start-menu-body small {
+            color: #000;
+        }
+        body[data-theme="win98"] .start-menu-body select,
+        body[data-theme="win98"] .start-menu-body input[type="color"],
+        body[data-theme="win98"] .start-menu-body input[type="url"],
+        body[data-theme="win98"] .start-menu-body input[type="text"],
+        body[data-theme="win98"] .start-menu-body input[type="file"] {
+            background: #fff;
+            border: 1px solid #7b7b7b;
+            color: #000;
+            box-shadow: inset 1px 1px #dfe0e3, inset -1px -1px #7b7b7b;
+            appearance: none;
+            background-image: none !important;
+        }
+        body[data-theme="win98"] .start-menu-body input[type="color"] {
+            background: #fff;
+        }
         body.start-menu-open #startMenu {
             opacity: 1;
             transform: translateY(0) scale(1);
             pointer-events: auto;
+        }
+        body[data-theme="win7"] {
+            --start-menu-bg: linear-gradient(180deg, rgba(34, 52, 84, 0.98), rgba(10, 18, 32, 0.95));
+            --start-menu-color: #eaf1ff;
+            --start-menu-border: rgba(255, 255, 255, 0.25);
+            --start-menu-shadow: 0 30px 70px rgba(5, 9, 16, 0.65);
+            --start-menu-section-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(20, 34, 58, 0.35));
+            --start-menu-section-border: rgba(255, 255, 255, 0.15);
+            --start-menu-heading-color: rgba(234, 241, 255, 0.85);
+            --start-menu-label-color: rgba(234, 241, 255, 0.95);
+            --start-menu-small-color: rgba(234, 241, 255, 0.7);
+            --start-menu-input-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(210, 224, 249, 0.95));
+            --start-menu-input-border: rgba(83, 120, 176, 0.85);
+            --start-menu-input-color: #071631;
+        }
+        body[data-theme="win7"] .start-menu-header {
+            background: linear-gradient(180deg, rgba(52, 82, 134, 0.95), rgba(24, 38, 62, 0.92));
+        }
+        body[data-theme="winxp"] {
+            --start-menu-bg: linear-gradient(180deg, #fcfeff, #cfe5ff);
+            --start-menu-color: #0b1e3d;
+            --start-menu-border: #7aa4d7;
+            --start-menu-shadow: 0 24px 40px rgba(9, 20, 41, 0.35);
+            --start-menu-section-bg: #fdfefe;
+            --start-menu-section-border: #9fc4f7;
+            --start-menu-heading-color: #0d2148;
+            --start-menu-label-color: #0d2148;
+            --start-menu-small-color: rgba(13, 33, 72, 0.75);
+            --start-menu-input-bg: linear-gradient(180deg, #ffffff, #e0edff);
+            --start-menu-input-border: #4d80c7;
+            --start-menu-input-color: #071b3c;
+        }
+        body[data-theme="winxp"] .start-menu-header {
+            background: linear-gradient(180deg, #93c5ff, #4a7ecc);
+        }
+        body[data-theme="win98"] {
+            --start-menu-bg: #d4d0c8;
+            --start-menu-color: #000;
+            --start-menu-border: #000;
+            --start-menu-shadow: 6px 6px 0 #000, 8px 8px 0 #808080;
+            --start-menu-section-bg: #c3c3c3;
+            --start-menu-section-border: #ffffff;
+            --start-menu-heading-color: #000;
+            --start-menu-label-color: #000;
+            --start-menu-small-color: #000;
+            --start-menu-input-bg: #ffffff;
+            --start-menu-input-border: #7b7b7b;
+            --start-menu-input-color: #000;
+        }
+        body[data-theme="win98"] .start-menu-header {
+            background: linear-gradient(180deg, #000080, #0a48c7);
+            color: #fff;
         }
         .start-menu-header {
             padding: 14px 18px;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            border-bottom: 1px solid var(--start-menu-section-border);
         }
         .start-menu-header h3 {
             margin: 0;
@@ -1494,7 +1673,8 @@
             gap: 18px;
         }
         .start-menu-body section {
-            background: rgba(255, 255, 255, 0.04);
+            background: var(--start-menu-section-bg);
+            border: 1px solid var(--start-menu-section-border);
             border-radius: 10px;
             padding: 12px;
             display: flex;
@@ -1506,32 +1686,36 @@
             font-size: 13px;
             text-transform: uppercase;
             letter-spacing: 0.08em;
-            color: rgba(255, 255, 255, 0.75);
+            color: var(--start-menu-heading-color);
         }
         .start-menu-body label {
             font-size: 13px;
             display: flex;
             flex-direction: column;
             gap: 4px;
+            color: var(--start-menu-label-color);
         }
         .start-menu-body input[type="range"],
         .start-menu-body select,
         .start-menu-body input[type="color"],
         .start-menu-body input[type="url"],
-        .start-menu-body input[type="text"] {
+        .start-menu-body input[type="text"],
+        .start-menu-body input[type="file"] {
             width: 100%;
             border-radius: 6px;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            background: rgba(0, 0, 0, 0.35);
-            color: #f7fbff;
+            border: 1px solid var(--start-menu-input-border);
+            background: var(--start-menu-input-bg);
+            color: var(--start-menu-input-color);
             padding: 6px 8px;
+            appearance: none;
+            background-image: none;
         }
         .start-menu-body input[type="color"] {
             padding: 0;
             height: 32px;
             cursor: pointer;
-            background: #1a1d26;
-            border: 1px solid rgba(255, 255, 255, 0.35);
+            background: var(--start-menu-input-bg);
+            border: 1px solid var(--start-menu-input-border);
             box-shadow: inset 0 1px rgba(255,255,255,0.2);
         }
         .start-menu-body input[type="color"]::-webkit-color-swatch-wrapper {
@@ -1573,7 +1757,7 @@
             color: rgba(255, 255, 255, 0.8);
         }
         .start-menu-body small {
-            color: rgba(255, 255, 255, 0.6);
+            color: var(--start-menu-small-color);
         }
         .start-palette-group {
             display: flex;
@@ -1758,8 +1942,11 @@ body[data-theme="win7"] #taskbar .start {
     height: calc(var(--taskbar-height) - 4px);
     margin: 0;
     background: url("/start/win7_start.png") no-repeat center center / contain;
-    border: none;
+    border: none !important;
+    box-shadow: none !important;
+    background-color: transparent !important;
     border-radius: 26px;
+    outline: none;
     text-indent: -9999px;
     overflow: hidden;
 }
@@ -2056,6 +2243,46 @@ body[data-theme="win98"] #taskbar .start {
             color: #2d4d82;
             flex-wrap: wrap;
             gap: 10px;
+        }
+        .sc-addon-card {
+            border: 1px solid rgba(62, 105, 176, 0.45);
+            border-radius: 10px;
+            padding: 10px 12px;
+            margin-bottom: 14px;
+            background: linear-gradient(180deg, rgba(255,255,255,0.85), rgba(228,238,255,0.75));
+            display: none;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .sc-addon-card.active {
+            display: flex;
+        }
+        .sc-addon-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+        .sc-addon-controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 8px 16px;
+        }
+        .sc-addon-controls label {
+            font-size: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .sc-addon-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        #scAddonMessage {
+            font-size: 12px;
+            color: #1a2e5f;
         }
         .studio-panels {
             display: grid;
@@ -2388,6 +2615,8 @@ body[data-theme="win98"] #taskbar .start {
         }
     </style>
     <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+    <script src="/js/synth-data.js"></script>
+    <script src="/js/drum-data.js"></script>
 </head>
 <body>
     <div id="web-toolbar">
@@ -2396,12 +2625,8 @@ body[data-theme="win98"] #taskbar .start {
             <select id="themeSelect"></select>
         </div>
         <div class="toolbar-section">
-            <label for="pluginHostSelect">Host</label>
-            <select id="pluginHostSelect">
-                <option value="carla">Carla/JUCE</option>
-                <option value="sc">SuperCollider</option>
-            </select>
-            <span id="pluginHostStatus" class="status-label"></span>
+            <label>Host</label>
+            <span id="pluginHostStatus" class="status-label">Carla/JUCE host</span>
         </div>
         <div class="toolbar-section">
             <span id="strudelStatus" class="status-label"></span>
@@ -2429,6 +2654,23 @@ body[data-theme="win98"] #taskbar .start {
                             <button id="refreshBtn">Refresh</button>
                             <button id="saveSessionBtn">Save Session</button>
                             <button id="loadSessionBtn">Load Session</button>
+                        </div>
+                    </div>
+                    <div class="sc-addon-card" id="scAddonPanel">
+                        <div class="sc-addon-header">
+                            <strong>SuperCollider Add-on</strong>
+                            <span id="scAddonStatus">Checking...</span>
+                        </div>
+                        <div class="sc-addon-controls">
+                            <label>FX Mix <input type="range" id="scMix" min="0" max="1" step="0.01" value="0.25"></label>
+                            <label>Reverb Decay (s) <input type="number" id="scDecay" min="0.1" max="12" step="0.1" value="3.0"></label>
+                            <label>Lowpass Cutoff (Hz) <input type="number" id="scCutoff" min="80" max="20000" step="10" value="4000"></label>
+                        </div>
+                        <div class="sc-addon-actions">
+                            <button type="button" id="scApplyEffectsBtn">Apply FX Settings</button>
+                            <label>Record Seconds <input type="number" id="scRecordDuration" min="1" max="600" step="1" value="8"></label>
+                            <button type="button" id="scRecordBtn">Record SC Output</button>
+                            <span id="scAddonMessage"></span>
                         </div>
                     </div>
                     <div class="studio-panels">
@@ -2744,12 +2986,20 @@ body[data-theme="win98"] #taskbar .start {
         };
         const HostState = {
             mode: "carla",
+            statusText: "Carla/JUCE host",
             sc: {
                 available: false,
                 status: null,
                 plugins: [],
                 loading: false,
-                error: null,
+                error: "SuperCollider host disabled",
+            },
+            scAddon: {
+                enabled: false,
+                booted: false,
+                last_error: null,
+                effects: { mix: 0.25, decay: 3.0, cutoff: 4000 },
+                message: null,
             },
         };
         const BlocksState = {
@@ -2803,25 +3053,65 @@ const WindowStyleOverrides = {};
             loaded: false,
             promise: null,
         };
-        const FALLBACK_BANK_ENTRY = {
-            id: "tr909",
-            bank: "tr909",
-            label: "TR-909",
-            instruments: new Map([
-                ["bd", 4],
-                ["sd", 4],
-                ["hh", 4],
-                ["oh", 4],
-                ["cp", 2],
-            ]),
-        };
-        const FALLBACK_INSTRUMENT_OPTIONS = [
-            { value: "bd", label: "bd" },
-            { value: "sd", label: "sd" },
-            { value: "hh", label: "hh" },
-            { value: "oh", label: "oh" },
-            { value: "cp", label: "cp" },
-        ];
+        const SYNTH_LIST_SOURCE = window.AmbianceSynthLists || { CORE_SYNTHS: [], GM_SYNTHS: [] };
+        const RAW_MELODY_SYNTHS = SYNTH_LIST_SOURCE.CORE_SYNTHS || [];
+        const RAW_GM_SYNTHS = SYNTH_LIST_SOURCE.GM_SYNTHS || [];
+        const MELODY_SYNTH_CANONICAL = Object.freeze(
+            [...new Set([...RAW_MELODY_SYNTHS, ...RAW_GM_SYNTHS])].sort((a, b) => a.localeCompare(b))
+        );
+        const MELODY_SYNTH_ALIAS_MAP = Object.freeze({
+            sin: "sine",
+            tri: "triangle",
+            sqr: "square",
+            saw: "sawtooth",
+            zz: "zzfx",
+            zfx: "zzfx",
+            zsine: "z_sine",
+            "z sine": "z_sine",
+            ztriangle: "z_triangle",
+            "z triangle": "z_triangle",
+            zsquare: "z_square",
+            "z square": "z_square",
+            zsaw: "z_sawtooth",
+            "z saw": "z_sawtooth",
+            znoise: "z_noise",
+            "z noise": "z_noise",
+            ztan: "z_tan",
+            "z tan": "z_tan",
+        });
+        const DEFAULT_MELODY_SYNTH = MELODY_SYNTH_CANONICAL.includes("sine")
+            ? "sine"
+            : MELODY_SYNTH_CANONICAL[0];
+        const MELODY_SYNTH_OPTIONS = MELODY_SYNTH_CANONICAL;
+        const VALID_MELODY_SYNTHS = new Set(MELODY_SYNTH_CANONICAL);
+        function createFallbackBankEntry() {
+            const drumData = window.AmbianceDrumData && window.AmbianceDrumData.FALLBACK_BANK;
+            if (drumData && Array.isArray(drumData.instruments)) {
+                return {
+                    id: drumData.id || drumData.bank || "tr909",
+                    bank: drumData.bank || drumData.id || "tr909",
+                    label: drumData.label || "TR-909",
+                    instruments: new Map(drumData.instruments.map(([name, count]) => [name, count])),
+                };
+            }
+            return {
+                id: "tr909",
+                bank: "tr909",
+                label: "TR-909",
+                instruments: new Map([
+                    ["bd", 4],
+                    ["sd", 4],
+                    ["hh", 4],
+                    ["oh", 4],
+                    ["cp", 2],
+                ]),
+            };
+        }
+        const FALLBACK_BANK_ENTRY = createFallbackBankEntry();
+        const FALLBACK_INSTRUMENT_OPTIONS = Array.from(FALLBACK_BANK_ENTRY.instruments.keys()).map((instrumentId) => ({
+            value: instrumentId,
+            label: instrumentId,
+        }));
         function cloneBankEntry(entry) {
             return {
                 id: entry.id,
@@ -2837,6 +3127,40 @@ const WindowStyleOverrides = {};
             DrumCatalog.defaultBank = fallbackClone.id;
             DrumCatalog.defaultInstrument = "bd";
             DrumCatalog.loaded = false;
+        }
+        function hydrateDrumCatalogFromPayload(payload) {
+            const banks = new Map();
+            const order = [];
+            Object.entries(payload || {}).forEach(([id, details]) => {
+                const label = (details.label || details.bank || id || "").trim() || id;
+                const bankId = (details.bank || id || "").toLowerCase();
+                const entry = {
+                    id: bankId,
+                    bank: bankId,
+                    label,
+                    instruments: new Map(),
+                };
+                Object.entries(details.instruments || {}).forEach(([instrumentId, count]) => {
+                    entry.instruments.set(instrumentId.toLowerCase(), Number(count) || 1);
+                });
+                banks.set(entry.id, entry);
+                order.push(entry);
+            });
+            if (!order.length) {
+                resetDrumCatalogToFallback();
+                return;
+            }
+            order.sort((a, b) => a.label.localeCompare(b.label));
+            DrumCatalog.banks = banks;
+            DrumCatalog.bankOrder = order;
+            DrumCatalog.defaultBank = order[0].id;
+            const firstOptions = buildInstrumentOptionList(order[0]);
+            DrumCatalog.defaultInstrument = firstOptions[0]?.value || "bd";
+            DrumCatalog.loaded = true;
+            SequencerState.rows.forEach((row) => {
+                ensureRowBank(row);
+                ensureRowInstrument(row);
+            });
         }
         resetDrumCatalogToFallback();
         function buildInstrumentOptionList(entry) {
@@ -2887,10 +3211,18 @@ const WindowStyleOverrides = {};
                 row.bank = getDefaultBankId();
             }
         }
+        function sanitizeMelodySynth(value) {
+            const token = (value || "").trim();
+            const canonical = MELODY_SYNTH_ALIAS_MAP[token.toLowerCase()] || token;
+            if (VALID_MELODY_SYNTHS.has(canonical)) {
+                return canonical;
+            }
+            return DEFAULT_MELODY_SYNTH;
+        }
         function ensureRowInstrument(row) {
             ensureRowBank(row);
             if (row.mode === "melody") {
-                row.instrument = row.instrument || "sin";
+                row.instrument = sanitizeMelodySynth(row.instrument);
                 return;
             }
             const options = getInstrumentOptions(row.bank);
@@ -3909,7 +4241,10 @@ const WindowStyleOverrides = {};
             if (!graph || !readouts) return;
             graph.innerHTML = "";
             const filters = block.eqFilters || [];
-            block.eqNodes = EQ_BAND_FREQUENCIES.map((freq, index) => {
+            const bandCount = EQ_BAND_COUNT;
+            block.eqNodes = Array.from({ length: bandCount }, (_, index) => {
+                const centerPosition = (index + 0.5) / bandCount;
+                const freq = positionToFreq(centerPosition);
                 const filter = filters[index];
                 if (filter && filter.frequency) {
                     filter.frequency.value = freq;
@@ -4216,6 +4551,39 @@ const WindowStyleOverrides = {};
             });
             select.value = row.instrument;
         }
+        function populateMelodySynthSelect(select, row) {
+            if (!select) return;
+            const isMelody = row.mode === "melody";
+            select.disabled = !isMelody;
+            if (!isMelody) {
+                select.innerHTML = "";
+                return;
+            }
+            const currentValue = sanitizeMelodySynth(row.instrument);
+            if (currentValue !== row.instrument) {
+                row.instrument = currentValue;
+            }
+            const options = [];
+            const seen = new Set();
+            [...MELODY_SYNTH_OPTIONS, currentValue].forEach((name) => {
+                if (!name) return;
+                const key = name.trim();
+                const lower = key.toLowerCase();
+                if (!key || seen.has(lower)) {
+                    return;
+                }
+                seen.add(lower);
+                options.push(key);
+            });
+            select.innerHTML = "";
+            options.forEach((name) => {
+                const opt = document.createElement("option");
+                opt.value = name;
+                opt.textContent = name;
+                select.appendChild(opt);
+            });
+            select.value = currentValue;
+        }
         function hydrateSequencerRowSelectors(rowEl, row) {
             const bankSelect = rowEl.querySelector('select[data-field="bank"]');
             const instrumentSelect = rowEl.querySelector('select[data-field="instrumentSelect"]');
@@ -4223,9 +4591,9 @@ const WindowStyleOverrides = {};
             if (instrumentSelect) {
                 populateInstrumentSelect(instrumentSelect, row);
             }
-            const instrumentInput = rowEl.querySelector('input[data-field="instrumentInput"]');
-            if (instrumentInput) {
-                instrumentInput.value = row.instrument || "";
+            const synthSelect = rowEl.querySelector('select[data-field="melodySynth"]');
+            if (synthSelect) {
+                populateMelodySynthSelect(synthSelect, row);
             }
         }
         function applySequencerRowModeClasses(rowEl, row) {
@@ -4250,56 +4618,24 @@ const WindowStyleOverrides = {};
             if (DrumCatalog.promise) {
                 return DrumCatalog.promise;
             }
-            DrumCatalog.promise = fetch("drum_catalog.json", { cache: "no-store" })
-                .then((response) => {
-                    if (!response.ok) {
-                        throw new Error(`Failed to load drum catalog (${response.status})`);
-                    }
-                    return response.json();
-                })
-                .then((payload) => {
-                    const banks = new Map();
-                    const order = [];
-                    Object.entries(payload || {}).forEach(([id, details]) => {
-                        const label = (details.label || details.bank || id || "").trim() || id;
-                        const bankId = (details.bank || id || "").toLowerCase();
-                        const entry = {
-                            id: bankId,
-                            bank: bankId,
-                            label,
-                            instruments: new Map(),
-                        };
-                        Object.entries(details.instruments || {}).forEach(([instrumentId, count]) => {
-                            entry.instruments.set(instrumentId.toLowerCase(), Number(count) || 1);
-                        });
-                        banks.set(entry.id, entry);
-                        order.push(entry);
-                    });
-                    if (!order.length) {
-                        resetDrumCatalogToFallback();
-                    } else {
-                        order.sort((a, b) => a.label.localeCompare(b.label));
-                        DrumCatalog.banks = banks;
-                        DrumCatalog.bankOrder = order;
-                        DrumCatalog.defaultBank = order[0].id;
-                        const firstOptions = buildInstrumentOptionList(order[0]);
-                        DrumCatalog.defaultInstrument = firstOptions[0]?.value || "bd";
-                        DrumCatalog.loaded = true;
-                        SequencerState.rows.forEach((row) => {
-                            ensureRowBank(row);
-                            ensureRowInstrument(row);
-                        });
-                    }
-                    return DrumCatalog;
-                })
-                .catch((error) => {
-                    console.warn("Drum catalog unavailable", error);
+            const payload = window.AmbianceDrumData && window.AmbianceDrumData.BANKS;
+            DrumCatalog.promise = new Promise((resolve) => {
+                if (!payload) {
+                    console.warn("Drum catalog data unavailable; using fallback bank set.");
                     resetDrumCatalogToFallback();
-                    return DrumCatalog;
-                })
-                .finally(() => {
-                    DrumCatalog.promise = null;
-                });
+                    resolve(DrumCatalog);
+                    return;
+                }
+                try {
+                    hydrateDrumCatalogFromPayload(payload);
+                } catch (error) {
+                    console.warn("Failed to hydrate drum catalog", error);
+                    resetDrumCatalogToFallback();
+                }
+                resolve(DrumCatalog);
+            }).finally(() => {
+                DrumCatalog.promise = null;
+            });
             return DrumCatalog.promise;
         }
         const MELODY_SCALE_ROW_COUNT = 8;
@@ -4423,14 +4759,8 @@ const WindowStyleOverrides = {};
             toneLevel: 0.15,
             noiseType: "white",
             noiseLevel: 0,
-            eqLow: 0,
-            eqMid: 0,
-            eqHigh: 0,
-            eqLows: [0, 0, 0, 0],
-            eqHighs: [0, 0, 0, 0],
-            eqLevels: [0, 0, 0, 0, 0],
         };
-        const EQ_BAND_FREQUENCIES = [32, 125, 500, 2000, 8000];
+        const EQ_BAND_COUNT = 5;
         const EQ_MIN_FREQ = 32;
         const EQ_MAX_FREQ = 8000;
         const EQ_MIN_GAIN = -12;
@@ -5306,175 +5636,152 @@ const WindowStyleOverrides = {};
                 });
         }
         function isScMode() {
-            return HostState.mode === "sc";
+            return false;
         }
         function updateHostStatusLabel() {
             const hostStatus = document.getElementById("pluginHostStatus");
             if (!hostStatus) return;
-            if (!isScMode()) {
-                hostStatus.textContent = "Carla/JUCE host";
-                return;
-            }
-            if (!HostState.sc.available) {
-                hostStatus.textContent = HostState.sc.error
-                    ? `SuperCollider unavailable (${HostState.sc.error})`
-                    : "SuperCollider unavailable";
-                return;
-            }
-            const pluginInfo = HostState.sc.status && HostState.sc.status.plugin;
-            if (pluginInfo && pluginInfo.path) {
-                hostStatus.textContent = `SC: ${pluginInfo.path}`;
-            } else {
-                hostStatus.textContent = "SuperCollider host ready";
-            }
+            hostStatus.textContent = HostState.statusText;
         }
         function updateHostControls() {
-            const hostSelect = document.getElementById("pluginHostSelect");
-            if (hostSelect) {
-                if (hostSelect.value !== HostState.mode) {
-                    hostSelect.value = HostState.mode;
-                }
-            }
             const saveBtn = document.getElementById("saveSessionBtn");
-            if (saveBtn) saveBtn.disabled = isScMode();
+            if (saveBtn) saveBtn.disabled = false;
             const loadBtn = document.getElementById("loadSessionBtn");
-            if (loadBtn) loadBtn.disabled = isScMode();
+            if (loadBtn) loadBtn.disabled = false;
             const refreshBtn = document.getElementById("refreshBtn");
             if (refreshBtn) {
-                refreshBtn.textContent = isScMode() ? "Refresh (SC)" : "Refresh";
+                refreshBtn.textContent = "Refresh";
             }
             updateHostStatusLabel();
         }
-        async function refreshScStatus(forceRender = false) {
-            try {
-                const data = await getJson("/api/sc/status");
-                if (data && data.status) {
-                    HostState.sc.status = data.status;
-                    HostState.sc.available = !!data.status.enabled;
-                    HostState.sc.error = data.status.enabled ? null : "SuperCollider host disabled";
-                } else if (data && data.error) {
-                    HostState.sc.available = false;
-                    HostState.sc.status = null;
-                    HostState.sc.error = data.error;
-                }
-            } catch (err) {
-                HostState.sc.available = false;
-                HostState.sc.status = null;
-                HostState.sc.error = err && err.message ? err.message : String(err);
-            }
-            updateHostControls();
-            if (isScMode() && forceRender) {
-                renderPluginStudio();
-                renderPluginUI();
-            }
-            return HostState.sc.available;
+        async function refreshScStatus() {
+            return false;
         }
         async function refreshScPlugins() {
-            if (!HostState.sc.available) {
-                HostState.sc.plugins = [];
-                HostState.sc.loading = false;
-                renderPluginStudio();
-                return;
-            }
-            HostState.sc.loading = true;
-            renderPluginStudio();
-            try {
-                const data = await getJson("/api/sc/plugins");
-                if (data && data.ok) {
-                    HostState.sc.plugins = Array.isArray(data.plugins) ? data.plugins : [];
-                    HostState.sc.error = null;
-                } else {
-                    HostState.sc.plugins = [];
-                    HostState.sc.error = (data && data.error) || "Unable to load plugin list";
-                }
-            } catch (err) {
-                HostState.sc.plugins = [];
-                HostState.sc.error = err && err.message ? err.message : String(err);
-            }
-            HostState.sc.loading = false;
-            renderPluginStudio();
+            return;
         }
-        async function requestScPluginLoad(path) {
-            if (!path) return;
-            try {
-                const data = await postJson("/api/sc/plugins/load", { path });
-                if (!data || !data.ok) {
-                    HostState.sc.error = (data && data.error) || "Failed to load plugin";
-                } else {
-                    HostState.sc.status = HostState.sc.status || {};
-                    HostState.sc.status.plugin = data.plugin || data.status || null;
-                    HostState.sc.error = null;
-                }
-            } catch (err) {
-                HostState.sc.error = err && err.message ? err.message : String(err);
-            }
-            await refreshScStatus(true);
+        async function requestScPluginLoad() {
+            console.warn("SuperCollider plugin host is disabled.");
         }
         async function requestScPluginUnload() {
-            try {
-                const data = await postJson("/api/sc/plugins/unload", {});
-                if (data && data.ok) {
-                    if (HostState.sc.status) HostState.sc.status.plugin = null;
-                    HostState.sc.error = null;
-                } else if (data && data.error) {
-                    HostState.sc.error = data.error;
-                }
-            } catch (err) {
-                HostState.sc.error = err && err.message ? err.message : String(err);
-            }
-            await refreshScStatus(true);
+            console.warn("SuperCollider plugin host is disabled.");
         }
-        async function setPluginHostMode(nextMode) {
-            if (nextMode === HostState.mode) {
-                updateHostControls();
-                return;
-            }
-            if (nextMode === "sc") {
-                const ready = await refreshScStatus();
-                if (!ready) {
-                    console.warn("SuperCollider host not available");
-                    HostState.mode = "carla";
-                    updateHostControls();
-                    return;
-                }
-                HostState.mode = "sc";
-                await refreshScPlugins();
-            } else {
-                HostState.mode = "carla";
-                if (Bridges.pluginStudio && Bridges.pluginStudio.refreshPlugins) {
-                    Bridges.pluginStudio.refreshPlugins();
-                }
-            }
+        async function setPluginHostMode() {
+            HostState.mode = "carla";
             updateHostControls();
             renderPluginStudio();
             renderPluginUI();
         }
         async function detectSuperColliderStatus() {
-            try {
-                const data = await getJson("/api/sc/status");
-                if (data && data.status) {
-                    HostState.sc.status = data.status;
-                    HostState.sc.available = !!data.status.enabled;
-                    HostState.sc.error = data.status.enabled ? null : "SuperCollider host disabled";
-                    if (data.status.enabled) {
-                        HostState.mode = "sc";
-                    }
-                } else if (data && data.error) {
-                    HostState.sc.available = false;
-                    HostState.sc.status = null;
-                    HostState.sc.error = data.error;
-                }
-            } catch (err) {
-                HostState.sc.available = false;
-                HostState.sc.status = null;
-                HostState.sc.error = err && err.message ? err.message : String(err);
-            }
             updateHostControls();
-            if (HostState.mode === "sc" && HostState.sc.available) {
-                await refreshScPlugins();
-            }
             renderPluginStudio();
             renderPluginUI();
+        }
+        async function refreshScAddonStatus() {
+            let statusPayload = null;
+            try {
+                const data = await getJson("/api/sc-addon/status");
+                if (data && data.ok) {
+                    statusPayload = data.status || {};
+                    HostState.scAddon.enabled = true;
+                    HostState.scAddon.booted = Boolean(statusPayload.booted);
+                    HostState.scAddon.last_error = statusPayload.last_error || null;
+                    HostState.scAddon.effects = statusPayload.effects || HostState.scAddon.effects;
+                } else {
+                    HostState.scAddon.enabled = false;
+                    HostState.scAddon.booted = false;
+                    HostState.scAddon.last_error = (data && data.error) || "Add-on disabled";
+                }
+            } catch (err) {
+                HostState.scAddon.enabled = false;
+                HostState.scAddon.booted = false;
+                HostState.scAddon.last_error = err && err.message ? err.message : String(err);
+            }
+            updateScAddonUI();
+        }
+        function updateScAddonUI() {
+            const panel = document.getElementById("scAddonPanel");
+            const statusLabel = document.getElementById("scAddonStatus");
+            const mixInput = document.getElementById("scMix");
+            const decayInput = document.getElementById("scDecay");
+            const cutoffInput = document.getElementById("scCutoff");
+            const messageEl = document.getElementById("scAddonMessage");
+            if (!panel || !statusLabel) return;
+            if (!HostState.scAddon.enabled) {
+                panel.classList.remove("active");
+                statusLabel.textContent = "Add-on disabled";
+                if (messageEl) messageEl.textContent = "";
+                return;
+            }
+            panel.classList.add("active");
+            if (HostState.scAddon.last_error) {
+                statusLabel.textContent = `Error: ${HostState.scAddon.last_error}`;
+            } else if (!HostState.scAddon.booted) {
+                statusLabel.textContent = "Warming up…";
+            } else {
+                statusLabel.textContent = "Ready";
+            }
+            if (mixInput && typeof HostState.scAddon.effects.mix === "number") {
+                mixInput.value = HostState.scAddon.effects.mix;
+            }
+            if (decayInput && typeof HostState.scAddon.effects.decay === "number") {
+                decayInput.value = HostState.scAddon.effects.decay;
+            }
+            if (cutoffInput && typeof HostState.scAddon.effects.cutoff === "number") {
+                cutoffInput.value = HostState.scAddon.effects.cutoff;
+            }
+            if (messageEl) {
+                messageEl.textContent = HostState.scAddon.message || "";
+            }
+        }
+        function setScAddonMessage(text) {
+            HostState.scAddon.message = text;
+            updateScAddonUI();
+        }
+        async function applyScAddonEffects() {
+            if (!HostState.scAddon.enabled) {
+                setScAddonMessage("Add-on disabled.");
+                return;
+            }
+            const mix = parseFloat(document.getElementById("scMix")?.value ?? "0.25");
+            const decay = parseFloat(document.getElementById("scDecay")?.value ?? "3");
+            const cutoff = parseFloat(document.getElementById("scCutoff")?.value ?? "4000");
+            try {
+                const payload = { mix, decay, cutoff };
+                const data = await postJson("/api/sc-addon/effects", payload);
+                if (data && data.ok) {
+                    HostState.scAddon.effects = data.state || payload;
+                    setScAddonMessage("FX updated.");
+                } else {
+                    setScAddonMessage((data && data.error) || "FX update failed.");
+                }
+            } catch (err) {
+                setScAddonMessage(err && err.message ? err.message : String(err));
+            }
+            updateScAddonUI();
+        }
+        async function triggerScAddonRecord() {
+            if (!HostState.scAddon.enabled) {
+                setScAddonMessage("Add-on disabled.");
+                return;
+            }
+            const input = document.getElementById("scRecordDuration");
+            const seconds = parseFloat(input?.value ?? "8");
+            if (!Number.isFinite(seconds) || seconds <= 0) {
+                setScAddonMessage("Enter a valid duration.");
+                return;
+            }
+            setScAddonMessage("Recording...");
+            try {
+                const data = await postJson("/api/sc-addon/record", { duration: seconds });
+                if (data && data.ok) {
+                    setScAddonMessage(`Recorded to ${data.path}`);
+                } else {
+                    setScAddonMessage((data && data.error) || "Record failed.");
+                }
+            } catch (err) {
+                setScAddonMessage(err && err.message ? err.message : String(err));
+            }
         }
         function formatPluginPath(path) {
             if (!path) return "";
@@ -5482,6 +5789,12 @@ const WindowStyleOverrides = {};
             const idx = normalized.toLowerCase().lastIndexOf("/plugins/");
             const sliced = idx >= 0 ? normalized.slice(idx) : normalized.slice(Math.max(normalized.length - 48, 0));
             return sliced.replace(/\//g, "\\");
+        }
+        function pathContainsSegment(path, segment) {
+            if (!path || !segment) return false;
+            const normalized = String(path).replace(/\\/g, "/").toLowerCase();
+            const needle = String(segment).toLowerCase();
+            return normalized.split("/").includes(needle);
         }
         function copyPluginPath(path) {
             if (!path) return;
@@ -5631,8 +5944,11 @@ const WindowStyleOverrides = {};
             list.innerHTML = "";
             const filter = (PluginSearchTerm || "").trim().toLowerCase();
             const plugins = (PluginState.plugins || []).filter((plugin) => {
+                if (plugin && pathContainsSegment(plugin.path || "", "32bitplugins")) {
+                    return false;
+                }
                 if (!filter) return true;
-                const haystack = `${plugin.name || ""} ${plugin.format || ""} ${plugin.path || ""}`.toLowerCase();
+                const haystack = `${plugin?.name || ""} ${plugin?.format || ""} ${plugin?.path || ""}`.toLowerCase();
                 return haystack.includes(filter);
             });
             if (!plugins.length) {
@@ -6453,24 +6769,29 @@ const WindowStyleOverrides = {};
             const placeholder = document.getElementById("strudelPlaceholder");
             const fallbackUrl = StrudelState.displayUrl || StrudelState.homeUrl || StrudelState.remoteHome;
             let desiredUrl = StrudelState.url;
-            if (!desiredUrl && fallbackUrl) {
-                if (StrudelState.proxyBase && fallbackUrl && StrudelState.proxyBase && fallbackUrl.startsWith(StrudelState.proxyBase)) {
-                    desiredUrl = fallbackUrl;
-                } else if (StrudelState.proxyBase) {
-                    desiredUrl = buildProxyUrl(fallbackUrl);
-                } else {
-                    desiredUrl = fallbackUrl;
+            if (!StrudelState.error) {
+                if (!desiredUrl && fallbackUrl) {
+                    if (StrudelState.proxyBase && fallbackUrl && StrudelState.proxyBase && fallbackUrl.startsWith(StrudelState.proxyBase)) {
+                        desiredUrl = fallbackUrl;
+                    } else if (StrudelState.proxyBase) {
+                        desiredUrl = buildProxyUrl(fallbackUrl);
+                    } else {
+                        desiredUrl = fallbackUrl;
+                    }
                 }
-            }
-            if (frame && desiredUrl) {
-                const shouldReload = StrudelState.reloadToken !== StrudelState.lastReloadToken;
-                if (shouldReload || frame.dataset.src !== desiredUrl) {
-                    frame.dataset.src = desiredUrl;
-                    frame.src = desiredUrl;
+                if (frame && desiredUrl) {
+                    const shouldReload = StrudelState.reloadToken !== StrudelState.lastReloadToken;
+                    if (shouldReload || frame.dataset.src !== desiredUrl) {
+                        frame.dataset.src = desiredUrl;
+                        frame.src = desiredUrl;
+                        StrudelState.lastReloadToken = StrudelState.reloadToken;
+                    }
+                } else {
                     StrudelState.lastReloadToken = StrudelState.reloadToken;
                 }
-            } else {
-                StrudelState.lastReloadToken = StrudelState.reloadToken;
+            } else if (frame) {
+                frame.removeAttribute("src");
+                frame.dataset.src = "";
             }
             const displayUrl = StrudelState.displayUrl || StrudelState.homeUrl || desiredUrl;
             if (displayUrl) {
@@ -6559,12 +6880,6 @@ const WindowStyleOverrides = {};
                     Bridges.desktop && Bridges.desktop.setTheme(value);
                 });
             }
-            const hostSelect = document.getElementById("pluginHostSelect");
-            if (hostSelect) {
-                hostSelect.addEventListener("change", (event) => {
-                    setPluginHostMode(event.target.value).catch((err) => console.warn("Failed to switch host", err));
-                });
-            }
             const refreshBtn = document.getElementById("refreshBtn");
             if (refreshBtn) {
                 refreshBtn.addEventListener("click", () => {
@@ -6593,6 +6908,14 @@ const WindowStyleOverrides = {};
             const pluginListEl = document.getElementById("pluginList");
             if (pluginListEl) {
                 pluginListEl.addEventListener("click", handlePluginListAction);
+            }
+            const scApplyButton = document.getElementById("scApplyEffectsBtn");
+            if (scApplyButton) {
+                scApplyButton.addEventListener("click", () => applyScAddonEffects());
+            }
+            const scRecordButton = document.getElementById("scRecordBtn");
+            if (scRecordButton) {
+                scRecordButton.addEventListener("click", () => triggerScAddonRecord());
             }
             const chainListEl = document.getElementById("chainList");
             if (chainListEl) {
@@ -6700,7 +7023,7 @@ const WindowStyleOverrides = {};
                 });
             }
             const actionButtons = [
-                ["strudelPlay", "update"],
+                ["strudelPlay", "play"],
                 ["strudelUpdate", "update"],
                 ["strudelStop", "stop"],
             ];
@@ -6870,6 +7193,7 @@ const WindowStyleOverrides = {};
             attachStrudelFrameListeners();
             updateStrudelNavButtons();
             detectSuperColliderStatus();
+            refreshScAddonStatus();
             initChannel();
         });
         function getToolbarHeight() {
@@ -7030,12 +7354,12 @@ const WindowStyleOverrides = {};
             const existing = SequencerState.rows[index];
             const steps = existing.steps || SequencerState.defaultSteps;
             const baseBank = existing.mode === "melody" ? "" : (DrumCatalog.banks.has(existing.bank) ? existing.bank : getDefaultBankId());
-            const baseInstrument = existing.mode === "melody" ? "sin" : getDefaultInstrumentValue(baseBank);
+            const baseInstrument = existing.mode === "melody" ? DEFAULT_MELODY_SYNTH : getDefaultInstrumentValue(baseBank);
             const fresh = createSequencerRow(baseInstrument, baseBank, steps);
             fresh.mode = existing.mode;
             if (fresh.mode === "melody") {
                 fresh.bank = "";
-                fresh.instrument = "sin";
+                fresh.instrument = DEFAULT_MELODY_SYNTH;
                 fresh.pitchMode = "scale";
                 fresh.pitchSequence = "";
                 fresh.scaleList = "C:major";
@@ -7153,7 +7477,9 @@ const WindowStyleOverrides = {};
                 ensureRowBank(row);
                 ensureRowInstrument(row);
             } else if (field === "instrument") {
-                row.instrument = row.mode === "melody" ? (value || "").trim() : (value || "").toLowerCase();
+                row.instrument = row.mode === "melody"
+                    ? sanitizeMelodySynth(value)
+                    : (value || "").toLowerCase();
                 ensureRowInstrument(row);
             } else if (field === "mode") {
                 const wasMelody = row.mode === "melody";
@@ -7161,7 +7487,7 @@ const WindowStyleOverrides = {};
                 if (row.mode === "melody") {
                     if (!wasMelody) {
                         row.bank = "";
-                        row.instrument = "sin";
+                        row.instrument = DEFAULT_MELODY_SYNTH;
                         if (!row.scaleList) {
                             row.scaleList = "C:major";
                         }
@@ -7240,7 +7566,7 @@ const WindowStyleOverrides = {};
                             voice += `.scale(${joined})`;
                         }
                     }
-                    const synthName = (row.instrument || "").trim().replace(/"/g, "") || "sin";
+                    const synthName = (sanitizeMelodySynth(row.instrument) || DEFAULT_MELODY_SYNTH).replace(/"/g, "");
                     voice += `.s("${synthName}")`;
                     return voice;
                 }
@@ -7429,7 +7755,7 @@ const WindowStyleOverrides = {};
                             </label>
                             <label class="row-field-voice row-field-voice-melody">
                                 Synth
-                                <input type="text" value="${escapeHtml(row.instrument || "")}" data-field="instrumentInput" placeholder="sin">
+                                <select data-field="melodySynth"></select>
                             </label>
                             <label class="row-field-bank">
                                 Bank
@@ -7605,13 +7931,6 @@ const WindowStyleOverrides = {};
                         updateSequencerField(rowId, field, target.value, { rerender: false });
                         return;
                     }
-                    if (field === "instrumentInput") {
-                        updateSequencerField(rowId, "instrument", target.value, { rerender: false });
-                        if (row) {
-                            target.value = row.instrument || "";
-                        }
-                        return;
-                    }
                     if (field === "melodyPaintLength") {
                         updateSequencerField(rowId, field, target.value, { rerender: false });
                         if (row) {
@@ -7644,6 +7963,10 @@ const WindowStyleOverrides = {};
                         return;
                     }
                     if (field === "instrumentSelect") {
+                        updateSequencerField(rowId, "instrument", target.value, { rerender: false });
+                        return;
+                    }
+                    if (field === "melodySynth") {
                         updateSequencerField(rowId, "instrument", target.value, { rerender: false });
                         return;
                     }

@@ -26,10 +26,7 @@ from .core.registry import registry
 from .integrations.plugins import PluginRackManager
 from .integrations.carla_host import CarlaVSTHost, CarlaHostError
 from .integrations.juce_vst3_host import JuceVST3Host
-from .integrations.supercollider_service import (
-    SuperColliderService,
-    SuperColliderServiceError,
-)
+from .integrations.sc_addon import SuperColliderAddon
 from .utils.audio import encode_wav_bytes
 
 # Set up logging
@@ -182,18 +179,18 @@ class AmbianceRequestHandler(SimpleHTTPRequestHandler):
         ui_path: Path,
         vst_host: CarlaVSTHost,
         juce_host: JuceVST3Host | None,
-        sc_service: SuperColliderService | None = None,
         plugin_host_mode: str = "carla",
         server_url: str = "http://127.0.0.1:8000",
+        sc_addon: SuperColliderAddon | None = None,
         **kwargs: Any,
     ) -> None:
         self.manager = manager
         self.ui_path = ui_path
         self.vst_host = vst_host
         self.juce_host = juce_host
-        self.sc_service = sc_service
         self.plugin_host_mode = plugin_host_mode
         self.server_url = server_url
+        self.sc_addon = sc_addon
         root = f"{self.server_url}{self.strudel_proxy_prefix}"
         self._strudel_referer_prefix = f"{root.rstrip('/')}/"
         super().__init__(*args, directory=directory, **kwargs)
@@ -225,24 +222,24 @@ class AmbianceRequestHandler(SimpleHTTPRequestHandler):
             return json.loads(raw.decode("utf-8"))
         except json.JSONDecodeError as exc:
             raise ValueError("Invalid JSON payload") from exc
-
-    def _require_sc_service(self) -> SuperColliderService | None:
-        service = getattr(self, "sc_service", None)
-        if service and service.enabled:
-            return service
-        self._send_json(
-            {"ok": False, "error": "SuperCollider host is not enabled"},
-            HTTPStatus.BAD_REQUEST,
-        )
-        return None
-
-    def _handle_sc_failure(
-        self,
-        exc: Exception,
-        status: HTTPStatus = HTTPStatus.BAD_REQUEST,
-    ) -> None:
-        logger.error("SuperCollider error: %s", exc)
-        self._send_json({"ok": False, "error": str(exc)}, status)
+    def _require_sc_addon(self) -> SuperColliderAddon | None:
+        addon = getattr(self, "sc_addon", None)
+        if not addon or not addon.enabled:
+            self._send_json(
+                {"ok": False, "error": "SuperCollider add-on disabled"},
+                HTTPStatus.BAD_REQUEST,
+            )
+            return None
+        try:
+            addon.ensure_ready()
+        except Exception as exc:
+            logger.error("SuperCollider add-on error: %s", exc)
+            self._send_json(
+                {"ok": False, "error": f"SuperCollider add-on unavailable: {exc}"},
+                HTTPStatus.BAD_REQUEST,
+            )
+            return None
+        return addon
 
     # --- Strudel proxy -----------------------------------------------
     def _handle_strudel_proxy(self, parsed) -> bool:
@@ -358,26 +355,15 @@ class AmbianceRequestHandler(SimpleHTTPRequestHandler):
         path = parsed.path or "/"
         if self._handle_strudel_proxy(parsed):
             return
-        if path == "/api/sc/status":
-            service = self.sc_service
-            if service is None:
+        if path == "/api/sc-addon/status":
+            addon = getattr(self, "sc_addon", None)
+            if addon and addon.enabled:
+                self._send_json({"ok": True, "status": addon.status()})
+            else:
                 self._send_json(
-                    {"ok": False, "error": "SuperCollider host is not configured"},
+                    {"ok": False, "error": "SuperCollider add-on disabled"},
                     HTTPStatus.BAD_REQUEST,
                 )
-            else:
-                self._send_json({"ok": True, "status": service.status()})
-            return
-        if path == "/api/sc/plugins":
-            service = self._require_sc_service()
-            if service is None:
-                return
-            try:
-                plugins = service.list_plugins()
-            except SuperColliderServiceError as exc:
-                self._handle_sc_failure(exc, HTTPStatus.INTERNAL_SERVER_ERROR)
-            else:
-                self._send_json({"ok": True, "plugins": plugins})
             return
         if path in {"/api/status", "/api/plugins"}:
             payload = self.manager.status()
@@ -462,52 +448,41 @@ class AmbianceRequestHandler(SimpleHTTPRequestHandler):
                 response = render_payload(payload)
                 self._send_json(response)
                 return
-            if path == "/api/sc/plugins/load":
-                service = self._require_sc_service()
-                if service is None:
+            if path == "/api/sc-addon/automation":
+                addon = self._require_sc_addon()
+                if addon is None:
                     return
                 payload = self._read_json()
-                plugin_path = payload.get("path")
-                channels = payload.get("channels", 2)
-                editor = bool(payload.get("editor", True))
-                if not plugin_path:
-                    self._send_json({"ok": False, "error": "Missing 'path'"}, HTTPStatus.BAD_REQUEST)
+                target = payload.get("target")
+                value = payload.get("value")
+                if target is None or value is None:
+                    self._send_json({"ok": False, "error": "Missing 'target' or 'value'."}, HTTPStatus.BAD_REQUEST)
                     return
-                try:
-                    info = service.load_plugin(plugin_path, channels=channels, editor=editor)
-                except SuperColliderServiceError as exc:
-                    self._handle_sc_failure(exc)
-                else:
-                    self._send_json({"ok": True, "plugin": info})
+                ramp = payload.get("ramp")
+                addon.send_automation(str(target), float(value), ramp=float(ramp) if ramp is not None else None)
+                self._send_json({"ok": True})
                 return
-            if path == "/api/sc/plugins/unload":
-                service = self._require_sc_service()
-                if service is None:
-                    return
-                try:
-                    service.unload_plugin()
-                except SuperColliderServiceError as exc:
-                    self._handle_sc_failure(exc)
-                else:
-                    self._send_json({"ok": True})
-                return
-            if path == "/api/sc/plugins/param":
-                service = self._require_sc_service()
-                if service is None:
+            if path == "/api/sc-addon/effects":
+                addon = self._require_sc_addon()
+                if addon is None:
                     return
                 payload = self._read_json()
-                if "index" not in payload or "value" not in payload:
-                    self._send_json(
-                        {"ok": False, "error": "Missing 'index' or 'value'"},
-                        HTTPStatus.BAD_REQUEST,
-                    )
+                addon.apply_effects(
+                    mix=payload.get("mix"),
+                    decay=payload.get("decay"),
+                    cutoff=payload.get("cutoff"),
+                )
+                self._send_json({"ok": True, "state": addon.status().get("effects")})
+                return
+            if path == "/api/sc-addon/record":
+                addon = self._require_sc_addon()
+                if addon is None:
                     return
-                try:
-                    result = service.set_parameter(int(payload["index"]), float(payload["value"]))
-                except (ValueError, SuperColliderServiceError) as exc:
-                    self._handle_sc_failure(exc)
-                else:
-                    self._send_json({"ok": True, "parameter": result})
+                payload = self._read_json()
+                duration = float(payload.get("duration", 4.0))
+                filename = payload.get("filename")
+                output_path = addon.record_to_file(duration, filename=filename)
+                self._send_json({"ok": True, "path": str(output_path)})
                 return
             if path == "/api/plugins/assign":
                 payload = self._read_json()
@@ -860,19 +835,23 @@ def serve(
     vst_host.configure_audio(preferred_drivers=preferred_drivers)
     juce_host = JuceVST3Host(base_dir=base_dir)
     plugin_host_mode = (plugin_host or "carla").lower()
-    sc_service = SuperColliderService(enabled=(plugin_host_mode == "sc"), auto_boot=True)
+    if plugin_host_mode != "carla":
+        logger.warning("SuperCollider plugin host mode is deprecated; defaulting to Carla/JUCE.")
+        plugin_host_mode = "carla"
     atexit.register(vst_host.shutdown)
 
     logger.info(f"Starting Ambiance server on http://{host}:{port}/")
     logger.info(f"Carla backend available: {vst_host.status()['available']}")
     logger.info(f"Qt support available: {vst_host.status().get('qt_available', False)}")
-    if sc_service.enabled:
-        if sc_service.status().get("error"):
-            logger.warning("SuperCollider host enabled but failed to boot: %s", sc_service.status().get("error"))
+    sc_addon_env = os.environ.get("AMB_SC_ADDON", "0") == "1"
+    sc_addon = SuperColliderAddon(enabled=sc_addon_env, render_root=base_dir / "outputs")
+    if sc_addon.enabled:
+        if sc_addon.status().get("last_error"):
+            logger.warning("SuperCollider add-on failed to boot: %s", sc_addon.status().get("last_error"))
         else:
-            logger.info("SuperCollider plugin host enabled")
+            logger.info("SuperCollider add-on enabled (automation/recording)")
     else:
-        logger.info("SuperCollider plugin host disabled (Carla/JUCE active)")
+        logger.info("SuperCollider add-on disabled")
 
     def handler(*args: Any, **kwargs: Any) -> AmbianceRequestHandler:
         kwargs.setdefault("directory", directory)
@@ -880,9 +859,9 @@ def serve(
         kwargs.setdefault("ui_path", ui_path)
         kwargs.setdefault("vst_host", vst_host)
         kwargs.setdefault("juce_host", juce_host)
-        kwargs.setdefault("sc_service", sc_service)
         kwargs.setdefault("plugin_host_mode", plugin_host_mode)
         kwargs.setdefault("server_url", f"http://{host}:{port}")
+        kwargs.setdefault("sc_addon", sc_addon if sc_addon.enabled else None)
         return AmbianceRequestHandler(*args, **kwargs)
 
     # Check if Qt is available for running plugin UIs

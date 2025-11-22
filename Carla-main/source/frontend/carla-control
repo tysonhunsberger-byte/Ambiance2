@@ -1,0 +1,70 @@
+#!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2011-2024 Filipe Coelho <falktx@falktx.com>
+# SPDX-License-Identifier: GPL-2.0-or-later
+
+# ----------------------------------------------------------------------------------------------------------------------
+# Imports (Custom Stuff)
+
+from carla_host_control import (
+    ENGINE_PROCESS_MODE_BRIDGE,
+    CarlaApplication,
+    CarlaHostOSC,
+    HostWindowOSC,
+    handleInitialCommandLineArguments,
+    initHost,
+    loadHostSettings,
+    setUpSignals,
+)
+
+import sys
+
+# ----------------------------------------------------------------------------------------------------------------------
+# Main
+
+if __name__ == '__main__':
+    import resources_rc
+
+    # ------------------------------------------------------------------------------------------------------------------
+    # Read CLI args
+
+    initName, libPrefix = handleInitialCommandLineArguments(__file__ if "__file__" in dir() else None)
+
+    for arg in sys.argv:
+        if arg.startswith("osc."):
+            oscAddr = arg
+            break
+    else:
+        oscAddr = None
+
+    # ------------------------------------------------------------------------------------------------------------------
+    # App initialization
+
+    app = CarlaApplication("Carla2-Control", libPrefix)
+
+    # ------------------------------------------------------------------------------------------------------------------
+    # Set-up custom signal handling
+
+    setUpSignals()
+
+    # ------------------------------------------------------------------------------------------------------------------
+    # Init host backend
+
+    host = initHost(initName, libPrefix, True, False, True, CarlaHostOSC)
+    host.processMode       = ENGINE_PROCESS_MODE_BRIDGE
+    host.processModeForced = True
+    loadHostSettings(host)
+
+    # ------------------------------------------------------------------------------------------------------------------
+    # Create GUI
+
+    gui = HostWindowOSC(host, oscAddr)
+
+    # ------------------------------------------------------------------------------------------------------------------
+    # Show GUI
+
+    gui.show()
+
+    # ------------------------------------------------------------------------------------------------------------------
+    # App-Loop
+
+    app.exit_exec()

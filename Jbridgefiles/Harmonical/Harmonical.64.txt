@@ -1,5 +1,0 @@
-"C:\Ambiance2\included_plugins\32BitPlugins\Harmonical\Harmonical.dll"
-ID: 1215115568
-flags: effFlagsHasEditor
-flags: effFlagsIsSynth
-flags: effFlagsCanReplacing

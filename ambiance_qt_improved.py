@@ -251,17 +251,23 @@ _SRC = _ROOT / "ambiance" / "src"
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
+from ambiance.utils.dependencies import ensure_vendor_css, ensure_carla_win64
+
+ensure_vendor_css(_ROOT)
+ensure_carla_win64(_ROOT)
+
 # Plugin rack manager (required)
 try:
-    from ambiance.integrations.plugins import PluginRackManager  # type: ignore
+from ambiance.integrations.plugins import PluginRackManager  # type: ignore
 except Exception as _e:  # pragma: no cover
     PluginRackManager = None  # type: ignore
     _PLUGINS_IMPORT_ERROR = str(_e)
 
-from ambiance.integrations.supercollider_service import (
-    SuperColliderService,
-    SuperColliderServiceError,
-)
+try:
+    from ambiance.integrations.sc_addon import SuperColliderAddon  # type: ignore
+except Exception:  # pragma: no cover - fallback if addon missing
+    SuperColliderAddon = None  # type: ignore[arg-type]
+
 
 # Optional Carla host
 try:
@@ -652,15 +658,7 @@ class AmbianceMainWindow(QMainWindow):
         self.setWindowTitle("Ambiance â€“ Studio")
         self.resize(1200, 800)
 
-        self.plugin_host_mode = os.environ.get("AMB_PLUGIN_HOST", "carla").lower()
-        self.sc_service: Optional[SuperColliderService] = None
-        if self.plugin_host_mode == "sc":
-            try:
-                self.sc_service = SuperColliderService(enabled=True, auto_boot=True)
-            except SuperColliderServiceError as exc:
-                print(f"[SC] Failed to boot SuperCollider host: {exc}")
-            except Exception as exc:  # pragma: no cover - defensive
-                print(f"[SC] Unexpected SuperCollider initialization error: {exc}")
+        # Carla/JUCE is the active plugin host; SuperCollider features run as optional add-ons.
 
         # Main container - Desktop environment
         central = QWidget(self)
@@ -725,8 +723,6 @@ class AmbianceMainWindow(QMainWindow):
         if PluginRackManager is not None:
             self.plugin_rack_widget = PluginRackWidget(
                 self,
-                plugin_host_mode=self.plugin_host_mode,
-                sc_service=self.sc_service,
             )
             # Hide the main widget since we only use its children in MDI windows
             self.plugin_rack_widget.hide()
@@ -1035,16 +1031,11 @@ class AmbianceMainWindow(QMainWindow):
         if wallpapers_dir.exists():
             mounts["/wallpapers/"] = wallpapers_dir
 
-        host_mode = self.plugin_host_mode
-        sc_service = self.sc_service
-
         global _desktop_http_server
         if _desktop_http_server is None:
             _desktop_http_server = StaticHTTPServer(
                 root_dir,
                 mounts=mounts,
-                plugin_host_mode=host_mode,
-                sc_service=sc_service,
             )
 
         try:
@@ -1575,26 +1566,43 @@ class AmbianceMainWindow(QMainWindow):
             self.strudel_bridge.emit_state(self._serialize_strudel_state())
         self._notify_desktop_bridge()
 
+    def _has_local_strudel_bundle(self) -> bool:
+        root_dir = _ROOT / "resources" / "strudel" / "dist"
+        astro_dir = root_dir / "_astro"
+        if not root_dir.exists() or not astro_dir.exists():
+            return False
+        js_files = list(astro_dir.glob("*.js"))
+        return len(js_files) >= 4
+
     def _ensure_strudel_server(self) -> Optional[str]:
         """Resolve Strudel URLs (prefer local bundle, fall back to hosted site)."""
         proxy_base = self._ensure_strudel_proxy()
         if proxy_base:
             self._strudel_proxy_base = proxy_base if proxy_base.endswith("/") else f"{proxy_base}/"
             self._strudel_url = self._build_strudel_proxy_url(self._strudel_home_url)
+            self._strudel_error = None
         else:
             self._strudel_proxy_base = None
-            self._strudel_url = self._strudel_home_url
+            self._strudel_url = None
+            if not self._strudel_error:
+                self._strudel_error = "Strudel bundle unavailable."
         self._strudel_remote_url = self._strudel_home_url
-        self._strudel_loaded = True
-        self._strudel_error = None
+        self._strudel_loaded = bool(proxy_base)
         return self._strudel_url
 
     def _ensure_strudel_proxy(self) -> Optional[str]:
         if self._strudel_proxy_service and self._strudel_proxy_port:
             return f"http://127.0.0.1:{self._strudel_proxy_port}/"
         root_dir = _ROOT / "resources" / "strudel" / "dist"
-        if not root_dir.exists():
-            LOGGER.warning("Strudel bundle missing at %s (falling back to remote content)", root_dir)
+        if not self._has_local_strudel_bundle():
+            LOGGER.warning(
+                "Strudel bundle missing at %s; run tools/sync_strudel.py to refresh local assets.",
+                root_dir,
+            )
+            self._strudel_error = (
+                "Strudel bundle missing. Run tools/sync_strudel.py in the Ambiance root to install it."
+            )
+            return None
         try:
             proxy = StrudelProxy(root_dir=root_dir)
             port = proxy.start()
@@ -1708,17 +1716,12 @@ class PluginRackWidget(QFrame):
     def __init__(
         self,
         parent: QWidget | None = None,
-        *,
-        plugin_host_mode: str = "carla",
-        sc_service: Optional[SuperColliderService] = None,
     ) -> None:
         super().__init__(parent)
         self.setFrameShape(QFrame.Shape.NoFrame)
         # Removed inline stylesheet to allow global theme to apply
         # Use a string forward reference to avoid evaluating the type at runtime
         self.carla = None  # type: ignore # type: Optional['CarlaVSTHost']
-        self._plugin_host_mode = plugin_host_mode
-        self._sc_service = sc_service
         self._embedded_hwnd: Optional[int] = None
         self._embedded_original_parent: Optional[int] = None
         self._embedded_original_style: Optional[int] = None
@@ -1740,6 +1743,7 @@ class PluginRackWidget(QFrame):
         self._embed_retry_timer: Optional[QTimer] = None
         self._embed_retry_count = 0
         self._ui_embed_target = "overlay"
+        self._active_plugin_is_jbridge = False
         self._workspace_window: Optional[QWidget] = None
         self._workspace_window_hwnd: Optional[int] = None
         self._workspace_container: Optional[QWidget] = None
@@ -1949,8 +1953,6 @@ class PluginRackWidget(QFrame):
         self._emit_keyboard_state()
 
     def _midi_backend_active(self) -> bool:
-        if self._plugin_host_mode == "sc":
-            return self._sc_service is not None
         return self.carla is not None
 
         # Console log viewer
@@ -2169,10 +2171,6 @@ class PluginRackWidget(QFrame):
 
     def _send_midi_fast(self, note: int, velocity: float) -> None:
         """Send MIDI directly, bypassing the slow waits in carla_host."""
-        if self._plugin_host_mode == "sc":
-            self._send_sc_midi(note, velocity)
-            return
-
         if not self.carla:
             return
 
@@ -2181,19 +2179,6 @@ class PluginRackWidget(QFrame):
             self.carla.send_midi_direct(int(note), vel)
         except Exception as e:
             self._log(f"âŒ Fast MIDI failed: {e}")
-
-    def _send_sc_midi(self, note: int, velocity: float) -> None:
-        service = self._sc_service
-        if not service:
-            return
-        vel = max(0.0, min(1.0, float(velocity)))
-        value = int(round(vel * 127.0))
-        value = max(0, min(127, value))
-        status = 0x90 if value > 0 else 0x80
-        try:
-            service.send_midi(status, int(note), value)
-        except SuperColliderServiceError as exc:
-            self._log(f"[SC] MIDI error: {exc}")
 
 
     def _on_key_pressed(self, note: int) -> None:
@@ -2649,8 +2634,14 @@ class PluginRackWidget(QFrame):
                 "path": plugin_info.get("path"),
                 "name": metadata.get("name") or (Path(plugin_info.get("path") or "").stem or "Plugin"),
             }
+            plugin_name = (
+                (metadata.get("name") or "") or (plugin_info.get("name") or "") or descriptor.get("name") or ""
+            ).lower()
+            plugin_path = (plugin_info.get("path") or "").lower()
+            self._active_plugin_is_jbridge = "jbridge" in plugin_name or "jbridge" in plugin_path
         else:
             descriptor = {}
+            self._active_plugin_is_jbridge = False
         self._current_plugin_descriptor = descriptor or {}
         self.currentPluginChanged.emit(descriptor)
 
@@ -2668,16 +2659,24 @@ class PluginRackWidget(QFrame):
             self._update_host_status()
         self.no_plugin_label.setVisible(False if status else True)
         if show_ui:
-            self._embed_retry_count = 0
-            self._start_embed_retry()
-            parent_window = self.parent()
-            if parent_window and hasattr(parent_window, "_set_plugin_ui_visible"):
-                parent_window._set_plugin_ui_visible(True)
-            if parent_window and hasattr(parent_window, "_set_plugin_ui_host"):
-                parent_window._set_plugin_ui_host("workspace")
-            if parent_window and hasattr(parent_window, "_toggle_plugin_ui_workspace"):
-                parent_window._toggle_plugin_ui_workspace(True)
-            self._show_all_plugin_uis()
+            if getattr(self, "_active_plugin_is_jbridge", False):
+                self._log("Skipping UI embedding for jBridge-based plugins (requires external editor).")
+                self._display_host_status(
+                    "jBridge/32-bit plugin loaded; use Carla's window to access its editor."
+                )
+            else:
+                self._embed_retry_count = 0
+                self._start_embed_retry()
+                parent_window = self.parent()
+                if parent_window and hasattr(parent_window, "_set_plugin_ui_visible"):
+                    parent_window._set_plugin_ui_visible(True)
+                if parent_window and hasattr(parent_window, "_set_plugin_ui_host"):
+                    parent_window._set_plugin_ui_host("workspace")
+                if parent_window and hasattr(parent_window, "_toggle_plugin_ui_workspace"):
+                    parent_window._toggle_plugin_ui_workspace(True)
+                self._show_all_plugin_uis()
+                self._emit_state()
+                return
         self._emit_state()
 
     def _show_all_plugin_uis(self) -> None:
@@ -2986,9 +2985,6 @@ class PluginRackWidget(QFrame):
 
     def _activate_chain(self, *, show_ui: bool = False) -> None:
         """Activate the entire Carla chain and optionally show the focused UI."""
-        if self._plugin_host_mode == "sc":
-            self._log("SuperCollider mode does not support chain activation")
-            return
         if not self._ensure_carla():
             self._log("Carla not available")
             return
@@ -3005,9 +3001,6 @@ class PluginRackWidget(QFrame):
 
     # --- Carla integration
     def _init_carla(self) -> None:
-        if self._plugin_host_mode == "sc":
-            self.carla = None
-            return
         if not CARLA_AVAILABLE:
             self.carla = None
             return
@@ -3102,8 +3095,6 @@ class PluginRackWidget(QFrame):
             self._display_host_status(f"Carla error: {exc}")
 
     def _ensure_carla(self) -> bool:
-        if self._plugin_host_mode == "sc":
-            return False
         if self.carla:
             return True
         if not CARLA_AVAILABLE:
@@ -3170,19 +3161,15 @@ class PluginRackWidget(QFrame):
 
     # --- Host UI helpers
     def show_host_ui(self) -> None:
-        if self._plugin_host_mode == "sc":
-            if not self._sc_service:
-                self._display_host_status("SuperCollider service unavailable")
-                return
-            try:
-                self._sc_service.show_editor()
-                self._display_host_status("SuperCollider editor opened")
-            except SuperColliderServiceError as exc:
-                self._display_host_status(f"[SC] Show UI error: {exc}")
-            return
         if not self.carla:
             return
         try:
+            if getattr(self, "_active_plugin_is_jbridge", False):
+                self._display_host_status(
+                    "jBridge/32-bit plugins cannot be embedded. Use Carla's window to interact with the plugin UI."
+                )
+                self._log("Blocking Show UI request for jBridge plugin to avoid crashes.")
+                return
             current_index = self.chain_list.currentRow()
             if current_index >= 0 and current_index != self._active_chain_index:
                 self._focus_chain_slot(current_index, show_ui=True)
@@ -3195,20 +3182,6 @@ class PluginRackWidget(QFrame):
             self._display_host_status(f"Show UI error: {exc}")
 
     def unload_host(self) -> None:
-        if self._plugin_host_mode == "sc":
-            if not self._sc_service:
-                return
-            try:
-                self._sc_service.unload_plugin()
-                self._current_loaded_path = None
-                self._set_keyboard_enabled(False)
-                self.currentPluginChanged.emit({})
-                self._emit_state()
-                self._display_host_status("SuperCollider plugin unloaded")
-                self.no_plugin_label.setVisible(True)
-            except SuperColliderServiceError as exc:
-                self._display_host_status(f"[SC] Unload error: {exc}")
-            return
         if not self.carla:
             return
         try:
@@ -3699,8 +3672,6 @@ class StaticHTTPServer:
         mounts: Optional[dict[str, Path]] = None,
         fallback: Optional[Path] = None,
         port: int = 0,
-        plugin_host_mode: str = "carla",
-        sc_service: Optional[SuperColliderService] = None,
     ):
         self.root = Path(root).resolve()
         self.mounts = self._normalize_mounts(mounts or {})
@@ -3712,8 +3683,6 @@ class StaticHTTPServer:
         self.strudel_proxy_user_agent = STRUDEL_PROXY_USER_AGENT
         self.strudel_asset_prefixes = STRUDEL_PROXY_ASSET_PREFIXES
         self.strudel_asset_exact = STRUDEL_PROXY_ASSET_EXACT
-        self.plugin_host_mode = plugin_host_mode
-        self.sc_service = sc_service
         self.server: socketserver.TCPServer | None = None
         self.thread: threading.Thread | None = None
         self.actual_port: int | None = None
@@ -3744,7 +3713,7 @@ class StaticHTTPServer:
         strudel_asset_exact = self.strudel_asset_exact
 
         class MultiRootHandler(http.server.SimpleHTTPRequestHandler):
-            def __init__(self, *args, plugin_host_mode="carla", sc_service=None, **kwargs):
+            def __init__(self, *args, **kwargs):
                 self._root = root
                 self._mounts = mounts
                 self._fallback = fallback
@@ -3754,91 +3723,19 @@ class StaticHTTPServer:
                 self._strudel_proxy_user_agent = strudel_proxy_user_agent
                 self._strudel_asset_prefixes = strudel_asset_prefixes
                 self._strudel_asset_exact = strudel_asset_exact
-                self._plugin_host_mode = plugin_host_mode
-                self._sc_service = sc_service
                 super().__init__(*args, directory=str(root), **kwargs)
 
             def do_GET(self):
                 parsed = urlparse(self.path)
                 clean_path = parsed.path or "/"
-                if clean_path == "/api/sc/status":
-                    service = self._sc_service
-                    if service and service.enabled:
-                        self._send_json({"ok": True, "status": service.status()})
-                    else:
-                        self._send_json(
-                            {"ok": False, "error": "SuperCollider host not configured"},
-                            HTTPStatus.BAD_REQUEST,
-                        )
-                    return
-                if clean_path == "/api/sc/plugins":
-                    service = self._require_sc_service()
-                    if service is None:
-                        return
-                    try:
-                        plugins = service.list_plugins()
-                    except SuperColliderServiceError as exc:
-                        self._handle_sc_failure(exc, HTTPStatus.INTERNAL_SERVER_ERROR)
-                    else:
-                        self._send_json({"ok": True, "plugins": plugins})
-                    return
                 if self._handle_strudel_proxy():
                     return
                 super().do_GET()
 
             def do_POST(self):
-                parsed = urlparse(self.path)
-                clean_path = parsed.path or "/"
-                if clean_path == "/api/sc/plugins/load":
-                    service = self._require_sc_service()
-                    if service is None:
-                        return
-                    payload = self._read_json()
-                    plugin_path = payload.get("path")
-                    channels = payload.get("channels", 2)
-                    editor = bool(payload.get("editor", True))
-                    if not plugin_path:
-                        self._send_json({"ok": False, "error": "Missing 'path'"}, HTTPStatus.BAD_REQUEST)
-                        return
-                    try:
-                        info = service.load_plugin(plugin_path, channels=channels, editor=editor)
-                    except SuperColliderServiceError as exc:
-                        self._handle_sc_failure(exc)
-                    else:
-                        self._send_json({"ok": True, "plugin": info})
-                    return
-                if clean_path == "/api/sc/plugins/unload":
-                    service = self._require_sc_service()
-                    if service is None:
-                        return
-                    try:
-                        service.unload_plugin()
-                    except SuperColliderServiceError as exc:
-                        self._handle_sc_failure(exc)
-                    else:
-                        self._send_json({"ok": True})
-                    return
-                if clean_path == "/api/sc/plugins/param":
-                    service = self._require_sc_service()
-                    if service is None:
-                        return
-                    payload = self._read_json()
-                    if "index" not in payload or "value" not in payload:
-                        self._send_json(
-                            {"ok": False, "error": "Missing 'index' or 'value'"},
-                            HTTPStatus.BAD_REQUEST,
-                        )
-                        return
-                    try:
-                        result = service.set_parameter(int(payload["index"]), float(payload["value"]))
-                    except (ValueError, SuperColliderServiceError) as exc:
-                        self._handle_sc_failure(exc)
-                    else:
-                        self._send_json({"ok": True, "parameter": result})
-                    return
                 if self._handle_strudel_proxy():
                     return
-                super().do_GET()
+                super().do_POST()
 
             def translate_path(self, path: str) -> str:
                 parsed = urlparse(path)
@@ -3970,47 +3867,11 @@ class StaticHTTPServer:
                 self.end_headers()
                 self.wfile.write(body)
 
-            def _send_json(self, payload: dict[str, object], status: HTTPStatus = HTTPStatus.OK) -> None:
-                data = json.dumps(payload).encode("utf-8")
-                self.send_response(status)
-                self.send_header("Content-Type", "application/json; charset=utf-8")
-                self.send_header("Content-Length", str(len(data)))
-                self.end_headers()
-                self.wfile.write(data)
-
-            def _read_json(self) -> dict[str, object]:
-                length = int(self.headers.get("Content-Length", "0") or 0)
-                raw = self.rfile.read(length) if length else b"{}"
-                try:
-                    return json.loads(raw.decode("utf-8"))
-                except json.JSONDecodeError:
-                    return {}
-
-            def _require_sc_service(self) -> Optional[SuperColliderService]:
-                service = self._sc_service
-                if service and service.enabled:
-                    return service
-                self._send_json(
-                    {"ok": False, "error": "SuperCollider host not enabled"},
-                    HTTPStatus.BAD_REQUEST,
-                )
-                return None
-
-            def _handle_sc_failure(
-                self,
-                exc: Exception,
-                status: HTTPStatus = HTTPStatus.BAD_REQUEST,
-            ) -> None:
-                print(f"[SC] API error: {exc}")
-                self._send_json({"ok": False, "error": str(exc)}, status)
-
             def log_message(self, format: str, *args) -> None:
                 pass
 
         handler = partial(
             MultiRootHandler,
-            plugin_host_mode=self.plugin_host_mode,
-            sc_service=self.sc_service,
         )
 
         class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
