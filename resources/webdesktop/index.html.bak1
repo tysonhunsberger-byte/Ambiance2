@@ -1199,7 +1199,7 @@
                 const path = remote.pathname.replace(/^\//, "");
                 const proxied = proxy.origin + proxy.pathname.replace(/\/?$/, "/") + path;
                 return proxied + remote.search + remote.hash;
-            } catch {
+            } catch (error) {
                 return url;
             }
         }
@@ -1210,7 +1210,7 @@
                 const proxyUrl = new URL(StrudelState.proxyBase, window.location.origin);
                 const proxyPath = proxyUrl.pathname.replace(/\/?$/, "/");
                 return { url: proxyUrl, path: proxyPath };
-            } catch {
+            } catch (error) {
                 return null;
             }
         }
@@ -1226,7 +1226,7 @@
                 let href;
                 try {
                     href = loc.href;
-                } catch {
+                } catch (error) {
                     return;
                 }
                 if (!href || href === "about:blank") return;

@@ -239,21 +239,21 @@ export async function initAudio(options = {}) {
 
   const audioCtx = getAudioContext();
 
-  if (audioDeviceName != null && audioDeviceName != DEFAULT_AUDIO_DEVICE_NAME) {
-    try {
-      const devices = await getAudioDevices();
-      const id = devices.get(audioDeviceName);
-      const isValidID = (id ?? '').length > 0;
-      if (audioCtx.sinkId !== id && isValidID) {
-        await audioCtx.setSinkId(id);
+    if (audioDeviceName != null && audioDeviceName != DEFAULT_AUDIO_DEVICE_NAME) {
+      try {
+        const devices = await getAudioDevices();
+        const id = devices.get(audioDeviceName);
+        const isValidID = (id ?? '').length > 0;
+        if (audioCtx.sinkId !== id && isValidID) {
+          await audioCtx.setSinkId(id);
+        }
+        logger(
+          `[superdough] Audio Device set to ${audioDeviceName}, it might take a few seconds before audio plays on all output channels`,
+        );
+      } catch (error) {
+        logger('[superdough] failed to set audio interface', 'warning');
       }
-      logger(
-        `[superdough] Audio Device set to ${audioDeviceName}, it might take a few seconds before audio plays on all output channels`,
-      );
-    } catch {
-      logger('[superdough] failed to set audio interface', 'warning');
     }
-  }
 
   await audioCtx.resume();
   if (disableWorklets) {

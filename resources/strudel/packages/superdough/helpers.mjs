@@ -222,12 +222,12 @@ export function webAudioTimeout(audioContext, onComplete, startTime, stopTime) {
     // Ensure garbage collection
     try {
       zeroGain.disconnect();
-    } catch {
+    } catch (error) {
       // pass
     }
     try {
       constantNode.disconnect();
-    } catch {
+    } catch (error) {
       // pass
     }
     onComplete();

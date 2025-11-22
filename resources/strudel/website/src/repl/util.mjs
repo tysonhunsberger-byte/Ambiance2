@@ -50,14 +50,14 @@ export async function initCode() {
   }
 }
 
-export const parseJSON = (json) => {
-  json = json != null && json.length ? json : '{}';
-  try {
-    return JSON.parse(json);
-  } catch {
-    return '{}';
-  }
-};
+  export const parseJSON = (json) => {
+    json = json != null && json.length ? json : '{}';
+    try {
+      return JSON.parse(json);
+    } catch (error) {
+      return '{}';
+    }
+  };
 
 export async function getRandomTune() {
   await dbLoaded;
