@@ -2250,12 +2250,16 @@ body[data-theme="win98"] #taskbar .start {
             padding: 10px 12px;
             margin-bottom: 14px;
             background: linear-gradient(180deg, rgba(255,255,255,0.85), rgba(228,238,255,0.75));
-            display: none;
+            display: flex;
             flex-direction: column;
             gap: 8px;
         }
         .sc-addon-card.active {
             display: flex;
+        }
+        .sc-addon-card.disabled {
+            opacity: 0.75;
+            filter: grayscale(0.1);
         }
         .sc-addon-header {
             display: flex;
@@ -3552,7 +3556,7 @@ const WindowStyleOverrides = {};
                         try {
                             await ensureBlocksAudio();
                             updateBlocksStatus("Audio engine running");
-                        } catch {
+                        } catch (error) {
                             return;
                         }
                     }
@@ -5382,17 +5386,17 @@ const WindowStyleOverrides = {};
                 return null;
             }
         }
-        function updateStrudelNavButtons() {
-            const backBtn = document.getElementById("strudelBack");
-            const forwardBtn = document.getElementById("strudelForward");
-            if (backBtn) backBtn.disabled = StrudelHistory.index <= 0;
-            if (forwardBtn) forwardBtn.disabled = StrudelHistory.index < 0 || StrudelHistory.index >= StrudelHistory.entries.length - 1;
+            } catch (error) {
+                return url;
+            }
         }
-        function requestStrudelUrl(url) {
-            if (!url) return;
-            if (Bridges.strudel) {
-                Bridges.strudel.open();
-                Bridges.strudel.navigate(url);
+            } catch (error) {
+                return null;
+            }
+        }
+                } catch (error) {
+                    return;
+                }
             } else {
                 const frame = document.getElementById("strudelFrame");
                 if (frame) frame.src = buildProxyUrl(url);
@@ -5573,12 +5577,12 @@ const WindowStyleOverrides = {};
             if (!Bridges.pluginStudio) return;
             const existing = PluginState.chain.find(entry => entry.path === path);
             if (existing && typeof existing.index === "number") {
-                if (activate) {
-                    Bridges.pluginStudio.loadChainIndex(existing.index);
-                } else {
-                    Bridges.pluginStudio.focusChainIndex && Bridges.pluginStudio.focusChainIndex(existing.index);
-                }
-                PendingPluginPath = null;
+                    } catch (error) {
+                        data = {};
+                    }
+                    } catch (error) {
+                        data = {};
+                    }
                 return;
             }
             PendingPluginPath = activate ? path : null;
@@ -5679,10 +5683,30 @@ const WindowStyleOverrides = {};
         }
         async function refreshScAddonStatus() {
             let statusPayload = null;
-            try {
-                const data = await getJson("/api/sc-addon/status");
-                if (data && data.ok) {
-                    statusPayload = data.status || {};
+            const applyBtn = document.getElementById("scApplyEffectsBtn");
+            const recordBtn = document.getElementById("scRecordBtn");
+            const recordInput = document.getElementById("scRecordDuration");
+            panel.classList.add("active");
+            const disabledMessage =
+                HostState.scAddon.last_error ||
+                "Start Ambiance with AMB_SC_ADDON=1 to enable the SuperCollider add-on.";
+            const enabled = Boolean(HostState.scAddon.enabled);
+            panel.classList.toggle("disabled", !enabled);
+            if (!enabled) {
+                if (messageEl) messageEl.textContent = disabledMessage;
+                if (mixInput) mixInput.disabled = true;
+                if (decayInput) decayInput.disabled = true;
+                if (cutoffInput) cutoffInput.disabled = true;
+                if (applyBtn) applyBtn.disabled = true;
+                if (recordBtn) recordBtn.disabled = true;
+                if (recordInput) recordInput.disabled = true;
+            panel.classList.remove("disabled");
+            if (mixInput) mixInput.disabled = false;
+            if (decayInput) decayInput.disabled = false;
+            if (cutoffInput) cutoffInput.disabled = false;
+            if (applyBtn) applyBtn.disabled = false;
+            if (recordBtn) recordBtn.disabled = false;
+            if (recordInput) recordInput.disabled = false;
                     HostState.scAddon.enabled = true;
                     HostState.scAddon.booted = Boolean(statusPayload.booted);
                     HostState.scAddon.last_error = statusPayload.last_error || null;
@@ -7224,10 +7248,10 @@ const WindowStyleOverrides = {};
             win.classList.add("maximized");
             applyMaximizedBounds(win);
         }
-        function restoreWindow(win) {
-            if (!win.classList.contains("maximized")) return;
-            win.classList.remove("maximized");
-            if (win.dataset.prevLeft) win.style.left = win.dataset.prevLeft;
+            } catch (error) {
+                return null;
+            }
+        }
             if (win.dataset.prevTop) win.style.top = win.dataset.prevTop;
             if (win.dataset.prevWidth) win.style.width = win.dataset.prevWidth;
             if (win.dataset.prevHeight) win.style.height = win.dataset.prevHeight;
