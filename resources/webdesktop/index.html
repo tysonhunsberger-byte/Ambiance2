@@ -5412,7 +5412,7 @@ const WindowStyleOverrides = {};
                 const path = remote.pathname.replace(/^\//, "");
                 const proxied = proxy.origin + proxy.pathname.replace(/\/?$/, "/") + path;
                 return proxied + remote.search + remote.hash;
-            } catch {
+            } catch (error) {
                 return url;
             }
         }
@@ -5423,7 +5423,7 @@ const WindowStyleOverrides = {};
                 const proxyUrl = new URL(StrudelState.proxyBase, window.location.origin);
                 const proxyPath = proxyUrl.pathname.replace(/\/?$/, "/");
                 return { url: proxyUrl, path: proxyPath };
-            } catch {
+            } catch (error) {
                 return null;
             }
         }
@@ -5439,7 +5439,7 @@ const WindowStyleOverrides = {};
                 let href;
                 try {
                     href = loc.href;
-                } catch {
+                } catch (error) {
                     return;
                 }
                 if (!href || href === "about:blank") return;
@@ -5603,7 +5603,7 @@ const WindowStyleOverrides = {};
                     let data = {};
                     try {
                         data = await response.json();
-                    } catch {
+                    } catch (error) {
                         data = {};
                     }
                     if (typeof data.ok === "undefined") {
@@ -5626,7 +5626,7 @@ const WindowStyleOverrides = {};
                     let data = {};
                     try {
                         data = await response.json();
-                    } catch {
+                    } catch (error) {
                         data = {};
                     }
                     if (typeof data.ok === "undefined") {
@@ -5729,15 +5729,35 @@ const WindowStyleOverrides = {};
             const mixInput = document.getElementById("scMix");
             const decayInput = document.getElementById("scDecay");
             const cutoffInput = document.getElementById("scCutoff");
+            const applyBtn = document.getElementById("scApplyEffectsBtn");
+            const recordBtn = document.getElementById("scRecordBtn");
+            const recordInput = document.getElementById("scRecordDuration");
             const messageEl = document.getElementById("scAddonMessage");
             if (!panel || !statusLabel) return;
-            if (!HostState.scAddon.enabled) {
-                panel.classList.remove("active");
+            panel.classList.add("active");
+            const disabledMessage =
+                HostState.scAddon.last_error ||
+                "Start Ambiance with AMB_SC_ADDON=1 to enable the SuperCollider add-on.";
+            const enabled = Boolean(HostState.scAddon.enabled);
+            panel.classList.toggle("disabled", !enabled);
+            if (!enabled) {
                 statusLabel.textContent = "Add-on disabled";
-                if (messageEl) messageEl.textContent = "";
+                if (messageEl) messageEl.textContent = disabledMessage;
+                if (mixInput) mixInput.disabled = true;
+                if (decayInput) decayInput.disabled = true;
+                if (cutoffInput) cutoffInput.disabled = true;
+                if (applyBtn) applyBtn.disabled = true;
+                if (recordBtn) recordBtn.disabled = true;
+                if (recordInput) recordInput.disabled = true;
                 return;
             }
-            panel.classList.add("active");
+            panel.classList.remove("disabled");
+            if (mixInput) mixInput.disabled = false;
+            if (decayInput) decayInput.disabled = false;
+            if (cutoffInput) cutoffInput.disabled = false;
+            if (applyBtn) applyBtn.disabled = false;
+            if (recordBtn) recordBtn.disabled = false;
+            if (recordInput) recordInput.disabled = false;
             if (HostState.scAddon.last_error) {
                 statusLabel.textContent = `Error: ${HostState.scAddon.last_error}`;
             } else if (!HostState.scAddon.booted) {
@@ -7274,7 +7294,7 @@ const WindowStyleOverrides = {};
             if (!target) return null;
             try {
                 return new URL(target, window.location.href).origin;
-            } catch {
+            } catch (error) {
                 return null;
             }
         }
