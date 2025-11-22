@@ -2250,12 +2250,16 @@ body[data-theme="win98"] #taskbar .start {
             padding: 10px 12px;
             margin-bottom: 14px;
             background: linear-gradient(180deg, rgba(255,255,255,0.85), rgba(228,238,255,0.75));
-            display: none;
+            display: flex;
             flex-direction: column;
             gap: 8px;
         }
         .sc-addon-card.active {
             display: flex;
+        }
+        .sc-addon-card.disabled {
+            opacity: 0.75;
+            filter: grayscale(0.1);
         }
         .sc-addon-header {
             display: flex;
@@ -5679,10 +5683,30 @@ const WindowStyleOverrides = {};
         }
         async function refreshScAddonStatus() {
             let statusPayload = null;
-            try {
-                const data = await getJson("/api/sc-addon/status");
-                if (data && data.ok) {
-                    statusPayload = data.status || {};
+            const applyBtn = document.getElementById("scApplyEffectsBtn");
+            const recordBtn = document.getElementById("scRecordBtn");
+            const recordInput = document.getElementById("scRecordDuration");
+            panel.classList.add("active");
+            const disabledMessage =
+                HostState.scAddon.last_error ||
+                "Start Ambiance with AMB_SC_ADDON=1 to enable the SuperCollider add-on.";
+            const enabled = Boolean(HostState.scAddon.enabled);
+            panel.classList.toggle("disabled", !enabled);
+            if (!enabled) {
+                if (messageEl) messageEl.textContent = disabledMessage;
+                if (mixInput) mixInput.disabled = true;
+                if (decayInput) decayInput.disabled = true;
+                if (cutoffInput) cutoffInput.disabled = true;
+                if (applyBtn) applyBtn.disabled = true;
+                if (recordBtn) recordBtn.disabled = true;
+                if (recordInput) recordInput.disabled = true;
+            panel.classList.remove("disabled");
+            if (mixInput) mixInput.disabled = false;
+            if (decayInput) decayInput.disabled = false;
+            if (cutoffInput) cutoffInput.disabled = false;
+            if (applyBtn) applyBtn.disabled = false;
+            if (recordBtn) recordBtn.disabled = false;
+            if (recordInput) recordInput.disabled = false;
                     HostState.scAddon.enabled = true;
                     HostState.scAddon.booted = Boolean(statusPayload.booted);
                     HostState.scAddon.last_error = statusPayload.last_error || null;
